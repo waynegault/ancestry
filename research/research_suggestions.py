@@ -9,7 +9,6 @@ Author: Wayne Gault
 Created: October 21, 2025
 """
 
-from __future__ import annotations
 
 # === PATH SETUP FOR PACKAGE IMPORTS ===
 import sys
@@ -20,7 +19,7 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -256,7 +255,7 @@ def _generate_record_types(common_ancestors: list[dict[str, Any]]) -> list[str]:
 
 
 def _generate_strategies(
-    relationship_context: Optional[str],
+    relationship_context: str | None,
     locations: list[str],
     common_ancestors: list[dict[str, Any]],
 ) -> list[str]:
@@ -280,8 +279,8 @@ def generate_research_suggestions(
     common_ancestors: list[dict[str, Any]],
     locations: list[str],
     time_periods: list[str],
-    relationship_context: Optional[str] = None,
-    ethnicity_regions: Optional[list[str]] = None,
+    relationship_context: str | None = None,
+    ethnicity_regions: list[str] | None = None,
 ) -> dict[str, Any]:
     """
     Generate relevant research suggestions based on conversation context.
@@ -345,7 +344,7 @@ def _format_research_suggestion_message(
     collections: list[str],
     record_types: list[str],
     strategies: list[str],
-    ethnicity_suggestions: Optional[dict[str, Any]] = None,
+    ethnicity_suggestions: dict[str, Any] | None = None,
 ) -> str:
     """
     Format research suggestions into a human-readable message.

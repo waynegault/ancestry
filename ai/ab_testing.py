@@ -18,9 +18,9 @@ import hashlib
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +34,7 @@ class Variant:
 
     name: str  # e.g., "control", "treatment_a"
     prompt_key: str  # Key in ai_prompts.json
-    prompt_variant: Optional[str] = None  # Variant name within the prompt
+    prompt_variant: str | None = None  # Variant name within the prompt
     weight: float = 1.0  # Assignment weight (higher = more traffic)
 
     def to_dict(self) -> dict[str, Any]:
@@ -53,7 +53,7 @@ class ExperimentResult:
 
     experiment_id: str
     variant_name: str
-    person_id: Optional[int]
+    person_id: int | None
     timestamp: datetime
     quality_score: float
     response_time_ms: float
@@ -93,10 +93,10 @@ class ExperimentSummary:
     experiment_id: str
     status: str  # "running", "completed", "stopped"
     start_time: datetime
-    end_time: Optional[datetime]
+    end_time: datetime | None
     total_trials: int
     variants: list[VariantStats]
-    winner: Optional[str] = None
+    winner: str | None = None
     confidence: float = 0.0
 
 
@@ -108,8 +108,8 @@ class Experiment:
     name: str
     description: str
     variants: list[Variant]
-    start_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    end_time: Optional[datetime] = None
+    start_time: datetime = field(default_factory=lambda: datetime.now(UTC))
+    end_time: datetime | None = None
     min_sample_size: int = 100
     enabled: bool = True
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -147,7 +147,7 @@ class Experiment:
             variants=variants,
             start_time=datetime.fromisoformat(data["start_time"])
             if data.get("start_time")
-            else datetime.now(timezone.utc),
+            else datetime.now(UTC),
             end_time=datetime.fromisoformat(data["end_time"]) if data.get("end_time") else None,
             min_sample_size=data.get("min_sample_size", 100),
             enabled=data.get("enabled", True),
@@ -171,8 +171,8 @@ class ExperimentManager:
 
     def __init__(
         self,
-        experiments_file: Optional[Path] = None,
-        results_file: Optional[Path] = None,
+        experiments_file: Path | None = None,
+        results_file: Path | None = None,
     ) -> None:
         """Initialize the experiment manager."""
         self.experiments_file = experiments_file or Path("config/experiments.json")
@@ -227,7 +227,7 @@ class ExperimentManager:
         logger.info(f"Created experiment: {experiment_id}")
         return exp
 
-    def get_experiment(self, experiment_id: str) -> Optional[Experiment]:
+    def get_experiment(self, experiment_id: str) -> Experiment | None:
         """Get an experiment by ID."""
         return self.experiments.get(experiment_id)
 
@@ -241,7 +241,7 @@ class ExperimentManager:
         if not exp:
             return False
 
-        exp.end_time = datetime.now(timezone.utc)
+        exp.end_time = datetime.now(UTC)
         exp.enabled = False
         self._save_experiments()
         logger.info(f"Stopped experiment: {experiment_id}")
@@ -251,7 +251,7 @@ class ExperimentManager:
         self,
         experiment_id: str,
         subject_id: str,
-    ) -> Optional[Variant]:
+    ) -> Variant | None:
         """
         Assign a variant to a subject using consistent hashing.
 
@@ -289,15 +289,15 @@ class ExperimentManager:
         quality_score: float,
         response_time_ms: float,
         success: bool,
-        person_id: Optional[int] = None,
-        metadata: Optional[dict[str, Any]] = None,
+        person_id: int | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         """Record a trial result."""
         result = ExperimentResult(
             experiment_id=experiment_id,
             variant_name=variant_name,
             person_id=person_id,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             quality_score=quality_score,
             response_time_ms=response_time_ms,
             success=success,
@@ -372,7 +372,7 @@ class ExperimentManager:
             std_quality_score=std_quality,
         )
 
-    def get_experiment_summary(self, experiment_id: str) -> Optional[ExperimentSummary]:
+    def get_experiment_summary(self, experiment_id: str) -> ExperimentSummary | None:
         """Get summary statistics for an experiment."""
         exp = self.experiments.get(experiment_id)
         if not exp:
@@ -415,7 +415,7 @@ class ExperimentManager:
 class _ManagerHolder:
     """Holder for singleton experiment manager."""
 
-    instance: Optional[ExperimentManager] = None
+    instance: ExperimentManager | None = None
 
 
 def get_experiment_manager() -> ExperimentManager:
@@ -429,7 +429,7 @@ def get_prompt_variant(
     experiment_id: str,
     subject_id: str,
     fallback_prompt_key: str,
-) -> tuple[str, Optional[str], Optional[str]]:
+) -> tuple[str, str | None, str | None]:
     """
     Get prompt key and variant for a subject in an experiment.
 
@@ -554,7 +554,7 @@ def module_tests() -> bool:
             experiment_id="test",
             variant_name="control",
             person_id=123,
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             quality_score=85.5,
             response_time_ms=150.0,
             success=True,

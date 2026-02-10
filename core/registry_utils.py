@@ -17,10 +17,11 @@ Key improvements:
 
 # === CORE INFRASTRUCTURE ===
 import sys
+from collections.abc import Callable
 
 # Add parent directory to path for standard_imports
 from pathlib import Path as PathLib
-from typing import Any, Callable, Optional
+from typing import Any
 
 parent_dir = str(PathLib(__file__).parent.parent.resolve())
 if parent_dir not in sys.path:
@@ -98,9 +99,9 @@ class SmartFunctionRegistry:
     def register_module(
         self,
         module_globals: dict[str, Any],
-        include_patterns: Optional[list[str]] = None,
-        exclude_patterns: Optional[list[str]] = None,
-        module_name: Optional[str] = "unknown",
+        include_patterns: list[str] | None = None,
+        exclude_patterns: list[str] | None = None,
+        module_name: str | None = "unknown",
     ) -> int:
         """
         Register all relevant functions from a module in one call.
@@ -178,7 +179,7 @@ def is_function_available(name: str) -> bool:
     return smart_registry.is_available(name)
 
 
-def auto_register_module(module_globals: dict[str, Any], module_name: Optional[str] = None) -> int:
+def auto_register_module(module_globals: dict[str, Any], module_name: str | None = None) -> int:
     """
     One-line function to replace massive auto-registration blocks.
 

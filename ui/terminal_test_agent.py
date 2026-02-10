@@ -98,7 +98,49 @@ from testing.test_utilities import create_standard_test_runner
 
 def _test_module_integrity() -> bool:
     "Test that module can be imported and definitions are valid."
-    return True
+    from unittest.mock import MagicMock
+
+    from testing.test_framework import TestSuite
+
+    suite = TestSuite("Terminal Test Agent", "ui/terminal_test_agent.py")
+    suite.start_suite()
+
+    def test_terminal_test_agent_class_exists():
+        assert isinstance(TerminalTestAgent, type)
+        assert issubclass(TerminalTestAgent, unittest.TestCase)
+        return True
+
+    suite.run_test("TerminalTestAgent class exists and is a TestCase", test_terminal_test_agent_class_exists)
+
+    def test_terminal_test_agent_has_test_methods():
+        assert hasattr(TerminalTestAgent, 'test_menu_selection')
+        assert hasattr(TerminalTestAgent, 'test_invalid_selection')
+        assert hasattr(TerminalTestAgent, 'test_quit_selection')
+        assert hasattr(TerminalTestAgent, 'setUp')
+        assert callable(TerminalTestAgent.test_menu_selection)
+        assert callable(TerminalTestAgent.test_invalid_selection)
+        assert callable(TerminalTestAgent.test_quit_selection)
+        return True
+
+    suite.run_test("TerminalTestAgent has expected test methods", test_terminal_test_agent_has_test_methods)
+
+    def test_terminal_test_agent_instantiation():
+        agent = TerminalTestAgent()
+        agent.setUp()
+        assert agent.registry is not None
+        assert agent.mock_logger is not None
+        assert agent.mock_config is not None
+        return True
+
+    suite.run_test("TerminalTestAgent can be instantiated and setUp runs", test_terminal_test_agent_instantiation)
+
+    def test_run_agent_function_exists():
+        assert callable(run_agent)
+        return True
+
+    suite.run_test("run_agent function is callable", test_run_agent_function_exists)
+
+    return suite.finish_suite()
 
 
 run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)

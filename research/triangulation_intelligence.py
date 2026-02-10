@@ -16,7 +16,7 @@ import logging
 import sys
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar
 
 from testing.test_framework import TestSuite
 from testing.test_utilities import create_standard_test_runner
@@ -65,8 +65,8 @@ class TriangulationHypothesis:
     match_uuid: str
     match_name: str
     proposed_relationship: str
-    common_ancestor_name: Optional[str]
-    common_ancestor_id: Optional[str]
+    common_ancestor_name: str | None
+    common_ancestor_id: str | None
     evidence: list[Evidence]
     confidence_score: float  # 0.0 to 100.0
     confidence_level: ConfidenceLevel
@@ -86,10 +86,10 @@ class ClusterAnchor:
     match_uuid: str
     match_name: str
     shared_cm: float
-    confirmed_ancestor_name: Optional[str] = None
+    confirmed_ancestor_name: str | None = None
     tree_depth: int = 0  # How many generations back the connection is known
     has_linked_tree: bool = False
-    relationship_path: Optional[str] = None  # e.g., "3rd cousin via John Smith"
+    relationship_path: str | None = None  # e.g., "3rd cousin via John Smith"
 
 
 @dataclass
@@ -104,7 +104,7 @@ class ClusterResearchHypothesis:
     description: str
     suggested_actions: list[str]
     priority: str  # "high", "medium", "low"
-    target_ancestor: Optional[str] = None
+    target_ancestor: str | None = None
     evidence_summary: str = ""
 
 
@@ -113,7 +113,7 @@ class MatchCluster:
     """A group of matches that likely share a common ancestor."""
 
     cluster_id: str
-    common_ancestor_hypothesis: Optional[str]
+    common_ancestor_hypothesis: str | None
     match_uuids: list[str]
     total_shared_cm: float
     average_shared_cm: float
@@ -151,8 +151,8 @@ class TriangulationIntelligence:
 
     def __init__(
         self,
-        db_session: Optional[Any] = None,
-        research_service: Optional[Any] = None,
+        db_session: Any | None = None,
+        research_service: Any | None = None,
     ):
         """
         Initialize the triangulation intelligence engine.
@@ -508,7 +508,7 @@ class TriangulationIntelligence:
     @staticmethod
     def _identify_common_ancestor(
         evidence: list[Evidence],
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Identify the most likely common ancestor from evidence."""
         # Check for explicit tree match evidence
         for e in evidence:
@@ -547,7 +547,7 @@ class TriangulationIntelligence:
     def _generate_message(
         match_name: str,
         relationship: str,
-        common_ancestor: Optional[dict[str, Any]],
+        common_ancestor: dict[str, Any] | None,
     ) -> str:
         """Generate a suggested outreach message."""
         if common_ancestor:

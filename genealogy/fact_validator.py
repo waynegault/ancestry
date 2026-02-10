@@ -18,10 +18,10 @@ import logging
 import re
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from difflib import SequenceMatcher
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session as DbSession
 
@@ -72,14 +72,14 @@ class ExtractedFact:
     structured_value: str  # "1920" or "Mary Ellen Smith"
     normalized_value: str  # "1920-01-01" (ISO date) or standardized name
     confidence: int  # 0-100
-    source_conversation_id: Optional[str] = None  # Traceability
-    extraction_timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    source_conversation_id: str | None = None  # Traceability
+    extraction_timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     # Optional enrichment fields
-    subject_person_id: Optional[int] = None  # Linked person in DB (if found)
-    related_person_name: Optional[str] = None  # For RELATIONSHIP facts
-    location: Optional[str] = None  # Place associated with fact
-    date_qualifier: Optional[str] = None  # "circa", "before", "after", "about"
+    subject_person_id: int | None = None  # Linked person in DB (if found)
+    related_person_name: str | None = None  # For RELATIONSHIP facts
+    location: str | None = None  # Place associated with fact
+    date_qualifier: str | None = None  # "circa", "before", "after", "about"
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -107,7 +107,7 @@ class ExtractedFact:
         place: str,
         certainty: str,
         original_text: str,
-        conversation_id: Optional[str] = None,
+        conversation_id: str | None = None,
     ) -> ExtractedFact:
         """Factory method to create from VitalRecord extraction."""
         # Map event_type to fact_type
@@ -147,7 +147,7 @@ class ExtractedFact:
         relationship: str,
         person2: str,
         original_text: str,
-        conversation_id: Optional[str] = None,
+        conversation_id: str | None = None,
     ) -> ExtractedFact:
         """Factory method to create from Relationship extraction."""
         return cls(
@@ -265,7 +265,7 @@ class ExtractedFact:
         return facts
 
     @staticmethod
-    def _extract_date_qualifier(date_str: str) -> Optional[str]:
+    def _extract_date_qualifier(date_str: str) -> str | None:
         """Extract date qualifier (circa, before, after) from date string."""
         if not date_str:
             return None
@@ -333,10 +333,10 @@ class ValidationResult:
 
     fact: ExtractedFact
     conflict_type: ConflictType
-    conflicting_fact: Optional[ExistingFact] = None
+    conflicting_fact: ExistingFact | None = None
     auto_approved: bool = False
     review_priority: ReviewPriority = ReviewPriority.NORMAL
-    suggested_fact_id: Optional[int] = None  # DB record ID if created
+    suggested_fact_id: int | None = None  # DB record ID if created
     message: str = ""
 
 
@@ -360,11 +360,11 @@ class FactValidator:
     MAJOR_CONFLICT_YEAR_DIFF = 5
     NAME_SIMILARITY_THRESHOLD = 0.85
 
-    def __init__(self, db_session: Optional[DbSession] = None):
+    def __init__(self, db_session: DbSession | None = None):
         """Initialize with optional database session."""
         self.db_session = db_session
 
-    def validate_fact(self, fact: ExtractedFact, person: Optional[Person] = None) -> ValidationResult:
+    def validate_fact(self, fact: ExtractedFact, person: Person | None = None) -> ValidationResult:
         """
         Validate an extracted fact against existing data.
 
@@ -440,7 +440,7 @@ class FactValidator:
                     person_name=person.display_name or str(person.id),
                     value=str(person.birth_year),
                     source="Database",
-                    last_updated=datetime.now(timezone.utc),
+                    last_updated=datetime.now(UTC),
                 )
             )
         elif fact_type == "DEATH" and hasattr(person, "death_year") and person.death_year:
@@ -451,7 +451,7 @@ class FactValidator:
                     person_name=person.display_name or str(person.id),
                     value=str(person.death_year),
                     source="Database",
-                    last_updated=datetime.now(timezone.utc),
+                    last_updated=datetime.now(UTC),
                 )
             )
 
@@ -680,7 +680,7 @@ class FactValidator:
         )
 
     @staticmethod
-    def _extract_year(date_str: str) -> Optional[int]:
+    def _extract_year(date_str: str) -> int | None:
         """Extract year from a date string."""
         if not date_str:
             return None
@@ -691,7 +691,7 @@ class FactValidator:
             return int(match.group(1))
         return None
 
-    def save_fact_to_db(self, result: ValidationResult, person_id: int) -> Optional[int]:
+    def save_fact_to_db(self, result: ValidationResult, person_id: int) -> int | None:
         """
         Save a validated fact to the SuggestedFact table.
 
@@ -864,7 +864,7 @@ class FactValidator:
 
 def extract_facts_from_ai_response(
     ai_response: dict[str, Any],
-    conversation_id: Optional[str] = None,
+    conversation_id: str | None = None,
     original_message: str = "",
 ) -> list[ExtractedFact]:
     """

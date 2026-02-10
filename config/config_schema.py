@@ -8,7 +8,6 @@ with comprehensive validation, environment variable integration,
 and schema versioning support.
 """
 
-from __future__ import annotations
 
 # === CORE INFRASTRUCTURE ===
 import logging
@@ -20,9 +19,10 @@ logger = logging.getLogger(__name__)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 
 # === STANDARD LIBRARY IMPORTS ===
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional, cast
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 
 class ConfigValidationError(Exception):
@@ -67,7 +67,7 @@ class ConfigValidator:
         self.environment_rules[env].append(rule)
 
     @staticmethod
-    def _validate_single_rule(config: Any, rule: ValidationRule) -> Optional[str]:
+    def _validate_single_rule(config: Any, rule: ValidationRule) -> str | None:
         """Validate a single rule against config. Returns error message or None."""
         if hasattr(config, rule.field_name):
             value = getattr(config, rule.field_name)
@@ -80,7 +80,7 @@ class ConfigValidator:
         return None
 
     @staticmethod
-    def _validate_environment_rule(config: Any, rule: ValidationRule, environment: EnvironmentType) -> Optional[str]:
+    def _validate_environment_rule(config: Any, rule: ValidationRule, environment: EnvironmentType) -> str | None:
         """Validate an environment-specific rule. Returns error message or None."""
         if hasattr(config, rule.field_name):
             value = getattr(config, rule.field_name)
@@ -135,8 +135,8 @@ from testing.test_utilities import validate_positive_integer
 class DatabaseConfig:
     """Enhanced database configuration schema with validation."""
 
-    database_file: Optional[Path] = None  # Database file path
-    gedcom_file_path: Optional[Path] = None  # GEDCOM file path (loaded from .env)
+    database_file: Path | None = None  # Database file path
+    gedcom_file_path: Path | None = None  # GEDCOM file path (loaded from .env)
 
     # Connection pool settings
     pool_size: int = 10
@@ -166,7 +166,7 @@ class DatabaseConfig:
     enable_query_stats: bool = False
 
     # Field with default_factory must come last
-    data_dir: Optional[Path] = field(default_factory=lambda: Path("Data"))
+    data_dir: Path | None = field(default_factory=lambda: Path("Data"))
 
     def __post_init__(self) -> None:
         """Enhanced validation after initialization."""
@@ -327,9 +327,9 @@ class SeleniumConfig:
     """Selenium/WebDriver configuration schema."""
 
     # Chrome settings
-    chrome_driver_path: Optional[Path] = None
-    chrome_browser_path: Optional[Path] = None
-    chrome_user_data_dir: Optional[Path] = None
+    chrome_driver_path: Path | None = None
+    chrome_browser_path: Path | None = None
+    chrome_user_data_dir: Path | None = None
     profile_dir: str = "Default"
 
     # Browser behavior
@@ -370,36 +370,36 @@ class APIConfig:
 
     # Base URLs
     base_url: str = "https://www.ancestry.com/"
-    api_base_url: Optional[str] = None
+    api_base_url: str | None = None
 
     # Authentication
     username: str = ""
     password: str = ""
 
     # AI API Keys
-    deepseek_api_key: Optional[str] = None
-    google_api_key: Optional[str] = None
+    deepseek_api_key: str | None = None
+    google_api_key: str | None = None
     deepseek_ai_model: str = "deepseek-chat"
     deepseek_ai_base_url: str = "https://api.deepseek.com"
     google_ai_model: str = "gemini-1.5-flash-latest"
 
     # Moonshot (Kimi) configuration
-    moonshot_api_key: Optional[str] = None
+    moonshot_api_key: str | None = None
     moonshot_ai_model: str = "kimi-k2-thinking"
     moonshot_ai_base_url: str = "https://api.moonshot.ai/v1"
 
     # Grok (xAI) configuration
-    xai_api_key: Optional[str] = None
+    xai_api_key: str | None = None
     xai_model: str = "grok-4-fast-non-reasoning"
     xai_api_host: str = "api.x.ai"
 
     # Tetrate (TARS) configuration
-    tetrate_api_key: Optional[str] = None
+    tetrate_api_key: str | None = None
     tetrate_ai_model: str = "xai/grok-code-fast-1"
     tetrate_ai_base_url: str = "https://api.router.tetrate.ai/v1"
 
     # Local LLM Configuration (LM Studio)
-    local_llm_api_key: Optional[str] = None
+    local_llm_api_key: str | None = None
     local_llm_model: str = "qwen2.5-14b-instruct"
     local_llm_base_url: str = "http://localhost:1234/v1"
     lm_studio_path: str = r"C:\Program Files\LM Studio\LM Studio.exe"
@@ -407,7 +407,7 @@ class APIConfig:
     lm_studio_startup_timeout: int = 60  # Max seconds to wait for API readiness
 
     # Inception Mercury Configuration
-    inception_api_key: Optional[str] = None
+    inception_api_key: str | None = None
     inception_ai_model: str = "mercury"
     inception_ai_base_url: str = "https://api.inceptionlabs.ai/v1"
 
@@ -426,7 +426,7 @@ class APIConfig:
     accept_language: str = "en-US,en;q=0.9"
     target_match_throughput: float = 1.0  # Target matches processed per second (0 disables pacing)
     max_throughput_catchup_delay: float = 5.0  # Max pacing delay inserted per page (seconds)
-    token_bucket_success_threshold: Optional[int] = (
+    token_bucket_success_threshold: int | None = (
         None  # Successes required before speeding up (auto-calculated when None)
     )
 
@@ -457,7 +457,7 @@ class APIConfig:
     rate_limiter_max_rate: float = 20.0  # Maximum allowed requests per second (Aggressive default)
 
     # Tree settings
-    tree_name: Optional[str] = None
+    tree_name: str | None = None
     # tree_id, my_user_id, my_uuid are fetched from API endpoints, not from .env
 
     # Fields with default_factory must come last
@@ -485,7 +485,7 @@ class APIConfig:
     retry_status_codes: list[int] = field(default_factory=lambda: [429, 500, 502, 503, 504])
 
     # API Headers
-    api_contextual_headers: dict[str, dict[str, Optional[str]]] = field(default_factory=dict)
+    api_contextual_headers: dict[str, dict[str, str | None]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
@@ -551,7 +551,7 @@ class APIConfig:
 
         return sanitized_profiles
 
-    def _build_sanitized_profile(self, endpoint: str, profile_data: Any) -> Optional[dict[str, float]]:
+    def _build_sanitized_profile(self, endpoint: str, profile_data: Any) -> dict[str, float] | None:
         """Convert a raw profile entry into sanitized throttle parameters."""
 
         if not isinstance(profile_data, dict):
@@ -610,8 +610,8 @@ class LoggingConfig:
     file_log_level: str = "DEBUG"
 
     # Log files
-    log_file: Optional[Path] = None
-    error_log_file: Optional[Path] = None
+    log_file: Path | None = None
+    error_log_file: Path | None = None
     max_log_size_mb: int = 10
     backup_count: int = 5
 
@@ -644,8 +644,8 @@ class CacheConfig:
     """Cache configuration schema."""
 
     # Cache directories
-    cache_dir: Optional[Path] = None
-    temp_cache_dir: Optional[Path] = None
+    cache_dir: Path | None = None
+    temp_cache_dir: Path | None = None
 
     # Memory cache settings
     memory_cache_size: int = 1000
@@ -677,11 +677,11 @@ class SecurityConfig:
 
     # Encryption
     encryption_enabled: bool = True
-    encryption_key_file: Optional[Path] = None
+    encryption_key_file: Path | None = None
 
     # Credential storage
     use_system_keyring: bool = True
-    credential_file: Optional[Path] = None
+    credential_file: Path | None = None
 
     # Session security
     session_timeout_minutes: int = 120
@@ -708,7 +708,7 @@ class ObservabilityConfig:
     metrics_export_port: int = 9001
     metrics_namespace: str = "ancestry"
     auto_start_prometheus: bool = False
-    prometheus_binary_path: Optional[str] = None
+    prometheus_binary_path: str | None = None
 
     def __post_init__(self) -> None:
         if not self.metrics_export_host:
@@ -817,7 +817,7 @@ class AppConfigView:
         "action6_checkpoint_file": "action6_checkpoint_file",
     }
 
-    def __init__(self, config: ConfigSchema) -> None:
+    def __init__(self, config: "ConfigSchema") -> None:
         object.__setattr__(self, "_config", config)
 
     def __getattr__(self, name: str) -> Any:
@@ -868,7 +868,7 @@ class ConfigSchema:
     action6_checkpoint_file: Path = field(default_factory=lambda: Path("Cache/action6_checkpoint.json"))
 
     # Action 6 Filtering
-    action6_min_tree_size: Optional[int] = None
+    action6_min_tree_size: int | None = None
     action6_public_tree_only: bool = False
 
     # API search settings
@@ -993,10 +993,10 @@ class ConfigSchema:
     exact_date_bonus: int = 25
 
     # Optional fields (must come after fields with default values)
-    testing_profile_id: Optional[str] = None
-    testing_uuid: Optional[str] = None
-    testing_username: Optional[str] = None
-    reference_person_id: Optional[str] = None  # Fields with complex defaults (must come last)
+    testing_profile_id: str | None = None
+    testing_uuid: str | None = None
+    testing_username: str | None = None
+    reference_person_id: str | None = None  # Fields with complex defaults (must come last)
     common_scoring_weights: dict[str, float] = field(
         default_factory=lambda: {
             # --- Name Weights ---
@@ -1060,7 +1060,7 @@ class ConfigSchema:
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ConfigSchema:
+    def from_dict(cls, data: dict[str, Any]) -> "ConfigSchema":
         """Create configuration from dictionary."""  # Extract sub-config data
         sub_config_builders: dict[str, type[Any]] = {
             "database": DatabaseConfig,

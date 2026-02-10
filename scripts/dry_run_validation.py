@@ -19,36 +19,17 @@ from pathlib import Path
 _PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(_PROJECT_ROOT))
 
+from core.venv_bootstrap import ensure_venv
 
-def _ensure_venv() -> None:
-    """Ensure running in venv, auto-restart if needed."""
-    in_venv = hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
-    if in_venv:
-        return
-
-    venv_python = _PROJECT_ROOT / '.venv' / 'Scripts' / 'python.exe'
-    if not venv_python.exists():
-        venv_python = _PROJECT_ROOT / '.venv' / 'bin' / 'python'
-        if not venv_python.exists():
-            print("⚠️  WARNING: Not running in virtual environment")
-            return
-
-    import os as _os
-
-    print(f"🔄 Re-running with venv Python: {venv_python}")
-    _os.chdir(_PROJECT_ROOT)
-    _os.execv(str(venv_python), [str(venv_python), __file__, *sys.argv[1:]])
-
-
-_ensure_venv()
+ensure_venv(project_root=_PROJECT_ROOT)
 
 import argparse
 import json
 import logging
 import os
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime, timezone
+from typing import Any
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session as DbSession
@@ -67,8 +48,8 @@ class DryRunResult:
     person_id: int
     person_name: str
     inbound_message: str
-    actual_reply: Optional[str]
-    generated_draft: Optional[str]
+    actual_reply: str | None
+    generated_draft: str | None
     opt_out_detected: bool
     facts_extracted: int
     ai_confidence: int
@@ -118,7 +99,7 @@ class DryRunProcessor:
         self.summary = DryRunSummary()
 
     def load_historical_conversations(
-        self, limit: int = 50, conversation_id: Optional[str] = None
+        self, limit: int = 50, conversation_id: str | None = None
     ) -> list[dict[str, Any]]:
         """
         Load historical conversations from database.
@@ -334,7 +315,7 @@ class DryRunProcessor:
             f"Do you have any information about your ancestors from [relevant region]?"
         )
 
-    def run(self, limit: int = 50, conversation_id: Optional[str] = None) -> DryRunSummary:
+    def run(self, limit: int = 50, conversation_id: str | None = None) -> DryRunSummary:
         """
         Run the full dry-run validation.
 
@@ -393,7 +374,7 @@ class DryRunProcessor:
         data = {
             "summary": self.summary.to_dict(),
             "results": [r.to_dict() for r in self.results],
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
         }
 
         output_path.parent.mkdir(parents=True, exist_ok=True)

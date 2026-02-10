@@ -1,16 +1,14 @@
 #!/usr/bin/env python3
 """Enhanced database schema migration runner with rollback, dry-run, and dependencies."""
 
-from __future__ import annotations
 
 import contextlib
 import sys
 from argparse import ArgumentParser, Namespace
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
-from typing import Callable, Optional
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
@@ -35,7 +33,7 @@ class Migration:
     version: str
     description: str
     upgrade: MigrationFn
-    downgrade: Optional[MigrationFn] = None
+    downgrade: MigrationFn | None = None
     depends_on: tuple[str, ...] = field(default_factory=tuple)
 
     def has_rollback(self) -> bool:
@@ -77,7 +75,7 @@ class MigrationRegistry:
     def migrations(self) -> list[Migration]:
         return list(self._migrations)
 
-    def get(self, version: str) -> Optional[Migration]:
+    def get(self, version: str) -> Migration | None:
         """Get a migration by version string."""
         for migration in self._migrations:
             if migration.version == version:
@@ -142,7 +140,7 @@ def _record_applied_version(engine: Engine, version: str) -> None:
             text("INSERT INTO schema_migrations (version, applied_at) VALUES (:version, :applied_at)"),
             {
                 "version": version,
-                "applied_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "applied_at": datetime.now(UTC).isoformat(timespec="seconds"),
             },
         )
 
@@ -322,7 +320,7 @@ def get_applied_versions(engine: Engine) -> list[str]:
     return sorted(_fetch_applied_versions(engine))
 
 
-def _resolve_db_path(path_arg: Optional[str]) -> Path:
+def _resolve_db_path(path_arg: str | None) -> Path:
     path = Path(path_arg).expanduser() if path_arg else DEFAULT_DB_PATH
     if not path.is_absolute():
         path = Path.cwd() / path
@@ -330,7 +328,7 @@ def _resolve_db_path(path_arg: Optional[str]) -> Path:
     return path
 
 
-def _build_cli_engine(path_arg: Optional[str]) -> Engine:
+def _build_cli_engine(path_arg: str | None) -> Engine:
     db_path = _resolve_db_path(path_arg)
     return create_engine(f"sqlite:///{db_path}", connect_args={"check_same_thread": False})
 
@@ -421,7 +419,7 @@ def _handle_rollback(engine: Engine, args: Namespace, dry_run: bool) -> int:
     return 0
 
 
-def run_cli(argv: Optional[Sequence[str]] = None) -> int:
+def run_cli(argv: Sequence[str] | None = None) -> int:
     """Enhanced CLI for applying, rolling back, or inspecting schema migrations."""
 
     parser = ArgumentParser(description="Schema migration utility with rollback support")

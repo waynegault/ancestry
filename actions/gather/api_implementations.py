@@ -1,10 +1,9 @@
-from __future__ import annotations
 
 import contextlib
 import logging
 import time
-from datetime import datetime, timezone
-from typing import Any, Optional, cast
+from datetime import UTC, datetime, timezone
+from typing import Any, cast
 from urllib.parse import urljoin
 
 import requests
@@ -38,14 +37,14 @@ logger = logging.getLogger(__name__)
 
 def _call_api_request(
     url: str,
-    session_manager: Optional[SessionManager] = None,
+    session_manager: SessionManager | None = None,
     method: str = "GET",
-    data: Optional[dict[str, Any]] = None,
-    json_data: Optional[dict[str, Any]] = None,
-    json: Optional[dict[str, Any]] = None,
+    data: dict[str, Any] | None = None,
+    json_data: dict[str, Any] | None = None,
+    json: dict[str, Any] | None = None,
     use_csrf_token: bool = False,
-    headers: Optional[dict[str, str]] = None,
-    referer_url: Optional[str] = None,
+    headers: dict[str, str] | None = None,
+    referer_url: str | None = None,
     api_description: str = "API Request",
     _allow_redirects: bool = True,
     force_text_response: bool = False,
@@ -160,7 +159,7 @@ def _ensure_action6_session_ready(
         return False
 
 
-def _get_cached_profile(profile_id: str) -> Optional[dict[str, Any]]:
+def _get_cached_profile(profile_id: str) -> dict[str, Any] | None:
     """Get profile from persistent cache if available."""
     cache_key = f"profile_details_{profile_id}"
     try:
@@ -214,7 +213,7 @@ def _get_ethnicity_config() -> tuple[list[str], dict[str, str]]:
     return region_keys, column_map
 
 
-def fetch_ethnicity_for_batch(session_manager: SessionManager, match_uuid: str) -> Optional[dict[str, Optional[int]]]:
+def fetch_ethnicity_for_batch(session_manager: SessionManager, match_uuid: str) -> dict[str, int | None] | None:
     """Fetch and parse ethnicity comparison data for a single match."""
     my_uuid = session_manager.my_uuid
     if not my_uuid or not match_uuid:
@@ -229,8 +228,8 @@ def fetch_ethnicity_for_batch(session_manager: SessionManager, match_uuid: str) 
     if not comparison_data:
         return None
 
-    percentages: dict[str, Optional[int]] = extract_match_ethnicity_percentages(comparison_data, region_keys)
-    payload: dict[str, Optional[int]] = {}
+    percentages: dict[str, int | None] = extract_match_ethnicity_percentages(comparison_data, region_keys)
+    payload: dict[str, int | None] = {}
     for region_key, percentage in percentages.items():
         column_name = column_map.get(str(region_key))
         if column_name:
@@ -240,7 +239,7 @@ def fetch_ethnicity_for_batch(session_manager: SessionManager, match_uuid: str) 
     return payload if payload else None
 
 
-def needs_ethnicity_refresh(existing_dna_match: Optional[Any]) -> bool:
+def needs_ethnicity_refresh(existing_dna_match: Any | None) -> bool:
     """Return True if the existing DNA match record is missing ethnicity data."""
     if not existing_dna_match:
         return False
@@ -260,7 +259,7 @@ def needs_ethnicity_refresh(existing_dna_match: Optional[Any]) -> bool:
 
 def _fetch_match_details_api(
     session_manager: SessionManager, my_uuid: str, match_uuid: str
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Fetch match details from API."""
     details_url = urljoin(
         config_schema.api.base_url,
@@ -302,7 +301,7 @@ def _fetch_match_details_api(
         return None
 
 
-def _check_combined_details_cache(match_uuid: str, api_start_time: float) -> Optional[dict[str, Any]]:
+def _check_combined_details_cache(match_uuid: str, api_start_time: float) -> dict[str, Any] | None:
     """Check cache for combined details."""
     cache_key = f"combined_details_{match_uuid}"
 
@@ -330,16 +329,16 @@ def _check_combined_details_cache(match_uuid: str, api_start_time: float) -> Opt
     return None
 
 
-def _parse_last_login_date(last_login_str: str, tester_profile_id: str) -> Optional[datetime]:
+def _parse_last_login_date(last_login_str: str, tester_profile_id: str) -> datetime | None:
     """Parse last login date string."""
     try:
         if last_login_str.endswith("Z"):
             return datetime.fromisoformat(last_login_str.replace("Z", "+00:00"))
         dt_naive_or_aware = datetime.fromisoformat(last_login_str)
         return (
-            dt_naive_or_aware.replace(tzinfo=timezone.utc)
+            dt_naive_or_aware.replace(tzinfo=UTC)
             if dt_naive_or_aware.tzinfo is None
-            else dt_naive_or_aware.astimezone(timezone.utc)
+            else dt_naive_or_aware.astimezone(UTC)
         )
     except (ValueError, TypeError) as date_parse_err:
         logger.warning(f"Could not parse LastLoginDate '{last_login_str}' for {tester_profile_id}: {date_parse_err}")
@@ -348,7 +347,7 @@ def _parse_last_login_date(last_login_str: str, tester_profile_id: str) -> Optio
 
 def _fetch_profile_details_api(
     session_manager: SessionManager, tester_profile_id: str, match_uuid: str
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Fetch profile details from API."""
     profile_url = urljoin(
         config_schema.api.base_url,
@@ -476,7 +475,7 @@ def _validate_session_for_combined_details(session_manager: SessionManager, matc
     raise ConnectionError(f"Unable to recover WebDriver session for combined details fetch (UUID: {match_uuid})")
 
 
-def fetch_combined_details(session_manager: SessionManager, match_uuid: str) -> Optional[dict[str, Any]]:
+def fetch_combined_details(session_manager: SessionManager, match_uuid: str) -> dict[str, Any] | None:
     """
     Fetches combined match details (DNA stats, Admin/Tester IDs) and profile details
     (login date, contactable status) for a single match using two API calls.
@@ -508,7 +507,7 @@ def fetch_combined_details(session_manager: SessionManager, match_uuid: str) -> 
 
 
 @api_retry(retry_on=[requests.exceptions.RequestException, ConnectionError])
-def _get_cached_badge_details(match_uuid: str) -> Optional[dict[str, Any]]:
+def _get_cached_badge_details(match_uuid: str) -> dict[str, Any] | None:
     """Try to get badge details from cache."""
     cache_key = f"badge_details_{match_uuid}"
     try:
@@ -544,7 +543,7 @@ def _cache_badge_details(match_uuid: str, result_data: dict[str, Any]) -> None:
         logger.debug(f"Failed to cache badge details for {match_uuid}: {cache_exc}")
 
 
-def _process_badge_response(badge_response: Any, match_uuid: str) -> Optional[dict[str, Any]]:
+def _process_badge_response(badge_response: Any, match_uuid: str) -> dict[str, Any] | None:
     """Process badge details API response."""
     if not badge_response or not isinstance(badge_response, dict):
         if isinstance(badge_response, requests.Response):
@@ -574,7 +573,7 @@ def _process_badge_response(badge_response: Any, match_uuid: str) -> Optional[di
     }
 
 
-def fetch_batch_badge_details(session_manager: SessionManager, match_uuid: str) -> Optional[dict[str, Any]]:
+def fetch_batch_badge_details(session_manager: SessionManager, match_uuid: str) -> dict[str, Any] | None:
     """
     Fetches badge details for a specific match UUID. Used primarily to get the
     match's CFPID (Person ID within the user's tree) and basic tree profile info.
@@ -663,7 +662,7 @@ def _format_kinship_path_for_action6(kinship_persons: list[dict[str, Any]]) -> s
     return " ".join(path_lines)
 
 
-def _has_kinship_entries(result: Optional[dict[str, Any]]) -> bool:
+def _has_kinship_entries(result: dict[str, Any] | None) -> bool:
     """Return True when the ladder response contains kinship entries."""
 
     return bool(result and result.get("kinship_persons") and isinstance(result.get("kinship_persons"), list))
@@ -673,7 +672,7 @@ def _fetch_ladder_via_relation_api(
     session_manager: SessionManager,
     cfpid: str,
     tree_id: str,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Fallback to the relationladderwithlabels endpoint when the shared helper returns no data."""
 
     user_id = session_manager.my_profile_id or session_manager.my_uuid
@@ -731,7 +730,7 @@ def _load_relationship_ladder_data(
     session_manager: SessionManager,
     cfpid: str,
     tree_id: str,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Load ladder information with automatic fallback for sparse responses."""
 
     from api.api_utils import get_relationship_path_data
@@ -756,7 +755,7 @@ def _load_relationship_ladder_data(
     return primary
 
 
-def _normalize_relationship_phrase(raw_value: Optional[str]) -> str:
+def _normalize_relationship_phrase(raw_value: str | None) -> str:
     """Clean verbose relationship phrases returned by the API."""
 
     if not raw_value:
@@ -792,7 +791,7 @@ def _normalize_relationship_phrase(raw_value: Optional[str]) -> str:
     return cleaned.strip().rstrip(".")
 
 
-def _extract_relationship_from_narrative(narrative: Optional[str]) -> Optional[str]:
+def _extract_relationship_from_narrative(narrative: str | None) -> str | None:
     """Parse the narrative header to derive a concise relationship label."""
 
     if not narrative:
@@ -829,10 +828,10 @@ def _resolve_tree_owner_name(session_manager: SessionManager) -> str:
     return "Tree Owner"
 
 
-def _normalize_kinship_entries(kinship_persons: list[dict[str, Any]]) -> list[dict[str, Optional[str]]]:
+def _normalize_kinship_entries(kinship_persons: list[dict[str, Any]]) -> list[dict[str, str | None]]:
     """Normalize raw kinship data into the structure used by formatters."""
 
-    normalized_entries: list[dict[str, Optional[str]]] = []
+    normalized_entries: list[dict[str, str | None]] = []
     for person in kinship_persons:
         normalized_entries.append(
             {
@@ -846,10 +845,10 @@ def _normalize_kinship_entries(kinship_persons: list[dict[str, Any]]) -> list[di
 
 
 def _build_unified_relationship_path(
-    normalized_entries: list[dict[str, Optional[str]]],
+    normalized_entries: list[dict[str, str | None]],
     target_name: str,
     owner_name: str,
-) -> tuple[Optional[str], Optional[list[dict[str, Optional[str]]]]]:
+) -> tuple[str | None, list[dict[str, str | None]] | None]:
     """Attempt to build a unified relationship narrative from normalized entries."""
 
     try:
@@ -878,8 +877,8 @@ def _build_unified_relationship_path(
 def _derive_actual_relationship_label(
     kinship_persons: list[dict[str, Any]],
     cfpid: str,
-    narrative: Optional[str],
-) -> Optional[str]:
+    narrative: str | None,
+) -> str | None:
     """Determine the most useful relationship label from API data or the narrative."""
 
     for person in kinship_persons:
@@ -898,8 +897,8 @@ def _derive_actual_relationship_label(
 def _format_relationship_path_from_kinship(
     kinship_persons: list[dict[str, Any]],
     session_manager: SessionManager,
-    match_display_name: Optional[str],
-) -> tuple[str, Optional[list[dict[str, Optional[str]]]]]:
+    match_display_name: str | None,
+) -> tuple[str, list[dict[str, str | None]] | None]:
     """Convert kinshipPersons data into a narrative relationship path."""
 
     if not kinship_persons:
@@ -921,8 +920,8 @@ def fetch_batch_ladder(
     session_manager: SessionManager,
     cfpid: str,
     tree_id: str,
-    match_display_name: Optional[str] = None,
-) -> Optional[dict[str, Any]]:
+    match_display_name: str | None = None,
+) -> dict[str, Any] | None:
     """
     Fetches the relationship ladder details (relationship path, actual relationship)
     between the user and a specific person (CFPID) within the user's tree.

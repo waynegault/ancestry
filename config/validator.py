@@ -15,9 +15,10 @@ Phase 1 Implementation (Nov 2025):
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 if __package__ in {None, ""}:
     parent_dir = str(Path(__file__).resolve().parent.parent)
@@ -40,7 +41,7 @@ class ValidationResult:
     passed: bool
     message: str
     severity: str = "error"  # "error", "warning", "info"
-    suggestion: Optional[str] = None
+    suggestion: str | None = None
 
     def __str__(self) -> str:
         icon = "✅" if self.passed else ("⚠️" if self.severity == "warning" else "❌")
@@ -126,12 +127,12 @@ class ConfigurationValidator:
     clear, actionable error messages.
     """
 
-    def __init__(self, config: Optional[ConfigSchema] = None):
+    def __init__(self, config: ConfigSchema | None = None):
         """Initialize validator with optional config."""
         self._config = config
         self._report = ValidationReport()
 
-    def _load_config(self) -> Optional[ConfigSchema]:
+    def _load_config(self) -> ConfigSchema | None:
         """Load configuration if not already loaded."""
         if self._config is not None:
             self._report.config_loaded = True
@@ -325,11 +326,7 @@ class ConfigurationValidator:
             severity="info",
         )
 
-        self._validate_obs_host(obs, metrics_enabled)
-        self._validate_obs_port(obs, metrics_enabled)
-        self._validate_obs_namespace(obs, metrics_enabled)
-        self._validate_obs_binary(obs, metrics_enabled, auto_start)
-        self._validate_obs_client(metrics_enabled)
+        self._validate_obs_settings_batch(obs, metrics_enabled, auto_start)
 
     def _add_obs_result(
         self,
@@ -338,7 +335,7 @@ class ConfigurationValidator:
         passed: bool,
         message: str,
         severity: str,
-        suggestion: Optional[str] = None,
+        suggestion: str | None = None,
     ) -> None:
         self._report.add(
             ValidationResult(
@@ -350,56 +347,78 @@ class ConfigurationValidator:
             )
         )
 
-    def _validate_obs_host(self, obs: Any, metrics_enabled: bool) -> None:
-        export_host = getattr(obs, "metrics_export_host", "")
-        host_valid = isinstance(export_host, str) and len(export_host.strip()) > 0
-        self._add_obs_result(
-            name="Observability: Export Host",
-            passed=host_valid,
-            message=f"metrics_export_host={export_host or 'unset'}",
-            severity="error" if not host_valid and metrics_enabled else "warning",
-            suggestion="Set METRICS_EXPORT_HOST (e.g., 127.0.0.1 or 0.0.0.0)",
-        )
+    def _validate_obs_settings_batch(
+        self, obs: Any, metrics_enabled: bool, auto_start: bool
+    ) -> None:
+        """Data-driven validation for observability settings."""
 
-    def _validate_obs_port(self, obs: Any, metrics_enabled: bool) -> None:
-        export_port = getattr(obs, "metrics_export_port", 0)
-        port_valid = isinstance(export_port, int) and 1 <= export_port <= 65535
-        self._add_obs_result(
-            name="Observability: Export Port",
-            passed=port_valid,
-            message=f"metrics_export_port={export_port}",
-            severity="error" if not port_valid and metrics_enabled else "warning",
-            suggestion="Set METRICS_EXPORT_PORT to 1-65535",
-        )
+        def _str_nonempty(value: Any) -> bool:
+            return isinstance(value, str) and len(value.strip()) > 0
 
-    def _validate_obs_namespace(self, obs: Any, metrics_enabled: bool) -> None:
-        namespace = getattr(obs, "metrics_namespace", "")
-        namespace_valid = isinstance(namespace, str) and len(namespace.strip()) > 0
-        self._add_obs_result(
-            name="Observability: Namespace",
-            passed=namespace_valid,
-            message=f"metrics_namespace={namespace or 'unset'}",
-            severity="error" if not namespace_valid and metrics_enabled else "warning",
-            suggestion="Set METRICS_NAMESPACE (default: ancestry)",
-        )
+        def _port_in_range(value: Any) -> bool:
+            return isinstance(value, int) and 1 <= value <= 65535
 
-    def _validate_obs_binary(self, obs: Any, metrics_enabled: bool, auto_start: bool) -> None:
+        # Attribute-based validations: (attr, display_name, default, validator, format_fn, severity_fn, suggestion)
+        attr_specs: list[
+            tuple[str, str, Any, Callable[..., bool], Callable[..., str], Callable[..., str], str]
+        ] = [
+            (
+                "metrics_export_host",
+                "Export Host",
+                "",
+                _str_nonempty,
+                lambda v: f"metrics_export_host={v or 'unset'}",
+                lambda valid: "error" if not valid and metrics_enabled else "warning",
+                "Set METRICS_EXPORT_HOST (e.g., 127.0.0.1 or 0.0.0.0)",
+            ),
+            (
+                "metrics_export_port",
+                "Export Port",
+                0,
+                _port_in_range,
+                lambda v: f"metrics_export_port={v}",
+                lambda valid: "error" if not valid and metrics_enabled else "warning",
+                "Set METRICS_EXPORT_PORT to 1-65535",
+            ),
+            (
+                "metrics_namespace",
+                "Namespace",
+                "",
+                _str_nonempty,
+                lambda v: f"metrics_namespace={v or 'unset'}",
+                lambda valid: "error" if not valid and metrics_enabled else "warning",
+                "Set METRICS_NAMESPACE (default: ancestry)",
+            ),
+        ]
+
+        for attr, display_name, default, validator, fmt, sev_fn, suggestion in attr_specs:
+            value = getattr(obs, attr, default)
+            valid = validator(value)
+            self._add_obs_result(
+                name=f"Observability: {display_name}",
+                passed=valid,
+                message=fmt(value),
+                severity=sev_fn(valid),
+                suggestion=suggestion,
+            )
+
+        # Binary path: special validation (path existence check)
         binary_path = getattr(obs, "prometheus_binary_path", None)
         binary_msg = "not set"
         binary_ok = True
         if binary_path:
             binary_msg = str(binary_path)
             binary_ok = Path(binary_path).exists()
-        severity = "warning" if metrics_enabled or auto_start else "info"
+        raw_severity = "warning" if metrics_enabled or auto_start else "info"
         self._add_obs_result(
             name="Observability: Prometheus Binary",
             passed=binary_ok,
             message=f"prometheus_binary_path={binary_msg}",
-            severity=severity if not binary_ok else "info",
+            severity=raw_severity if not binary_ok else "info",
             suggestion="Point PROMETHEUS_BINARY_PATH to prometheus.exe when auto_start_prometheus is enabled",
         )
 
-    def _validate_obs_client(self, metrics_enabled: bool) -> None:
+        # Client availability: import check
         prom_available = False
         import_error: str | None = None
         try:

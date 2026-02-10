@@ -13,7 +13,6 @@ Usage:
     python -m cli.review_queue stats
 """
 
-from __future__ import annotations
 
 import argparse
 import sys

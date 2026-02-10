@@ -6,7 +6,6 @@ that appear only once across the entire codebase (definition only).
 Results are written to Cache/dead_code_candidates.json for manual review.
 """
 
-from __future__ import annotations
 
 import ast
 import json

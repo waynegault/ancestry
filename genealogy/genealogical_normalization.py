@@ -15,7 +15,6 @@ Note: Intentionally avoids external side effects and imports only
 standard library modules for safety.
 """
 
-from __future__ import annotations
 
 # === PATH SETUP FOR PACKAGE IMPORTS ===
 import sys

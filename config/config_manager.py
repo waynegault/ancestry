@@ -58,11 +58,12 @@ logger = logging.getLogger(__name__)
 # === STANDARD LIBRARY IMPORTS ===
 import copy
 import json
-from typing import Any, Callable, Optional, Union
+from collections.abc import Callable
+from typing import Any, Optional
 
 # === THIRD-PARTY IMPORTS ===
 LoadDotenvCallable = Callable[..., bool]
-load_dotenv: Optional[LoadDotenvCallable]
+load_dotenv: LoadDotenvCallable | None
 
 try:
     from dotenv import load_dotenv as _load_dotenv_impl
@@ -116,8 +117,8 @@ class _ConfigManagerSingleton:
 
 
 def get_config_manager(
-    config_file: Optional[Union[str, Path]] = None,
-    environment: Optional[str] = None,
+    config_file: str | Path | None = None,
+    environment: str | None = None,
     force_new: bool = False,
 ) -> "ConfigManager":
     """
@@ -175,8 +176,8 @@ class ConfigManager:
 
     def __init__(
         self,
-        config_file: Optional[Union[str, Path]] = None,
-        environment: Optional[str] = None,
+        config_file: str | Path | None = None,
+        environment: str | None = None,
         auto_load: bool = True,
     ):
         """
@@ -195,8 +196,8 @@ class ConfigManager:
 
         self.config_file = Path(config_file) if config_file else None
         self.environment = environment or os.getenv("ENVIRONMENT", "development")
-        self._config_cache: Optional[ConfigSchema] = None
-        self._file_modification_time: Optional[float] = None
+        self._config_cache: ConfigSchema | None = None
+        self._file_modification_time: float | None = None
 
         # Supported file formats
         self._supported_formats = {".json", ".yaml", ".yml", ".toml"}
@@ -335,7 +336,7 @@ class ConfigManager:
         self._file_modification_time = None
         return self.load_config()
 
-    def validate_config(self, config_data: Optional[dict[str, Any]] = None) -> list[str]:
+    def validate_config(self, config_data: dict[str, Any] | None = None) -> list[str]:
         """
         Validate configuration data.
 
@@ -378,7 +379,7 @@ class ConfigManager:
             self.environment = original_env
             self._config_cache = None  # Clear cache to avoid confusion
 
-    def export_config(self, output_file: Union[str, Path], format: str = "json") -> bool:
+    def export_config(self, output_file: str | Path, format: str = "json") -> bool:
         """
         Export current configuration to file.
 

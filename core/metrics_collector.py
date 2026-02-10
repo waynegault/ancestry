@@ -55,7 +55,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from statistics import median, quantiles
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -120,14 +120,14 @@ class ServiceMetrics:
     windows: dict[str, dict[str, WindowedStats]] = field(default_factory=dict)
     _lock: threading.RLock = field(default_factory=threading.RLock, init=False, repr=False)
 
-    def record_value(self, metric_name: str, value: float, labels: Optional[dict[str, str]] = None) -> None:
+    def record_value(self, metric_name: str, value: float, labels: dict[str, str] | None = None) -> None:
         """Record a metric value."""
         with self._lock:
             if metric_name not in self.metrics:
                 self.metrics[metric_name] = deque(maxlen=10000)  # Keep last 10K points
             self.metrics[metric_name].append(MetricPoint(time.time(), value, labels or {}))
 
-    def get_stats_for_window(self, metric_name: str, window_seconds: int) -> Optional[WindowedStats]:
+    def get_stats_for_window(self, metric_name: str, window_seconds: int) -> WindowedStats | None:
         """Calculate statistics for metric over time window."""
         with self._lock:
             if metric_name not in self.metrics or not self.metrics[metric_name]:
@@ -176,7 +176,7 @@ class ServiceMetrics:
                 p99=p99
             )
 
-    def get_percentile(self, metric_name: str, percentile: int) -> Optional[float]:
+    def get_percentile(self, metric_name: str, percentile: int) -> float | None:
         """Get percentile value from all recorded values."""
         with self._lock:
             if metric_name not in self.metrics or not self.metrics[metric_name]:
@@ -225,7 +225,7 @@ class MetricsSnapshot:
     timestamp: datetime
     services: dict[str, dict[str, Any]]
 
-    def get_percentile(self, service_name: str, metric_name: str, percentile: int) -> Optional[float]:
+    def get_percentile(self, service_name: str, metric_name: str, percentile: int) -> float | None:
         """Get percentile from a specific service metric."""
         if service_name not in self.services:
             return None
@@ -294,7 +294,7 @@ class MetricRegistry:
         service_name: str,
         metric_name: str,
         value: float,
-        labels: Optional[dict[str, str]] = None
+        labels: dict[str, str] | None = None
     ) -> None:
         """Record a metric value for a service."""
         with self._lock:
@@ -313,7 +313,7 @@ class MetricRegistry:
         """Record a timer measurement (converted to milliseconds)."""
         self.record_metric(service_name, metric_name, duration_seconds * 1000)
 
-    def get_service_metrics(self, service_name: str) -> Optional[ServiceMetrics]:
+    def get_service_metrics(self, service_name: str) -> ServiceMetrics | None:
         """Get metrics for a specific service."""
         with self._lock:
             return self.services.get(service_name)
@@ -399,7 +399,7 @@ class MetricRegistry:
 
         return alerts
 
-    def get_alerts(self, limit: Optional[int] = None) -> list[PerformanceAlert]:
+    def get_alerts(self, limit: int | None = None) -> list[PerformanceAlert]:
         """Get recent alerts."""
         with self._lock:
             alerts = list(reversed(self._alerts))  # Most recent first
@@ -427,7 +427,7 @@ class MetricRegistry:
         }
         return json.dumps(data, indent=2 if pretty else None, default=str)
 
-    def save_to_file(self, file_path: Optional[Path] = None) -> Path:
+    def save_to_file(self, file_path: Path | None = None) -> Path:
         """Save metrics to JSON file."""
         if file_path is None:
             file_path = Path("Logs") / "metrics_snapshot.json"
@@ -481,7 +481,7 @@ class MetricRegistry:
 
 # Global singleton instance
 class RegistryState:
-    _metrics_registry: Optional[MetricRegistry] = None
+    _metrics_registry: MetricRegistry | None = None
 
 
 _registry_lock = threading.Lock()

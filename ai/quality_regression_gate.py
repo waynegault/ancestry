@@ -28,10 +28,13 @@ import argparse
 import io
 import json
 import os
+import statistics
 import subprocess
 from contextlib import redirect_stdout
-from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime, timedelta, timezone
+from typing import Any
+
+from ai.prompt_telemetry import QUALITY_BASELINE_FILE as _DEFAULT_BASELINE_FILE
 
 
 def load_experiments(log_file: Path, days: int = 7) -> list[dict[str, Any]]:
@@ -40,7 +43,7 @@ def load_experiments(log_file: Path, days: int = 7) -> list[dict[str, Any]]:
         return []
 
     # Use timezone-aware UTC cutoff so it compares cleanly with parsed ISO timestamps
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    cutoff = datetime.now(UTC) - timedelta(days=days)
     experiments: list[dict[str, Any]] = []
 
     with log_file.open(encoding="utf-8") as f:
@@ -77,11 +80,7 @@ def calculate_median_quality(experiments: list[dict[str, Any]]) -> float | None:
     if not scores:
         return None
 
-    scores.sort()
-    n = len(scores)
-    if n % 2 == 0:
-        return (scores[n // 2 - 1] + scores[n // 2]) / 2.0
-    return scores[n // 2]
+    return statistics.median(scores)
 
 
 def load_baseline(baseline_file: Path) -> dict[str, Any]:
@@ -109,7 +108,7 @@ def save_baseline(baseline_file: Path, median_score: float, experiment_count: in
     except Exception:
         git_sha = None
 
-    timestamp = datetime.now(timezone.utc)
+    timestamp = datetime.now(UTC)
 
     baseline = {
         "median_quality_score": median_score,
@@ -155,13 +154,13 @@ def _build_argument_parser() -> argparse.ArgumentParser:
         help="Path to experiments JSONL file",
     )
     parser.add_argument(
-        "--baseline-file", type=Path, default=Path("Data/quality_baseline.json"), help="Path to baseline JSON file"
+        "--baseline-file", type=Path, default=_DEFAULT_BASELINE_FILE, help="Path to baseline JSON file"
     )
     parser.add_argument("--json", action="store_true", help="Emit a compact JSON summary to stdout (machine-readable)")
     return parser
 
 
-def _handle_no_experiments(experiments: list[dict[str, Any]], args: argparse.Namespace) -> Optional[int]:
+def _handle_no_experiments(experiments: list[dict[str, Any]], args: argparse.Namespace) -> int | None:
     if experiments:
         return None
     if args.json:
@@ -177,7 +176,7 @@ def _handle_no_experiments(experiments: list[dict[str, Any]], args: argparse.Nam
     return 2
 
 
-def _handle_invalid_scores(current_median: Optional[float], experiments: list[dict[str, Any]]) -> Optional[int]:
+def _handle_invalid_scores(current_median: float | None, experiments: list[dict[str, Any]]) -> int | None:
     if current_median is not None:
         return None
     print("❌ ERROR: No valid quality scores in experiments")
@@ -225,7 +224,7 @@ def _handle_missing_baseline(
     baseline: dict[str, Any],
     experiments: list[dict[str, Any]],
     args: argparse.Namespace,
-) -> Optional[int]:
+) -> int | None:
     if baseline and "median_quality_score" in baseline:
         return None
     if args.json:
@@ -341,10 +340,10 @@ def main(argv: list[str] | None = None) -> int:
 
 def _create_test_experiments_file(path: Path, scores: list[float]) -> None:
     """Create a JSONL experiments file containing the provided scores."""
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     entries: list[str] = []
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     for score in scores:
         entries.append(
             json.dumps(
@@ -403,7 +402,7 @@ def _test_regression_detection_json_mode() -> None:
     """Ensure JSON output reports regression status correctly."""
     import io
     from contextlib import redirect_stdout
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     from testing.test_utilities import temp_directory
 
@@ -414,7 +413,7 @@ def _test_regression_detection_json_mode() -> None:
         baseline_payload = {
             "median_quality_score": 90.0,
             "baseline_id": "test-1",
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
         }
         baseline.write_text(json.dumps(baseline_payload), encoding="utf-8")
 

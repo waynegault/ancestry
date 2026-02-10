@@ -41,11 +41,11 @@ for professional genealogical automation development and quality assurance.
 
 import contextlib
 import tempfile
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 from unittest.mock import MagicMock
 
 from sqlalchemy.orm import Session
@@ -440,7 +440,7 @@ def create_type_validator(expected_type: type, allow_none: bool = False):
 
 
 def create_string_validator(
-    min_length: int = 0, max_length: Optional[int] = None, allow_empty: bool = True, strip_whitespace: bool = True
+    min_length: int = 0, max_length: int | None = None, allow_empty: bool = True, strip_whitespace: bool = True
 ):
     """
     Create a string validation function.
@@ -540,7 +540,7 @@ def create_file_extension_validator(extensions: list[str]):
     """
     from typing import Union
 
-    def validator(path: Union[str, Path, None]) -> bool:
+    def validator(path: str | Path | None) -> bool:
         if not path:
             return True  # Allow None/empty values
         try:
@@ -587,9 +587,21 @@ def create_standard_test_runner(module_test_function: Callable[[], bool]) -> Cal
     def run_comprehensive_tests() -> bool:
         """Run comprehensive tests using standardized test runner pattern."""
         try:
-            return module_test_function()
+            result = module_test_function()
+            # Print minimal summary so run_all_tests.py can parse the test count.
+            # Modules using TestSuite already print their own summary first,
+            # and the parser returns the first match, so this acts as a fallback.
+            if result:
+                print("\u2705 Passed: 1")
+                print("\u274c Failed: 0")
+            else:
+                print("\u2705 Passed: 0")
+                print("\u274c Failed: 1")
+            return result
         except Exception as e:
             print(f"❌ Test execution failed: {e}")
+            print("\u2705 Passed: 0")
+            print("\u274c Failed: 1")
             return False
         finally:
             # Clean up any browser session that was opened during tests
@@ -713,7 +725,7 @@ def create_test_database() -> Session:
     return SessionLocal()
 
 
-def load_test_gedcom(gedcom_path: Optional[str] = None) -> Any:
+def load_test_gedcom(gedcom_path: str | None = None) -> Any:
     """
     Load a GEDCOM file for testing.
 
@@ -752,7 +764,7 @@ def create_test_person(
     person_id: int = 1,
     uuid: str = "TEST-UUID-1234",
     username: str = "Test User",
-    cm_dna: Optional[int] = None,
+    cm_dna: int | None = None,
     engagement_score: int = 50,
 ) -> MagicMock:
     """
@@ -816,7 +828,7 @@ def run_parameterized_tests(test_cases: list[tuple[str, Callable[..., Any], Any,
 
 
 def assert_function_behavior(
-    func: Callable[..., Any], args: tuple[Any, ...], expected_result: Any, error_message: Optional[str] = None
+    func: Callable[..., Any], args: tuple[Any, ...], expected_result: Any, error_message: str | None = None
 ) -> None:
     """
     Assert that a function behaves as expected with given arguments.
@@ -870,7 +882,7 @@ def create_test_session() -> Session:
 
 
 def assert_database_state(
-    session: Session, model: Any, filters: dict[str, Any], expected_count: int, error_message: Optional[str] = None
+    session: Session, model: Any, filters: dict[str, Any], expected_count: int, error_message: str | None = None
 ) -> None:
     """
     Assert that the database contains the expected number of records.
@@ -901,7 +913,7 @@ def assert_database_state(
 
 
 def mock_api_response(
-    status_code: int = 200, json_data: Optional[dict[str, Any]] = None, text: Optional[str] = None
+    status_code: int = 200, json_data: dict[str, Any] | None = None, text: str | None = None
 ) -> MagicMock:
     """
     Create a mock API response object.
@@ -1002,7 +1014,7 @@ def with_mock_session(func: Callable[..., Any]) -> Callable[..., Any]:
     return wrapper
 
 
-def with_test_config(overrides: Optional[dict[str, Any]] = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def with_test_config(overrides: dict[str, Any] | None = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator factory that provides test configuration with optional overrides.
 
@@ -1142,7 +1154,7 @@ def create_test_conversation(
     person_id: int = 1,
     message_content: str = "Test message content",
     direction: str = "received",
-    classification: Optional[str] = None,
+    classification: str | None = None,
 ) -> MagicMock:
     """
     Create a mock ConversationLog object for testing.

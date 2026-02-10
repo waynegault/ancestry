@@ -12,7 +12,6 @@ This module centralizes the UI output so both sources produce identical
 user experience. Keep api_search_core focused on retrieval.
 """
 
-from __future__ import annotations
 
 # === PATH SETUP FOR PACKAGE IMPORTS ===
 import sys
@@ -25,9 +24,10 @@ if str(_project_root) not in sys.path:
 import contextlib
 import io
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any, Callable, cast
+from typing import Any, cast
 from unittest import mock
 
 logger = logging.getLogger(__name__)

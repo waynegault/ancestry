@@ -4,11 +4,9 @@ Message type constants and state machine for messaging workflow.
 Centralizes message type definitions and transition logic used by Actions 7-9.
 """
 
-from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +52,7 @@ CORE_REQUIRED_TEMPLATE_KEYS = frozenset(
 # ------------------------------------------------------------------------------
 
 # Maps (current_message_type, is_in_family_tree) to next_message_type
-MESSAGE_TRANSITION_TABLE: dict[tuple[Optional[str], bool], Optional[str]] = {
+MESSAGE_TRANSITION_TABLE: dict[tuple[str | None, bool], str | None] = {
     # Initial messages (no previous message)
     (None, True): "In_Tree-Initial",
     (None, False): "Out_Tree-Initial",
@@ -94,9 +92,9 @@ MESSAGE_TRANSITION_TABLE: dict[tuple[Optional[str], bool], Optional[str]] = {
 
 
 def determine_next_message_type(
-    last_message_details: Optional[tuple[Optional[str], datetime, str]],
+    last_message_details: tuple[str | None, datetime, str] | None,
     is_in_family_tree: bool,
-) -> Optional[str]:
+) -> str | None:
     """
     Determine next message type based on last message and tree status.
 
@@ -109,7 +107,7 @@ def determine_next_message_type(
     Returns:
         Next message type string, or None if sequence is complete
     """
-    last_message_type: Optional[str] = None
+    last_message_type: str | None = None
     if last_message_details:
         last_message_type, _, _ = last_message_details
 
@@ -131,7 +129,7 @@ def determine_next_message_type(
     return next_type
 
 
-def is_terminal_message_type(message_type: Optional[str]) -> bool:
+def is_terminal_message_type(message_type: str | None) -> bool:
     """
     Check if a message type is terminal (no further messages in sequence).
 
@@ -152,7 +150,7 @@ def is_terminal_message_type(message_type: Optional[str]) -> bool:
     return message_type in terminal_types
 
 
-def get_message_type_category(message_type: Optional[str]) -> Optional[str]:
+def get_message_type_category(message_type: str | None) -> str | None:
     """
     Get the category of a message type (In_Tree, Out_Tree, or special).
 

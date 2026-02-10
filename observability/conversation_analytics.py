@@ -26,9 +26,9 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from importlib import import_module
-from typing import Any, Optional, Protocol, cast as typing_cast
+from typing import Any, Protocol, cast as typing_cast
 
 from sqlalchemy import String as SQLString, cast
 from sqlalchemy.orm import Session
@@ -40,7 +40,7 @@ from core.database import ConversationMetrics, EngagementTracking
 class _DatabaseManagerProtocol(Protocol):
     """Interface subset required from DatabaseManager for tests."""
 
-    def get_session(self) -> Optional[Session]:  # pragma: no cover - protocol definition
+    def get_session(self) -> Session | None:  # pragma: no cover - protocol definition
         """Return a SQLAlchemy session bound to the project database."""
 
 
@@ -59,7 +59,7 @@ else:
         _database_manager_error = RuntimeError("DatabaseManager class missing from core.database_manager")
 
 
-def _resolve_database_manager_class() -> Optional[type[_DatabaseManagerProtocol]]:
+def _resolve_database_manager_class() -> type[_DatabaseManagerProtocol] | None:
     """Return the cached DatabaseManager class if available."""
 
     return _database_manager_class
@@ -92,12 +92,12 @@ def record_engagement_event(
     session: Session,
     people_id: int,
     event_type: str,
-    event_description: Optional[str] = None,
-    event_data: Optional[dict[str, Any]] = None,
-    engagement_score_before: Optional[int] = None,
-    engagement_score_after: Optional[int] = None,
-    conversation_phase: Optional[str] = None,
-    template_used: Optional[str] = None,
+    event_description: str | None = None,
+    event_data: dict[str, Any] | None = None,
+    engagement_score_before: int | None = None,
+    engagement_score_after: int | None = None,
+    conversation_phase: str | None = None,
+    template_used: str | None = None,
 ) -> EngagementTracking:
     """
     Record an engagement event for analytics tracking.
@@ -138,10 +138,10 @@ def record_engagement_event(
     return event
 
 
-def _update_sent_message_metrics(metrics: ConversationMetrics, template_used: Optional[str]) -> None:
+def _update_sent_message_metrics(metrics: ConversationMetrics, template_used: str | None) -> None:
     """Update metrics when a message is sent."""
     metrics.messages_sent += 1
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     metrics.last_message_sent = now
     if metrics.first_message_sent is None:
         metrics.first_message_sent = now
@@ -162,7 +162,7 @@ def _update_sent_message_metrics(metrics: ConversationMetrics, template_used: Op
 def _update_received_message_metrics(metrics: ConversationMetrics) -> None:
     """Update metrics when a message is received."""
     metrics.messages_received += 1
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     metrics.last_message_received = now
 
     # Track first response
@@ -175,7 +175,7 @@ def _update_received_message_metrics(metrics: ConversationMetrics) -> None:
         if first_sent is not None:
             # Ensure first_sent is timezone-aware
             if first_sent.tzinfo is None:
-                first_sent = first_sent.replace(tzinfo=timezone.utc)
+                first_sent = first_sent.replace(tzinfo=UTC)
             time_diff = now - first_sent
             metrics.time_to_first_response_hours = time_diff.total_seconds() / 3600
 
@@ -212,9 +212,9 @@ def update_conversation_metrics(
     people_id: int,
     message_sent: bool = False,
     message_received: bool = False,
-    template_used: Optional[str] = None,
-    engagement_score: Optional[int] = None,
-    conversation_phase: Optional[str] = None,
+    template_used: str | None = None,
+    engagement_score: int | None = None,
+    conversation_phase: str | None = None,
     person_looked_up: bool = False,
     person_found: bool = False,
     research_task_created: bool = False,
@@ -272,7 +272,7 @@ def _get_or_create_metrics(session: Session, people_id: int) -> ConversationMetr
 
 
 def _update_message_metrics(
-    metrics: ConversationMetrics, message_sent: bool, message_received: bool, template_used: Optional[str]
+    metrics: ConversationMetrics, message_sent: bool, message_received: bool, template_used: str | None
 ) -> None:
     """Update message-related metrics."""
     if message_sent:
@@ -282,7 +282,7 @@ def _update_message_metrics(
 
 
 def _update_engagement_and_phase(
-    metrics: ConversationMetrics, engagement_score: Optional[int], conversation_phase: Optional[str]
+    metrics: ConversationMetrics, engagement_score: int | None, conversation_phase: str | None
 ) -> None:
     """Update engagement score and conversation phase."""
     if engagement_score is not None:
@@ -298,9 +298,9 @@ def _update_conversation_duration(metrics: ConversationMetrics) -> None:
     if first_sent is not None and last_received is not None:
         # Ensure both are timezone-aware
         if first_sent.tzinfo is None:
-            first_sent = first_sent.replace(tzinfo=timezone.utc)
+            first_sent = first_sent.replace(tzinfo=UTC)
         if last_received.tzinfo is None:
-            last_received = last_received.replace(tzinfo=timezone.utc)
+            last_received = last_received.replace(tzinfo=UTC)
         time_diff = last_received - first_sent
         metrics.conversation_duration_days = time_diff.total_seconds() / 86400
 
@@ -309,7 +309,7 @@ def _update_tree_impact(metrics: ConversationMetrics, added_to_tree: bool) -> No
     """Update tree impact metrics."""
     if added_to_tree and metrics.added_to_tree is not True:
         metrics.added_to_tree = True
-        metrics.added_to_tree_date = datetime.now(timezone.utc)
+        metrics.added_to_tree_date = datetime.now(UTC)
 
 
 def _get_status_counts(session: Session) -> dict[str, int]:

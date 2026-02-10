@@ -14,9 +14,10 @@ This module provides a comprehensive dependency injection system to:
 # === CORE INFRASTRUCTURE ===
 import sys
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, ClassVar, Optional, TypeVar, Union, cast
+from typing import Any, ClassVar, Optional, TypeVar, Union, cast
 
 parent_dir = str(Path(__file__).resolve().parent.parent)
 if parent_dir not in sys.path:
@@ -68,8 +69,8 @@ class DIContainer:
     def register_singleton(
         self,
         interface: type[T],
-        implementation: Union[type[T], T],
-        name: Optional[str] = None,
+        implementation: type[T] | T,
+        name: str | None = None,
     ) -> None:
         """
         Register a singleton service.
@@ -93,7 +94,7 @@ class DIContainer:
                 self._interfaces[interface] = type(implementation)
                 logger.debug(f"Registered singleton instance: {service_name}")
 
-    def register_transient(self, interface: type[T], implementation: type[T], name: Optional[str] = None) -> None:
+    def register_transient(self, interface: type[T], implementation: type[T], name: str | None = None) -> None:
         """
         Register a transient service (new instance each time).
 
@@ -112,7 +113,7 @@ class DIContainer:
             self._interfaces[interface] = implementation
             logger.debug(f"Registered transient service: {service_name}")
 
-    def register_factory(self, interface: type[T], factory: Callable[[], T], name: Optional[str] = None) -> None:
+    def register_factory(self, interface: type[T], factory: Callable[[], T], name: str | None = None) -> None:
         """
         Register a factory function.
 
@@ -126,7 +127,7 @@ class DIContainer:
             self._factories[service_name] = factory
             logger.debug(f"Registered factory: {service_name}")
 
-    def register_instance(self, interface: type[T], instance: T, name: Optional[str] = None) -> None:
+    def register_instance(self, interface: type[T], instance: T, name: str | None = None) -> None:
         """
         Register a specific instance.
 
@@ -141,7 +142,7 @@ class DIContainer:
             self._interfaces[interface] = type(instance)
             logger.debug(f"Registered instance: {service_name}")
 
-    def resolve(self, interface: type[T], name: Optional[str] = None) -> T:
+    def resolve(self, interface: type[T], name: str | None = None) -> T:
         """
         Resolve a service instance.
 
@@ -185,7 +186,7 @@ class DIContainer:
 
             raise DIResolutionError(f"Cannot resolve service: {service_name} ({interface})")
 
-    def is_registered(self, interface: type, name: Optional[str] = None) -> bool:
+    def is_registered(self, interface: type, name: str | None = None) -> bool:
         """
         Check if a service is registered.
 
@@ -308,7 +309,7 @@ class Injectable:
         logger.debug(f"Injectable subclass defined: {cls.__name__}")
 
 
-def inject(service_type: type[T], name: Optional[str] = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def inject[T](service_type: type[T], name: str | None = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator for dependency injection.
 
@@ -344,7 +345,7 @@ class ServiceRegistry:
     """
 
     _containers: ClassVar[dict[str, DIContainer]] = {}
-    _default_container: ClassVar[Optional[DIContainer]] = None
+    _default_container: ClassVar[DIContainer | None] = None
     _lock: ClassVar[threading.RLock] = threading.RLock()
 
     @classmethod
@@ -488,7 +489,7 @@ def configure_dependencies() -> None:
     logger.info("Dependency injection configuration completed")
 
 
-def get_service(service_type: type[T], name: Optional[str] = None) -> T:
+def get_service[T](service_type: type[T], name: str | None = None) -> T:
     """
     Convenience function to get a service from the default container.
 
@@ -513,7 +514,7 @@ class DIScope:
 
     def __init__(self, container_name: str = "default") -> None:
         self.container_name = container_name
-        self._original_registrations: Optional[dict[str, Any]] = None
+        self._original_registrations: dict[str, Any] | None = None
 
     def __enter__(self) -> DIContainer:
         container = get_container(self.container_name)
@@ -529,7 +530,7 @@ class DIScope:
         return container
 
     def __exit__(
-        self, exc_type: Optional[type[BaseException]], exc_val: Optional[BaseException], exc_tb: Optional[Any]
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: Any | None
     ) -> None:
         if self._original_registrations:
             container = get_container(self.container_name)

@@ -17,7 +17,7 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from testing.test_utilities import create_standard_test_runner
 
@@ -153,7 +153,7 @@ def create_record_sharing_message(person_name: str, records: list[dict[str, Any]
     return "\n".join(message_parts)
 
 
-def extract_record_url(record_details: dict[str, str]) -> Optional[str]:
+def extract_record_url(record_details: dict[str, str]) -> str | None:
     """
     Extract URL from record details if available.
 

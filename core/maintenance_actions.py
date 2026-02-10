@@ -5,10 +5,11 @@ import os
 import shutil
 import sys
 import time
+from collections.abc import Callable
 from importlib import import_module
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable, Optional, cast
+from typing import Any, cast
 
 if __package__ in {None, ""}:
     REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -664,7 +665,7 @@ def check_login_actn(session_manager: SessionManager, *_extra: Any) -> bool:
 
 
 class _FakeQuery:
-    def __init__(self, delete_result: int, scalar_values: Optional[list[int]] = None) -> None:
+    def __init__(self, delete_result: int, scalar_values: list[int] | None = None) -> None:
         self.delete_result = delete_result
         self.scalar_values = scalar_values or []
         self.filter_args: list[Any] = []
@@ -685,7 +686,7 @@ class _FakeQuery:
 
 
 class _FakeSession:
-    def __init__(self, delete_result: int = 1, scalar_values: Optional[list[int]] = None) -> None:
+    def __init__(self, delete_result: int = 1, scalar_values: list[int] | None = None) -> None:
         self.query_calls: list[Any] = []
         self.added: list[Any] = []
         self.query_instance = _FakeQuery(delete_result, scalar_values)

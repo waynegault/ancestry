@@ -13,7 +13,6 @@ Features:
 - Standardized statistics via CacheStats from cache_backend
 """
 
-from __future__ import annotations
 
 import logging
 import re
@@ -94,7 +93,7 @@ class CacheEntry:
     size_bytes: int = 0
 
     @property
-    def expires_at(self) -> Optional[float]:
+    def expires_at(self) -> float | None:
         """Get expiration timestamp, or None if no expiry."""
         if self.ttl <= 0:
             return None
@@ -114,7 +113,7 @@ class CacheEntry:
         return time.time() - self.created_at
 
     @property
-    def ttl_remaining(self) -> Optional[float]:
+    def ttl_remaining(self) -> float | None:
         """Get remaining TTL in seconds, or None if no expiry."""
         expires = self.expires_at
         if expires is None:
@@ -216,7 +215,7 @@ class Cache(Protocol):
         ...
 
     @abstractmethod
-    def get(self, key: CacheKey) -> Optional[Any]:
+    def get(self, key: CacheKey) -> Any | None:
         """Retrieve a value from the cache.
 
         Args:
@@ -228,7 +227,7 @@ class Cache(Protocol):
         ...
 
     @abstractmethod
-    def set(self, key: CacheKey, value: Any, ttl: Optional[CacheTTL] = None) -> bool:
+    def set(self, key: CacheKey, value: Any, ttl: CacheTTL | None = None) -> bool:
         """Store a value in the cache.
 
         Args:
@@ -332,7 +331,7 @@ class Cache(Protocol):
         ...
 
     @abstractmethod
-    def get_entry(self, key: CacheKey) -> Optional[CacheEntry]:
+    def get_entry(self, key: CacheKey) -> CacheEntry | None:
         """Get cache entry with metadata.
 
         Args:

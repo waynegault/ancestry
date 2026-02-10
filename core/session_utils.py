@@ -33,7 +33,7 @@ import functools
 import os
 import sys
 from collections.abc import Callable, Iterator
-from typing import Any, Optional, ParamSpec, TypeVar, cast
+from typing import Any, ParamSpec, TypeVar, cast
 from unittest import mock
 
 from core.logging_config import setup_logging
@@ -54,7 +54,7 @@ R = TypeVar("R")
 
 
 class _AuthCache:
-    session_uuid: Optional[str] = None
+    session_uuid: str | None = None
     auth_banner_printed: bool = False
 
 
@@ -94,7 +94,7 @@ def register_session_manager(session_manager: SessionManager) -> None:
     _AUTH_CACHE.auth_banner_printed = False
 
 
-def get_session_manager() -> Optional[SessionManager]:
+def get_session_manager() -> SessionManager | None:
     """
     Get the SessionManager from the DI container.
 
@@ -196,7 +196,7 @@ def requires_session(
     return decorator
 
 
-def _log_session_banner(already_auth: bool, env_uuid: Optional[str], action_name: str) -> None:
+def _log_session_banner(already_auth: bool, env_uuid: str | None, action_name: str) -> None:
     """Log the session banner once per authentication attempt (pre-auth)."""
     if not already_auth:
         logger.debug(f"Authenticating session for: {action_name}")
@@ -248,7 +248,7 @@ def _assert_session_registered() -> None:
         )
 
 
-def _pre_auth_logging(already_auth: bool, env_uuid: Optional[str], action_name: str) -> None:
+def _pre_auth_logging(already_auth: bool, env_uuid: str | None, action_name: str) -> None:
     """Centralize pre-auth logging to reduce cyclomatic complexity."""
     if not already_auth and not _AUTH_CACHE.auth_banner_printed:
         _log_session_banner(already_auth, env_uuid, action_name)

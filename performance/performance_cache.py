@@ -57,10 +57,11 @@ logger = logging.getLogger(__name__)
 import hashlib
 import pickle
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 from core.cache_backend import CacheBackend, CacheFactory, CacheHealth, CacheStats
 
@@ -74,7 +75,7 @@ from performance.memory_utils import ObjectPool
 class CacheableObject:
     """Example cacheable object for pooling."""
 
-    value: Optional[Any] = None
+    value: Any | None = None
 
 
 def _create_cacheable_object() -> CacheableObject:
@@ -276,7 +277,7 @@ class PerformanceCache:
 
         return invalidated
 
-    def get(self, cache_key: str) -> Optional[Any]:
+    def get(self, cache_key: str) -> Any | None:
         """Get item from cache (memory first, then disk)"""
         # Check memory cache first
         if cache_key in self._memory_cache:
@@ -308,7 +309,7 @@ class PerformanceCache:
         logger.debug(f"Cache MISS: {cache_key[:12]}...")
         return None
 
-    def set(self, cache_key: str, value: Any, disk_cache: bool = True, dependencies: Optional[list[str]] = None):
+    def set(self, cache_key: str, value: Any, disk_cache: bool = True, dependencies: list[str] | None = None):
         """Store item in cache with optional dependency tracking"""
         # Calculate and store entry size
         try:
@@ -427,10 +428,10 @@ class PerformanceCacheBackendAdapter(CacheBackend):
     def __init__(self, cache_impl: PerformanceCache) -> None:
         self._cache = cache_impl
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         return self._cache.get(key)
 
-    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+    def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
         del ttl  # CacheBackend protocol requires ttl parameter
         try:
             self._cache.set(key, value)
@@ -551,7 +552,7 @@ def fast_test_cache(func: Callable[..., Any]) -> Callable[..., Any]:
 
 def progressive_processing(
     chunk_size: int = 1000,
-    progress_callback: Optional[ProgressCallback] = None,
+    progress_callback: ProgressCallback | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Process large datasets progressively with progress feedback.
@@ -630,7 +631,7 @@ def get_performance_cache_stats() -> dict[str, Any]:
 
 
 def warm_performance_cache(
-    gedcom_paths: Optional[list[str]] = None, warm_strategies: Optional[list[str]] = None
+    gedcom_paths: list[str] | None = None, warm_strategies: list[str] | None = None
 ) -> None:
     """
     Intelligent cache warming with multiple strategies.
@@ -873,15 +874,24 @@ class FastMockDataFactory:
 
 def test_performance_cache_initialization() -> bool:
     """Test PerformanceCache module initialization."""
-    try:
-        cache = PerformanceCache(max_memory_cache_size=10)
-        assert hasattr(cache, 'get')
-        assert hasattr(cache, 'set')
-        assert hasattr(cache, '_generate_cache_key')
-        assert hasattr(cache, 'cache_stats')
-        return True
-    except Exception:
-        return False
+    cache = PerformanceCache(max_memory_cache_size=10)
+
+    # Verify cache_stats returns a well-formed dict
+    stats = cache.cache_stats
+    assert isinstance(stats, dict), f"cache_stats should be dict, got {type(stats)}"
+    assert stats["max_size"] == 10, f"max_size should be 10, got {stats['max_size']}"
+    assert stats["memory_cache_size"] == 0, f"Initial memory_cache_size should be 0, got {stats['memory_cache_size']}"
+
+    # Verify set/get round-trip works
+    cache.set("init_test_key", "init_test_value", disk_cache=False)
+    retrieved = cache.get("init_test_key")
+    assert retrieved == "init_test_value", f"Expected 'init_test_value', got {retrieved}"
+
+    # Verify key generation produces consistent results
+    k1 = cache._generate_cache_key("a", "b", x=1)
+    k2 = cache._generate_cache_key("a", "b", x=1)
+    assert k1 == k2, f"Cache keys should be consistent, got {k1} vs {k2}"
+    return True
 
 
 def test_memory_cache_operations() -> bool:

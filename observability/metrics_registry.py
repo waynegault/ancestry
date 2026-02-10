@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 import sys
 import threading
-from typing import TYPE_CHECKING, Any, Optional, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from testing.test_framework import TestSuite, suppress_logging
 
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_prometheus_import_error: Optional[Exception] = None
+_prometheus_import_error: Exception | None = None
 
 try:  # pragma: no cover - import-time guard
     import prometheus_client as _prometheus_client
@@ -25,7 +25,7 @@ except Exception as exc:  # pragma: no cover - handled gracefully
     _prometheus_import_error = exc
 
 PROMETHEUS_AVAILABLE = _prometheus_client is not None
-_IMPORT_ERROR: Optional[Exception] = _prometheus_import_error
+_IMPORT_ERROR: Exception | None = _prometheus_import_error
 
 if _prometheus_client is not None:  # pragma: no cover - runtime wiring
     _client_any = cast(Any, _prometheus_client)
@@ -73,9 +73,9 @@ class _ApiLatencyProxy:
     """Wrapper for API latency histogram."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusHistogram] = None
+        self._metric: PrometheusHistogram | None = None
 
-    def set_metric(self, metric: Optional[PrometheusHistogram]) -> None:
+    def set_metric(self, metric: PrometheusHistogram | None) -> None:
         self._metric = metric
 
     def observe(self, endpoint: str, status_family: str, seconds: float) -> None:
@@ -90,9 +90,9 @@ class _ApiRequestCounterProxy:
     """Wrapper for API request counter."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusCounter] = None
+        self._metric: PrometheusCounter | None = None
 
-    def set_metric(self, metric: Optional[PrometheusCounter]) -> None:
+    def set_metric(self, metric: PrometheusCounter | None) -> None:
         self._metric = metric
 
     def inc(self, endpoint: str, method: str, result: str, amount: float = 1.0) -> None:
@@ -106,9 +106,9 @@ class _CacheHitRatioGaugeProxy:
     """Wrapper for cache hit ratio gauge."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusGauge] = None
+        self._metric: PrometheusGauge | None = None
 
-    def set_metric(self, metric: Optional[PrometheusGauge]) -> None:
+    def set_metric(self, metric: PrometheusGauge | None) -> None:
         self._metric = metric
 
     def set(self, service: str, endpoint: str, ratio: float) -> None:
@@ -123,9 +123,9 @@ class _CacheOperationsCounterProxy:
     """Wrapper for cache operations counter."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusCounter] = None
+        self._metric: PrometheusCounter | None = None
 
-    def set_metric(self, metric: Optional[PrometheusCounter]) -> None:
+    def set_metric(self, metric: PrometheusCounter | None) -> None:
         self._metric = metric
 
     def inc(self, service: str, endpoint: str, operation: str, amount: float = 1.0) -> None:
@@ -139,9 +139,9 @@ class _SessionUptimeGaugeProxy:
     """Wrapper for session uptime gauge."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusGauge] = None
+        self._metric: PrometheusGauge | None = None
 
-    def set_metric(self, metric: Optional[PrometheusGauge]) -> None:
+    def set_metric(self, metric: PrometheusGauge | None) -> None:
         self._metric = metric
 
     def set(self, seconds: float) -> None:
@@ -155,9 +155,9 @@ class _SessionRefreshCounterProxy:
     """Wrapper for session refresh counter."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusCounter] = None
+        self._metric: PrometheusCounter | None = None
 
-    def set_metric(self, metric: Optional[PrometheusCounter]) -> None:
+    def set_metric(self, metric: PrometheusCounter | None) -> None:
         self._metric = metric
 
     def inc(self, reason: str, amount: float = 1.0) -> None:
@@ -171,9 +171,9 @@ class _ActionProcessedCounterProxy:
     """Wrapper for action throughput counter."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusCounter] = None
+        self._metric: PrometheusCounter | None = None
 
-    def set_metric(self, metric: Optional[PrometheusCounter]) -> None:
+    def set_metric(self, metric: PrometheusCounter | None) -> None:
         self._metric = metric
 
     def inc(self, action: str, result: str, amount: float = 1.0) -> None:
@@ -187,9 +187,9 @@ class _CircuitBreakerStateGaugeProxy:
     """Wrapper for circuit breaker state gauge."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusGauge] = None
+        self._metric: PrometheusGauge | None = None
 
-    def set_metric(self, metric: Optional[PrometheusGauge]) -> None:
+    def set_metric(self, metric: PrometheusGauge | None) -> None:
         self._metric = metric
 
     def set(self, breaker: str, state: float) -> None:
@@ -203,9 +203,9 @@ class _CircuitBreakerTripCounterProxy:
     """Wrapper for circuit breaker trip counter."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusCounter] = None
+        self._metric: PrometheusCounter | None = None
 
-    def set_metric(self, metric: Optional[PrometheusCounter]) -> None:
+    def set_metric(self, metric: PrometheusCounter | None) -> None:
         self._metric = metric
 
     def inc(self, breaker: str, amount: float = 1.0) -> None:
@@ -219,9 +219,9 @@ class _RateLimiterDelayHistogramProxy:
     """Wrapper for rate limiter delay histogram."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusHistogram] = None
+        self._metric: PrometheusHistogram | None = None
 
-    def set_metric(self, metric: Optional[PrometheusHistogram]) -> None:
+    def set_metric(self, metric: PrometheusHistogram | None) -> None:
         self._metric = metric
 
     def observe(self, seconds: float) -> None:
@@ -235,9 +235,9 @@ class _WorkerThreadGaugeProxy:
     """Wrapper for worker thread count gauge."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusGauge] = None
+        self._metric: PrometheusGauge | None = None
 
-    def set_metric(self, metric: Optional[PrometheusGauge]) -> None:
+    def set_metric(self, metric: PrometheusGauge | None) -> None:
         self._metric = metric
 
     def set(self, count: float) -> None:
@@ -251,9 +251,9 @@ class _DatabaseQueryHistogramProxy:
     """Wrapper for database query duration histogram."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusHistogram] = None
+        self._metric: PrometheusHistogram | None = None
 
-    def set_metric(self, metric: Optional[PrometheusHistogram]) -> None:
+    def set_metric(self, metric: PrometheusHistogram | None) -> None:
         self._metric = metric
 
     def observe(self, operation: str, seconds: float) -> None:
@@ -268,9 +268,9 @@ class _DatabaseRowsCounterProxy:
     """Wrapper for rows-affected counter."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusCounter] = None
+        self._metric: PrometheusCounter | None = None
 
-    def set_metric(self, metric: Optional[PrometheusCounter]) -> None:
+    def set_metric(self, metric: PrometheusCounter | None) -> None:
         self._metric = metric
 
     def inc(self, operation: str, amount: float) -> None:
@@ -285,9 +285,9 @@ class _ActionDurationHistogramProxy:
     """Wrapper for action duration histogram."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusHistogram] = None
+        self._metric: PrometheusHistogram | None = None
 
-    def set_metric(self, metric: Optional[PrometheusHistogram]) -> None:
+    def set_metric(self, metric: PrometheusHistogram | None) -> None:
         self._metric = metric
 
     def observe(self, action: str, seconds: float) -> None:
@@ -301,9 +301,9 @@ class _InternalMetricGaugeProxy:
     """Wrapper for internal collector metric gauge."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusGauge] = None
+        self._metric: PrometheusGauge | None = None
 
-    def set_metric(self, metric: Optional[PrometheusGauge]) -> None:
+    def set_metric(self, metric: PrometheusGauge | None) -> None:
         self._metric = metric
 
     def set(self, service: str, metric_name: str, stat: str, value: float) -> None:
@@ -317,9 +317,9 @@ class _AIQualityHistogramProxy:
     """Wrapper for AI extraction quality histogram."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusHistogram] = None
+        self._metric: PrometheusHistogram | None = None
 
-    def set_metric(self, metric: Optional[PrometheusHistogram]) -> None:
+    def set_metric(self, metric: PrometheusHistogram | None) -> None:
         self._metric = metric
 
     def observe(self, provider: str, prompt_key: str, variant: str, score: float) -> None:
@@ -335,9 +335,9 @@ class _AIParseResultCounterProxy:
     """Wrapper for AI parse success/failure counter."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusCounter] = None
+        self._metric: PrometheusCounter | None = None
 
-    def set_metric(self, metric: Optional[PrometheusCounter]) -> None:
+    def set_metric(self, metric: PrometheusCounter | None) -> None:
         self._metric = metric
 
     def inc(self, provider: str, prompt_key: str, result: str) -> None:
@@ -355,9 +355,9 @@ class _DraftsQueuedCounterProxy:
     """Wrapper for drafts_queued_total counter (Phase 9.1)."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusCounter] = None
+        self._metric: PrometheusCounter | None = None
 
-    def set_metric(self, metric: Optional[PrometheusCounter]) -> None:
+    def set_metric(self, metric: PrometheusCounter | None) -> None:
         self._metric = metric
 
     def inc(self, priority: str, confidence_bucket: str, amount: float = 1.0) -> None:
@@ -371,9 +371,9 @@ class _DraftsSentCounterProxy:
     """Wrapper for drafts_sent_total counter (Phase 9.1)."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusCounter] = None
+        self._metric: PrometheusCounter | None = None
 
-    def set_metric(self, metric: Optional[PrometheusCounter]) -> None:
+    def set_metric(self, metric: PrometheusCounter | None) -> None:
         self._metric = metric
 
     def inc(self, outcome: str, amount: float = 1.0) -> None:
@@ -387,9 +387,9 @@ class _ReviewQueueDepthGaugeProxy:
     """Wrapper for review_queue_depth gauge (Phase 9.1)."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusGauge] = None
+        self._metric: PrometheusGauge | None = None
 
-    def set_metric(self, metric: Optional[PrometheusGauge]) -> None:
+    def set_metric(self, metric: PrometheusGauge | None) -> None:
         self._metric = metric
 
     def set(self, status: str, count: float) -> None:
@@ -403,9 +403,9 @@ class _ResponseTimeHistogramProxy:
     """Wrapper for response_time histogram (Phase 9.1)."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusHistogram] = None
+        self._metric: PrometheusHistogram | None = None
 
-    def set_metric(self, metric: Optional[PrometheusHistogram]) -> None:
+    def set_metric(self, metric: PrometheusHistogram | None) -> None:
         self._metric = metric
 
     def observe(self, hours: float) -> None:
@@ -419,9 +419,9 @@ class _ResponseFunnelGaugeProxy:
     """Wrapper for response_funnel gauge (Phase 4.3)."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusGauge] = None
+        self._metric: PrometheusGauge | None = None
 
-    def set_metric(self, metric: Optional[PrometheusGauge]) -> None:
+    def set_metric(self, metric: PrometheusGauge | None) -> None:
         self._metric = metric
 
     def set(self, stage: str, count: float) -> None:
@@ -436,9 +436,9 @@ class _QualityDistributionGaugeProxy:
     """Wrapper for draft_quality_distribution gauge (Phase 4.3)."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusGauge] = None
+        self._metric: PrometheusGauge | None = None
 
-    def set_metric(self, metric: Optional[PrometheusGauge]) -> None:
+    def set_metric(self, metric: PrometheusGauge | None) -> None:
         self._metric = metric
 
     def set(self, tier: str, count: float) -> None:
@@ -456,9 +456,9 @@ class _SendAttemptsCounterProxy:
     """Wrapper for send_attempts_total counter (Phase 6.1)."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusCounter] = None
+        self._metric: PrometheusCounter | None = None
 
-    def set_metric(self, metric: Optional[PrometheusCounter]) -> None:
+    def set_metric(self, metric: PrometheusCounter | None) -> None:
         self._metric = metric
 
     def inc(self, trigger: str, result: str, amount: float = 1.0) -> None:
@@ -473,9 +473,9 @@ class _SafetyBlocksCounterProxy:
     """Wrapper for safety_blocks_total counter (Phase 6.1)."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusCounter] = None
+        self._metric: PrometheusCounter | None = None
 
-    def set_metric(self, metric: Optional[PrometheusCounter]) -> None:
+    def set_metric(self, metric: PrometheusCounter | None) -> None:
         self._metric = metric
 
     def inc(self, check_type: str, amount: float = 1.0) -> None:
@@ -490,9 +490,9 @@ class _ContentGenerationTimeHistogramProxy:
     """Wrapper for content_generation_time histogram (Phase 6.1)."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusHistogram] = None
+        self._metric: PrometheusHistogram | None = None
 
-    def set_metric(self, metric: Optional[PrometheusHistogram]) -> None:
+    def set_metric(self, metric: PrometheusHistogram | None) -> None:
         self._metric = metric
 
     def observe(self, source: str, seconds: float) -> None:
@@ -507,9 +507,9 @@ class _SendApiResultsCounterProxy:
     """Wrapper for send_api_results_total counter (Phase 6.1)."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusCounter] = None
+        self._metric: PrometheusCounter | None = None
 
-    def set_metric(self, metric: Optional[PrometheusCounter]) -> None:
+    def set_metric(self, metric: PrometheusCounter | None) -> None:
         self._metric = metric
 
     def inc(self, endpoint: str, result: str, status_family: str, amount: float = 1.0) -> None:
@@ -528,9 +528,9 @@ class _DecisionPathsCounterProxy:
     """Wrapper for decision_paths_total counter (Phase 6.1)."""
 
     def __init__(self) -> None:
-        self._metric: Optional[PrometheusCounter] = None
+        self._metric: PrometheusCounter | None = None
 
-    def set_metric(self, metric: Optional[PrometheusCounter]) -> None:
+    def set_metric(self, metric: PrometheusCounter | None) -> None:
         self._metric = metric
 
     def inc(self, decision: str, amount: float = 1.0) -> None:
@@ -623,12 +623,12 @@ class MetricsRegistry:
         self._lock = threading.RLock()
         self._enabled = False
         self._namespace = "ancestry"
-        self._registry: Optional[Any] = None
+        self._registry: Any | None = None
         self._metrics = MetricsBundle()
         self._import_logged = False
         self._config_enabled = False
 
-    def configure(self, settings: Optional[ObservabilityConfig]) -> None:
+    def configure(self, settings: ObservabilityConfig | None) -> None:
         """Configure metrics using Observability settings."""
         with self._lock:
             self._config_enabled = bool(settings and settings.enable_prometheus_metrics)
@@ -956,7 +956,7 @@ class MetricsRegistry:
 
         return metrics_map
 
-    def get_registry(self) -> Optional[Any]:
+    def get_registry(self) -> Any | None:
         """Return the active Prometheus registry (if enabled)."""
         return self._registry
 
@@ -971,7 +971,7 @@ class MetricsRegistry:
 _METRICS_REGISTRY = MetricsRegistry()
 
 
-def configure_metrics(settings: Optional[ObservabilityConfig]) -> None:
+def configure_metrics(settings: ObservabilityConfig | None) -> None:
     """Configure global metrics using provided settings."""
     _METRICS_REGISTRY.configure(settings)
 
@@ -991,7 +991,7 @@ def metrics() -> MetricsBundle:
     return _METRICS_REGISTRY.metrics
 
 
-def get_metrics_registry() -> Optional[Any]:
+def get_metrics_registry() -> Any | None:
     """Return the active Prometheus registry for exporter wiring."""
     return _METRICS_REGISTRY.get_registry()
 

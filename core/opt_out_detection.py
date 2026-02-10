@@ -17,7 +17,7 @@ Key Features:
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import and_
@@ -60,10 +60,10 @@ class PersonOptOutStatus:
 
     person_id: int
     is_opted_out: bool
-    opt_out_reason: Optional[str]
-    opt_out_date: Optional[datetime]
+    opt_out_reason: str | None
+    opt_out_date: datetime | None
     can_contact: bool
-    blocklist_reason: Optional[str] = None
+    blocklist_reason: str | None = None
 
 
 # === OPT-OUT PATTERNS ===
@@ -202,7 +202,7 @@ class OptOutDetector:
     OPT_OUT_THRESHOLD = 0.75  # Minimum confidence to consider opt-out
     BLOCK_THRESHOLD = 0.90  # Confidence threshold for immediate block
 
-    def __init__(self, db_session: Optional[DbSession] = None) -> None:
+    def __init__(self, db_session: DbSession | None = None) -> None:
         """Initialize the opt-out detector."""
         self.db_session = db_session
         self._explicit_patterns = EXPLICIT_OPT_OUT_PATTERNS
@@ -445,7 +445,7 @@ def generate_opt_out_acknowledgment(
     opt_out_message: str,
     conversation_context: str = "",
     session_manager: Optional["SessionManager"] = None,
-) -> Optional[str]:
+) -> str | None:
     """
     Generate a polite opt-out acknowledgment message.
 
@@ -461,7 +461,7 @@ def generate_opt_out_acknowledgment(
         Acknowledgment message text, or None if generation fails
     """
     try:
-        from ai.prompts import get_prompt
+        from ai.ai_prompt_utils import get_prompt
         from config.config_manager import get_config_manager
 
         config_manager = get_config_manager()
@@ -613,7 +613,7 @@ def module_tests() -> bool:
             person_id=123,
             is_opted_out=True,
             opt_out_reason="DESIST status",
-            opt_out_date=datetime.now(timezone.utc),
+            opt_out_date=datetime.now(UTC),
             can_contact=False,
         )
         assert status.person_id == 123, "person_id should be 123"

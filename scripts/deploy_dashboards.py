@@ -15,7 +15,6 @@ Requirements:
     - requests library (pip install requests)
 """
 
-from __future__ import annotations
 
 import argparse
 import json

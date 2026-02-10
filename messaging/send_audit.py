@@ -26,7 +26,6 @@ Usage:
     entries = query_audit_log(person_id=123, trigger_type="AUTOMATED_SEQUENCE")
 """
 
-from __future__ import annotations
 
 import json
 import logging
@@ -34,9 +33,9 @@ import os
 import sys
 import threading
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from testing.test_framework import TestSuite
 
@@ -52,13 +51,13 @@ _audit_lock = threading.Lock()
 _audit_log_path: Path = DEFAULT_AUDIT_LOG_PATH
 
 
-def configure_audit_log(log_path: Optional[Path] = None) -> None:
+def configure_audit_log(log_path: Path | None = None) -> None:
     """Configure the audit log file path.
 
     Args:
         log_path: Path to the audit log file. Defaults to Logs/send_audit.jsonl
     """
-    global _audit_log_path  # noqa: PLW0603
+    global _audit_log_path
     _audit_log_path = log_path or DEFAULT_AUDIT_LOG_PATH
 
     # Ensure directory exists
@@ -72,13 +71,13 @@ def configure_audit_log(log_path: Optional[Path] = None) -> None:
 
 
 @dataclass
-class SafetyCheckResult:
-    """Result of a single safety check."""
+class AuditCheckEntry:
+    """Result of a single safety check for audit logging."""
 
     check_name: str
     passed: bool
-    reason: Optional[str] = None
-    details: Optional[dict[str, Any]] = None
+    reason: str | None = None
+    details: dict[str, Any] | None = None
 
 
 @dataclass
@@ -87,14 +86,14 @@ class SendAuditEntry:
 
     # Identifiers
     timestamp: str  # ISO 8601 format
-    person_id: Optional[int] = None
-    profile_id: Optional[str] = None
-    conversation_id: Optional[int] = None
+    person_id: int | None = None
+    profile_id: str | None = None
+    conversation_id: int | None = None
 
     # Trigger and decision
     trigger_type: str = ""  # AUTOMATED_SEQUENCE, REPLY_RECEIVED, OPT_OUT, HUMAN_APPROVED
     decision: str = ""  # send, block, skip, desist
-    decision_reason: Optional[str] = None
+    decision_reason: str | None = None
 
     # Safety checks
     safety_checks: list[dict[str, Any]] = field(default_factory=list)
@@ -102,14 +101,14 @@ class SendAuditEntry:
 
     # Content generation
     content_source: str = ""  # template, ai_generated, approved_draft, desist
-    content_template_key: Optional[str] = None
-    content_generation_time_ms: Optional[float] = None
+    content_template_key: str | None = None
+    content_generation_time_ms: float | None = None
 
     # API result
     api_called: bool = False
-    api_success: Optional[bool] = None
-    api_status_code: Optional[int] = None
-    api_error: Optional[str] = None
+    api_success: bool | None = None
+    api_status_code: int | None = None
+    api_error: str | None = None
 
     # Database updates
     database_updated: bool = False
@@ -122,9 +121,9 @@ class SendAuditEntry:
 
 
 def create_audit_entry(
-    person_id: Optional[int] = None,
-    profile_id: Optional[str] = None,
-    conversation_id: Optional[int] = None,
+    person_id: int | None = None,
+    profile_id: str | None = None,
+    conversation_id: int | None = None,
     trigger_type: str = "",
     action_source: str = "",
 ) -> SendAuditEntry:
@@ -141,7 +140,7 @@ def create_audit_entry(
         A new SendAuditEntry with timestamp set
     """
     return SendAuditEntry(
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
         person_id=person_id,
         profile_id=profile_id,
         conversation_id=conversation_id,
@@ -154,8 +153,8 @@ def add_safety_check(
     entry: SendAuditEntry,
     check_name: str,
     passed: bool,
-    reason: Optional[str] = None,
-    details: Optional[dict[str, Any]] = None,
+    reason: str | None = None,
+    details: dict[str, Any] | None = None,
 ) -> None:
     """Add a safety check result to the audit entry.
 
@@ -166,7 +165,7 @@ def add_safety_check(
         reason: Optional reason for the result
         details: Optional additional details
     """
-    check_result = SafetyCheckResult(
+    check_result = AuditCheckEntry(
         check_name=check_name,
         passed=passed,
         reason=reason,
@@ -187,7 +186,7 @@ def finalize_safety_checks(entry: SendAuditEntry) -> None:
 def set_decision(
     entry: SendAuditEntry,
     decision: str,
-    reason: Optional[str] = None,
+    reason: str | None = None,
 ) -> None:
     """Set the decision for this send operation.
 
@@ -203,8 +202,8 @@ def set_decision(
 def set_content_info(
     entry: SendAuditEntry,
     source: str,
-    template_key: Optional[str] = None,
-    generation_time_ms: Optional[float] = None,
+    template_key: str | None = None,
+    generation_time_ms: float | None = None,
 ) -> None:
     """Set content generation information.
 
@@ -222,9 +221,9 @@ def set_content_info(
 def set_api_result(
     entry: SendAuditEntry,
     called: bool,
-    success: Optional[bool] = None,
-    status_code: Optional[int] = None,
-    error: Optional[str] = None,
+    success: bool | None = None,
+    status_code: int | None = None,
+    error: str | None = None,
 ) -> None:
     """Set API call result information.
 
@@ -244,7 +243,7 @@ def set_api_result(
 def set_database_update(
     entry: SendAuditEntry,
     updated: bool,
-    fields: Optional[list[str]] = None,
+    fields: list[str] | None = None,
 ) -> None:
     """Set database update information.
 
@@ -311,12 +310,12 @@ def write_audit_entry(entry: SendAuditEntry) -> bool:
 
 
 def log_send_decision(
-    person_id: Optional[int] = None,
+    person_id: int | None = None,
     trigger_type: str = "",
     decision: str = "",
-    safety_checks: Optional[dict[str, str]] = None,
+    safety_checks: dict[str, str] | None = None,
     content_source: str = "",
-    result: Optional[dict[str, Any]] = None,
+    result: dict[str, Any] | None = None,
     action_source: str = "",
 ) -> bool:
     """Convenience function to log a complete send decision.
@@ -369,11 +368,11 @@ def log_send_decision(
 
 
 def query_audit_log(
-    person_id: Optional[int] = None,
-    trigger_type: Optional[str] = None,
-    decision: Optional[str] = None,
-    start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None,
+    person_id: int | None = None,
+    trigger_type: str | None = None,
+    decision: str | None = None,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
     limit: int = 100,
 ) -> list[SendAuditEntry]:
     """Query the audit log with filters.
@@ -411,12 +410,12 @@ def query_audit_log(
 
 def _parse_and_filter_line(
     line: str,
-    person_id: Optional[int],
-    trigger_type: Optional[str],
-    decision: Optional[str],
-    start_date: Optional[datetime],
-    end_date: Optional[datetime],
-) -> Optional[SendAuditEntry]:
+    person_id: int | None,
+    trigger_type: str | None,
+    decision: str | None,
+    start_date: datetime | None,
+    end_date: datetime | None,
+) -> SendAuditEntry | None:
     """Parse a log line and apply filters.
 
     Returns SendAuditEntry if line matches filters, None otherwise.
@@ -461,11 +460,11 @@ def _parse_and_filter_line(
 
 def _matches_filters(
     data: dict[str, Any],
-    person_id: Optional[int],
-    trigger_type: Optional[str],
-    decision: Optional[str],
-    start_date: Optional[datetime],
-    end_date: Optional[datetime],
+    person_id: int | None,
+    trigger_type: str | None,
+    decision: str | None,
+    start_date: datetime | None,
+    end_date: datetime | None,
 ) -> bool:
     """Check if data matches all filters."""
     if person_id is not None and data.get("person_id") != person_id:
@@ -479,8 +478,8 @@ def _matches_filters(
 
 def _passes_date_filter(
     timestamp_str: str,
-    start_date: Optional[datetime],
-    end_date: Optional[datetime],
+    start_date: datetime | None,
+    end_date: datetime | None,
 ) -> bool:
     """Check if timestamp passes date filters."""
     if not timestamp_str:
@@ -501,8 +500,8 @@ def _passes_date_filter(
 
 
 def get_audit_stats(
-    start_date: Optional[datetime] = None,
-    end_date: Optional[datetime] = None,
+    start_date: datetime | None = None,
+    end_date: datetime | None = None,
 ) -> dict[str, Any]:
     """Get aggregate statistics from the audit log.
 

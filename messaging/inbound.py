@@ -1,9 +1,9 @@
 import logging
 import sys
 from contextlib import suppress
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
@@ -209,8 +209,8 @@ class InboundOrchestrator:
 
     def _persist_inbound_conversation_log(
         self, person: Person, conversation_id: str, message_content: str
-    ) -> Optional[ConversationLog]:
-        log_entry: Optional[ConversationLog] = None
+    ) -> ConversationLog | None:
+        log_entry: ConversationLog | None = None
         max_len = self._get_message_truncation_length()
 
         try:
@@ -219,7 +219,7 @@ class InboundOrchestrator:
                 direction=MessageDirectionEnum.IN,
                 people_id=person.id,
                 latest_message_content=(message_content or "")[:max_len],
-                latest_timestamp=datetime.now(timezone.utc),
+                latest_timestamp=datetime.now(UTC),
                 ai_sentiment=None,
             )
             self.db.add(log_entry)
@@ -236,11 +236,11 @@ class InboundOrchestrator:
         conversation_id: str,
         reply_content: str,
         *,
-        intent: Optional[str],
+        intent: str | None,
         research_matches_count: int,
         semantic_search_ran: bool,
-    ) -> Optional[ConversationLog]:
-        log_entry: Optional[ConversationLog] = None
+    ) -> ConversationLog | None:
+        log_entry: ConversationLog | None = None
         max_len = self._get_message_truncation_length()
 
         template_key = "INBOUND_GENERATED_REPLY"
@@ -258,7 +258,7 @@ class InboundOrchestrator:
                 direction=MessageDirectionEnum.OUT,
                 people_id=person.id,
                 latest_message_content=(reply_content or "")[:max_len],
-                latest_timestamp=datetime.now(timezone.utc),
+                latest_timestamp=datetime.now(UTC),
                 ai_sentiment=None,
                 message_template_id=None,
                 script_message_status=enhanced_status,
@@ -271,7 +271,7 @@ class InboundOrchestrator:
         return log_entry
 
     @staticmethod
-    def _attach_intent_to_log(inbound_log: Optional[ConversationLog], intent: Optional[str]) -> None:
+    def _attach_intent_to_log(inbound_log: ConversationLog | None, intent: str | None) -> None:
         if inbound_log is None:
             return
         with suppress(Exception):
@@ -284,8 +284,8 @@ class InboundOrchestrator:
         sender_id: str,
         conversation_id: str,
         person: Person,
-        extracted_data: Optional[dict[str, Any]],
-    ) -> tuple[Optional[dict[str, Any]], str]:
+        extracted_data: dict[str, Any] | None,
+    ) -> tuple[dict[str, Any] | None, str]:
         """Run semantic search if message contains questions.
 
         Returns:
@@ -316,14 +316,14 @@ class InboundOrchestrator:
     def _run_research_flow(
         self,
         *,
-        intent: Optional[str],
+        intent: str | None,
         person: Person,
         message_content: str,
         sender_id: str,
         conversation_id: str,
         context_history: str,
-        source_message_id: Optional[int],
-    ) -> tuple[Optional[list[dict[str, Any]]], Optional[str], Optional[dict[str, Any]], Optional[dict[str, Any]], int]:
+        source_message_id: int | None,
+    ) -> tuple[list[dict[str, Any]] | None, str | None, dict[str, Any] | None, dict[str, Any] | None, int]:
         if intent not in {"PRODUCTIVE", "ENTHUSIASTIC"}:
             return None, None, None, None, 50  # Default confidence for non-productive intents
 
@@ -361,16 +361,16 @@ class InboundOrchestrator:
         self,
         *,
         person: Person,
-        extracted_data: Optional[dict[str, Any]],
+        extracted_data: dict[str, Any] | None,
         message_content: str,
         context_history: str,
         semantic_search_prompt: str,
         conversation_id: str,
-        intent: Optional[str],
-    ) -> tuple[Optional[list[dict[str, Any]]], Optional[str], int]:
+        intent: str | None,
+    ) -> tuple[list[dict[str, Any]] | None, str | None, int]:
         """Generate research results and reply text."""
-        research_results: Optional[list[dict[str, Any]]] = None
-        generated_reply: Optional[str] = None
+        research_results: list[dict[str, Any]] | None = None
+        generated_reply: str | None = None
         context_confidence: int = 50
 
         if not extracted_data:
@@ -467,7 +467,7 @@ class InboundOrchestrator:
 
         return tree_lookup_results, relationship_context, family_members_str, context_confidence
 
-    def _resolve_person(self, sender_id: str) -> Optional[Person]:
+    def _resolve_person(self, sender_id: str) -> Person | None:
         """Resolve Person object from sender_id (UUID or profile_id)."""
         return (
             self.db.query(Person).filter((Person.profile_id == sender_id) | (Person.uuid == sender_id.upper())).first()
@@ -519,7 +519,7 @@ class InboundOrchestrator:
         *,
         original_message: str,
         conversation_id: str,
-        source_message_id: Optional[int],
+        source_message_id: int | None,
     ) -> None:
         """Validate extracted facts and stage SuggestedFact/DataConflict records."""
 
@@ -723,7 +723,7 @@ class InboundOrchestrator:
 
             self.db.commit()
 
-    def _update_conversation_state(self, person: Person, intent: Optional[str]) -> None:
+    def _update_conversation_state(self, person: Person, intent: str | None) -> None:
         """Update the conversation state in the database."""
         state = self._get_or_create_conversation_state(person)
         if state:
@@ -745,7 +745,7 @@ class InboundOrchestrator:
 
             self.db.commit()
 
-    def _get_or_create_conversation_state(self, person: Person) -> Optional[ConversationState]:
+    def _get_or_create_conversation_state(self, person: Person) -> ConversationState | None:
         """Get existing conversation state or create a new one."""
         state = self.db.query(ConversationState).filter(ConversationState.people_id == person.id).first()
         if not state:
@@ -758,7 +758,7 @@ class InboundOrchestrator:
         return state
 
     def _update_metrics(
-        self, person: Person, intent: Optional[str], reply_generated: bool, facts_extracted: bool
+        self, person: Person, intent: str | None, reply_generated: bool, facts_extracted: bool
     ) -> None:
         """Update conversation metrics and track engagement events."""
         # Get or create metrics record
@@ -769,7 +769,7 @@ class InboundOrchestrator:
 
         # Update basic counts
         metrics.messages_received += 1
-        metrics.last_message_received = datetime.now(timezone.utc)
+        metrics.last_message_received = datetime.now(UTC)
 
         if not metrics.first_response_received:
             metrics.first_response_received = True

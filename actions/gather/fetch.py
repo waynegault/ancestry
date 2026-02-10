@@ -1,8 +1,6 @@
-from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
 
 from testing.test_framework import TestSuite, create_standard_test_runner
 
@@ -32,7 +30,7 @@ class GatherFetchService:
 
         return self._default_batch_size
 
-    def build_plan(self, page: int, matches_on_page: Optional[int]) -> GatherFetchPlan:
+    def build_plan(self, page: int, matches_on_page: int | None) -> GatherFetchPlan:
         """Create a fetch plan with basic bookkeeping for tests."""
 
         expected = matches_on_page if matches_on_page and matches_on_page > 0 else self._default_batch_size

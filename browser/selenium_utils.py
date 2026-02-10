@@ -51,15 +51,15 @@ class DriverProtocol(Protocol):
 
     def add_cookie(self, cookie: dict[str, object]) -> None: ...
 
-    def get_cookie(self, name: str) -> Optional[dict[str, object]]: ...
+    def get_cookie(self, name: str) -> dict[str, object] | None: ...
 
-    def get_attribute(self, name: str) -> Optional[str]: ...
+    def get_attribute(self, name: str) -> str | None: ...
 
 
 class WebElementProtocol(Protocol):
     """Protocol for WebElement to ensure strict typing."""
 
-    def get_attribute(self, name: str) -> Optional[str]: ...
+    def get_attribute(self, name: str) -> str | None: ...
 
     def click(self) -> None: ...
 
@@ -77,7 +77,7 @@ class WebElementProtocol(Protocol):
 
 
 @safe_execute(default_return=False, log_errors=True)
-def force_user_agent(driver: Optional[WebDriver], user_agent: str):
+def force_user_agent(driver: WebDriver | None, user_agent: str):
     """
     Attempts to force the browser's User-Agent string using Chrome DevTools Protocol.
     Now with unified error handling via safe_execute decorator.
@@ -94,7 +94,7 @@ def force_user_agent(driver: Optional[WebDriver], user_agent: str):
 
 
 @safe_execute(default_return="", log_errors=False)
-def extract_text(element: Optional[WebElement]) -> str:
+def extract_text(element: WebElement | None) -> str:
     """Extract text from an element safely with unified error handling."""
     if not element:
         return ""
@@ -104,7 +104,7 @@ def extract_text(element: Optional[WebElement]) -> str:
 
 
 @safe_execute(default_return="", log_errors=False)
-def extract_attribute(element: Optional[WebElement], attribute: str) -> str:
+def extract_attribute(element: WebElement | None, attribute: str) -> str:
     """Extract attribute from an element safely with unified error handling."""
     if not element:
         return ""
@@ -115,7 +115,7 @@ def extract_attribute(element: Optional[WebElement], attribute: str) -> str:
 
 @safe_execute(default_return=False, log_errors=False)
 def is_elem_there(
-    driver: Optional[WebDriver],
+    driver: WebDriver | None,
     selector: str,
     by: str = By.CSS_SELECTOR,
     *,
@@ -134,7 +134,7 @@ def is_elem_there(
 
 
 @safe_execute(default_return=False, log_errors=False)
-def is_browser_open(driver: Optional[WebDriver]) -> bool:
+def is_browser_open(driver: WebDriver | None) -> bool:
     """Check if browser is still open and responsive with unified error handling."""
     if not driver:
         return False
@@ -144,7 +144,7 @@ def is_browser_open(driver: Optional[WebDriver]) -> bool:
 
 
 @safe_execute(log_errors=True)
-def close_tabs(driver: Optional[WebDriver], keep_first: bool = True) -> None:
+def close_tabs(driver: WebDriver | None, keep_first: bool = True) -> None:
     """Close browser tabs with unified error handling."""
     if not driver:
         return
@@ -165,7 +165,7 @@ def close_tabs(driver: Optional[WebDriver], keep_first: bool = True) -> None:
 
 
 @safe_execute(default_return=[], log_errors=False)
-def get_driver_cookies(driver: Optional[WebDriver]) -> list[dict[str, Any]]:
+def get_driver_cookies(driver: WebDriver | None) -> list[dict[str, Any]]:
     """Get all cookies from driver with unified error handling."""
     if not driver:
         return []
@@ -175,13 +175,12 @@ def get_driver_cookies(driver: Optional[WebDriver]) -> list[dict[str, Any]]:
 
 
 @safe_execute(default_return=False, log_errors=True)
-def export_cookies(driver: Optional[WebDriver], filepath: str) -> bool:
+def export_cookies(driver: WebDriver | None, filepath: str) -> bool:
     """Export cookies to file with unified error handling."""
     if not driver:
         return False
 
     cookies = get_driver_cookies(driver)
-    from pathlib import Path
 
     with Path(filepath).open("w", encoding="utf-8") as f:
         json.dump(cookies, f, indent=2)
@@ -189,7 +188,7 @@ def export_cookies(driver: Optional[WebDriver], filepath: str) -> bool:
 
 
 @safe_execute(log_errors=False)
-def scroll_to_element(driver: Optional[WebDriver], element: Optional[WebElement]) -> None:
+def scroll_to_element(driver: WebDriver | None, element: WebElement | None) -> None:
     """Scroll element into view with unified error handling."""
     if not driver or not element:
         return
@@ -218,7 +217,7 @@ def scroll_to_element(driver: Optional[WebDriver], element: Optional[WebElement]
 
 
 @safe_execute(default_return=False, log_errors=False)
-def safe_click(driver: Optional[WebDriver], element: Optional[WebElement]) -> bool:
+def safe_click(driver: WebDriver | None, element: WebElement | None) -> bool:
     """Safely click an element with unified error handling."""
     if not driver or not element:
         return False
@@ -232,7 +231,7 @@ def safe_click(driver: Optional[WebDriver], element: Optional[WebElement]) -> bo
 
 
 @safe_execute(default_return=False, log_errors=False)
-def is_element_visible(element: Optional[WebElement]) -> bool:
+def is_element_visible(element: WebElement | None) -> bool:
     """Check if element is visible with unified error handling."""
     if not element:
         return False
@@ -277,7 +276,6 @@ def _test_cookie_export_roundtrip() -> None:
     """Validate export_cookies writes driver cookies to disk."""
     import json as _json
     import tempfile
-    from pathlib import Path
     from unittest.mock import MagicMock
 
     mock_driver = MagicMock()

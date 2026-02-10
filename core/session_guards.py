@@ -1,9 +1,10 @@
 import os
 import sys
 import time
+from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 if __package__ in {None, ""}:
     REPO_ROOT = Path(__file__).resolve().parents[1]

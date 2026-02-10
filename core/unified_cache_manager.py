@@ -15,7 +15,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 # Add parent directory to path for standard_imports
 parent_dir = str(Path(__file__).resolve().parent.parent)
@@ -127,7 +127,7 @@ class UnifiedCacheManager:
         except Exception:
             logger.debug("Failed to update cache hit ratio", exc_info=True)
 
-    def get(self, service: str, endpoint: str, key: str) -> Optional[Any]:
+    def get(self, service: str, endpoint: str, key: str) -> Any | None:
         """
         Retrieve a cached value if it exists and hasn't expired.
 
@@ -185,7 +185,7 @@ class UnifiedCacheManager:
         endpoint: str,
         key: str,
         value: Any,
-        ttl: Optional[int] = None,
+        ttl: int | None = None,
     ) -> None:
         """
         Cache a value with optional TTL override.
@@ -269,9 +269,9 @@ class UnifiedCacheManager:
 
     def invalidate(
         self,
-        service: Optional[str] = None,
-        endpoint: Optional[str] = None,
-        key: Optional[str] = None,
+        service: str | None = None,
+        endpoint: str | None = None,
+        key: str | None = None,
     ) -> int:
         """
         Invalidate cache entries by service, endpoint, or specific key.
@@ -298,7 +298,7 @@ class UnifiedCacheManager:
             logger.info(f"Cache invalidated: {count} entries")
             return count
 
-    def get_stats(self, endpoint: Optional[str] = None) -> dict[str, Any]:
+    def get_stats(self, endpoint: str | None = None) -> dict[str, Any]:
         """
         Get cache statistics.
 
@@ -383,11 +383,11 @@ class UnifiedCacheManager:
     # CacheBackend Protocol Methods
     # These provide protocol-compatible interface for CacheFactory integration
 
-    def get_by_key(self, key: str) -> Optional[Any]:
+    def get_by_key(self, key: str) -> Any | None:
         """CacheBackend protocol: Get value by key only (uses 'generic' service/endpoint)."""
         return self.get("generic", "default", key)
 
-    def set_by_key(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+    def set_by_key(self, key: str, value: Any, ttl: int | None = None) -> bool:
         """CacheBackend protocol: Set value by key only (uses 'generic' service/endpoint)."""
         try:
             self.set("generic", "default", key, value, ttl)
@@ -511,10 +511,10 @@ class UnifiedCacheBackendAdapter(CacheBackend):
     def __init__(self, cache_impl: UnifiedCacheManager) -> None:
         self._cache = cache_impl
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         return self._cache.get_by_key(key)
 
-    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+    def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
         return self._cache.set_by_key(key, value, ttl)
 
     def delete(self, key: str) -> bool:
@@ -544,8 +544,8 @@ class UnifiedCacheBackendAdapter(CacheBackend):
 
 
 class CacheState:
-    unified_cache: Optional[UnifiedCacheManager] = None
-    unified_cache_backend: Optional[UnifiedCacheBackendAdapter] = None
+    unified_cache: UnifiedCacheManager | None = None
+    unified_cache_backend: UnifiedCacheBackendAdapter | None = None
 
 
 def get_unified_cache() -> UnifiedCacheManager:

@@ -18,8 +18,8 @@ if str(_project_root) not in sys.path:
 
 import logging
 import os
-from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime, timedelta, timezone
+from typing import Any
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -57,7 +57,7 @@ def get_tree_stats_cache_stats() -> dict[str, Any]:
             distinct_profiles = session.query(func.count(func.distinct(TreeStatisticsCache.profile_id))).scalar() or 0
             latest_calc = session.query(func.max(TreeStatisticsCache.calculated_at)).scalar()
             oldest_calc = session.query(func.min(TreeStatisticsCache.calculated_at)).scalar()
-            expiration_cutoff = datetime.now(timezone.utc) - timedelta(hours=CACHE_EXPIRATION_HOURS)
+            expiration_cutoff = datetime.now(UTC) - timedelta(hours=CACHE_EXPIRATION_HOURS)
             expired_entries = (
                 session.query(func.count(TreeStatisticsCache.id))
                 .filter(TreeStatisticsCache.calculated_at < expiration_cutoff)
@@ -108,11 +108,11 @@ def clear_tree_stats_cache() -> bool:
         return False
 
 
-def _collect_explicit_profile_ids(profile_ids: Optional[list[str]]) -> list[str]:
+def _collect_explicit_profile_ids(profile_ids: list[str] | None) -> list[str]:
     return [pid for pid in profile_ids or [] if pid]
 
 
-def _get_session_profile_id() -> Optional[str]:
+def _get_session_profile_id() -> str | None:
     try:
         from core.session_utils import get_session_manager
 
@@ -124,7 +124,7 @@ def _get_session_profile_id() -> Optional[str]:
     return None
 
 
-def _get_test_profile_id() -> Optional[str]:
+def _get_test_profile_id() -> str | None:
     try:
         from config import config_schema
 
@@ -144,7 +144,7 @@ def _dedupe_preserve_order(values: list[str]) -> list[str]:
     return deduped
 
 
-def _resolve_profile_ids(profile_ids: Optional[list[str]]) -> list[str]:
+def _resolve_profile_ids(profile_ids: list[str] | None) -> list[str]:
     resolved = _collect_explicit_profile_ids(profile_ids)
     if not resolved:
         fallbacks = [pid for pid in (_get_session_profile_id(), _get_test_profile_id()) if pid]
@@ -152,7 +152,7 @@ def _resolve_profile_ids(profile_ids: Optional[list[str]]) -> list[str]:
     return _dedupe_preserve_order(resolved)
 
 
-def warm_tree_stats_cache(profile_ids: Optional[list[str]] = None) -> dict[str, Any]:
+def warm_tree_stats_cache(profile_ids: list[str] | None = None) -> dict[str, Any]:
     """Warm tree statistics cache entries for the provided profile IDs."""
 
     targets = _resolve_profile_ids(profile_ids)
@@ -292,7 +292,7 @@ def calculate_tree_statistics(session: Session, profile_id: str, force_refresh: 
             'moderate_matches': moderate_matches,
             'distant_matches': distant_matches,
             'ethnicity_regions': ethnicity_regions,
-            'calculated_at': datetime.now(timezone.utc),
+            'calculated_at': datetime.now(UTC),
             'profile_id': profile_id,
         }
 
@@ -362,7 +362,7 @@ def _calculate_ethnicity_distribution(session: Session) -> dict[str, int]:
         return {}
 
 
-def _get_cached_statistics(session: Session, profile_id: str) -> Optional[dict[str, Any]]:
+def _get_cached_statistics(session: Session, profile_id: str) -> dict[str, Any] | None:
     """
     Retrieve cached statistics if available and not expired.
 
@@ -422,7 +422,7 @@ def _save_to_cache(session: Session, profile_id: str, statistics: dict[str, Any]
             cache_entry.distant_matches = statistics['distant_matches']
             cache_entry.ethnicity_regions = ethnicity_json
             cache_entry.calculated_at = statistics['calculated_at']
-            cache_entry.updated_at = datetime.now(timezone.utc)
+            cache_entry.updated_at = datetime.now(UTC)
         else:
             # Create new entry
             cache_entry = TreeStatisticsCache(
@@ -448,10 +448,10 @@ def _save_to_cache(session: Session, profile_id: str, statistics: dict[str, Any]
 
 def _cache_age_hours(calculated_at: datetime) -> float:
     """Calculate age of cache entry in hours."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     # Ensure calculated_at is timezone-aware
     if calculated_at.tzinfo is None:
-        calculated_at = calculated_at.replace(tzinfo=timezone.utc)
+        calculated_at = calculated_at.replace(tzinfo=UTC)
     age = now - calculated_at
     return age.total_seconds() / 3600
 
@@ -466,7 +466,7 @@ def _empty_statistics(profile_id: str) -> dict[str, Any]:
         'moderate_matches': 0,
         'distant_matches': 0,
         'ethnicity_regions': {},
-        'calculated_at': datetime.now(timezone.utc),
+        'calculated_at': datetime.now(UTC),
         'profile_id': profile_id,
     }
 
@@ -533,7 +533,7 @@ def _calculate_similarity_score(region_details: dict[str, dict[str, float]]) -> 
     return sum(min(details['owner_percentage'], details['match_percentage']) for details in region_details.values())
 
 
-def _find_top_shared_region(region_details: dict[str, dict[str, float]]) -> Optional[str]:
+def _find_top_shared_region(region_details: dict[str, dict[str, float]]) -> str | None:
     """Find the region with highest combined percentage."""
     if not region_details:
         return None
@@ -614,7 +614,7 @@ def calculate_ethnicity_commonality(session: Session, owner_profile_id: str, mat
             'region_details': region_details,
             'similarity_score': similarity_score,
             'top_shared_region': top_shared_region,
-            'calculated_at': datetime.now(timezone.utc),
+            'calculated_at': datetime.now(UTC),
         }
 
         logger.debug(f"Ethnicity commonality: {len(shared_regions)} shared regions, similarity={similarity_score:.1f}%")
@@ -633,7 +633,7 @@ def _empty_ethnicity_commonality() -> dict[str, Any]:
         'region_details': {},
         'similarity_score': 0.0,
         'top_shared_region': None,
-        'calculated_at': datetime.now(timezone.utc),
+        'calculated_at': datetime.now(UTC),
     }
 
 

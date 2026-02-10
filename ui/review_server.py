@@ -10,9 +10,9 @@ import json
 import logging
 import os
 import webbrowser
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from threading import Timer
-from typing import Any, Optional
+from typing import Any
 
 from flask import Flask, jsonify, render_template_string, request
 
@@ -551,7 +551,7 @@ HTML_TEMPLATE = """
 """
 
 
-def get_db_session() -> Optional[Any]:
+def get_db_session() -> Any | None:
     """Get database session from SessionManager."""
     from testing.test_utilities import create_test_database
 
@@ -710,7 +710,7 @@ def _validate_rewrite_request(
     draft_id: int,
     feedback: str,
     sm: "SessionManager",
-) -> tuple[Any, Any, Any, Optional[str]]:
+) -> tuple[Any, Any, Any, str | None]:
     """Validate rewrite request and return (db_session, draft, person, error_message).
 
     Returns (None, None, None, error_msg) if validation fails,
@@ -812,7 +812,7 @@ def _generate_rewrite(
         return "AI failed to generate reply"
 
     draft.content = new_reply
-    draft.created_at = datetime.now(timezone.utc)
+    draft.created_at = datetime.now(UTC)
     db_session.commit()
 
     return jsonify({"success": True, "message": "Draft rewritten successfully", "new_content": new_reply})

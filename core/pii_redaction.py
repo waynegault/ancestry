@@ -18,7 +18,6 @@ Usage:
     sensitive information from all log output.
 """
 
-from __future__ import annotations
 
 import logging
 import os

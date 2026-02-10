@@ -68,7 +68,7 @@ import os
 import random
 import subprocess
 import time
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import Any, cast
 
 try:
     _uc_module = importlib.import_module("undetected_chromedriver")
@@ -77,10 +77,6 @@ except ImportError as uc_error:  # pragma: no cover - required dependency
 
 uc = cast(Any, _uc_module)
 
-if TYPE_CHECKING:
-    from undetected_chromedriver import ChromeOptions as ChromeOptionsType
-else:  # pragma: no cover - runtime fallback
-    ChromeOptionsType = Any
 from selenium.common.exceptions import (
     NoSuchWindowException,
     TimeoutException,
@@ -88,6 +84,7 @@ from selenium.common.exceptions import (
 )
 from selenium.webdriver.remote.webdriver import WebDriver
 
+from browser.selenium_utils import close_tabs
 from config import config_schema
 from core.logging_config import setup_logging
 
@@ -189,113 +186,34 @@ def set_win_size(driver: WebDriver) -> None:
 # End of set_win_size
 
 
-def close_tabs(driver: WebDriver) -> None:
-    """Closes all but the first tab in the given driver."""
-    logger.debug("Closing extra tabs...")
-    try:
-        while len(driver.window_handles) > 1:
-            driver.switch_to.window(driver.window_handles[-1])
-            driver.close()
-        driver.switch_to.window(driver.window_handles[0])  # Switch back to the first tab
-        logger.debug("Switched back to the original tab.")
-    except NoSuchWindowException:
-        logger.warning("Attempted to close or switch to a tab that no longer exists.")
-    except Exception as e:
-        logger.error(f"Error in close_tabs: {e}", exc_info=True)
-
-
-# end close_tabs
+# close_tabs is imported from browser.selenium_utils (single source of truth)
 
 
 # Helper functions for init_webdvr
 
 
-def _configure_chrome_options(config: Any) -> ChromeOptionsType:
-    """Configure Chrome options for WebDriver initialization with enhanced stealth."""
-    options = uc.ChromeOptions()
+def _create_chrome_driver(attempt_num: int) -> WebDriver | None:
+    """Create Chrome WebDriver instance with minimal reliable configuration.
 
-    # Headless mode configuration
-    if config.headless_mode:
-        logger.debug("Configuring headless mode.")
-        options.add_argument("--headless=new")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--window-size=1920,1080")
-
-    # User data directory
-    user_data_dir_path = config.chrome_user_data_dir
-    if user_data_dir_path:
-        user_data_dir_str = str(user_data_dir_path.resolve())
-        options.add_argument(f"--user-data-dir={user_data_dir_str}")
-        logger.debug(f"User data directory (no --profile-directory):\n{user_data_dir_str}")
-
-    # Browser path
-    browser_path_obj = config.chrome_browser_path
-    if browser_path_obj:
-        browser_path_str = str(browser_path_obj.resolve())
-        from pathlib import Path
-
-        if Path(browser_path_str).exists():
-            options.binary_location = browser_path_str
-            logger.debug(f"Using browser executable:\n{browser_path_str}")
-        else:
-            logger.warning(f"Specified browser path not found: {browser_path_str}. Relying on system default.")
-    else:
-        logger.debug("No explicit browser path specified, using system default.")
-
-    # ANTI-DETECTION: Disable automation flags that Ancestry.co.uk detects
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("--disable-dev-shm-usage")
-    options.add_argument("--no-sandbox")
-
-    # ANTI-DETECTION: Remove common automation indicators
-    options.add_argument("--disable-infobars")
-    options.add_argument("--disable-popup-blocking")
-    options.add_argument("--disable-extensions")
-    options.add_argument("--disable-plugins-discovery")
-
-    # ANTI-DETECTION: Additional stealth flags to appear as normal browser
-    options.add_argument("--disable-automation")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("--exclude-switches=enable-automation")
-    options.add_argument("--exclude-switches=enable-logging")
-
-    # Set realistic user agent (DO NOT use random - use consistent realistic one)
-    # Random user agents are a red flag for bot detection
-    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
-    options.add_argument(f"--user-agent={user_agent}")
-    logger.debug(f"Setting consistent User-Agent: {user_agent}")
-
-    # ANTI-DETECTION: Set preferences to disable automation flags
-    options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
-    options.add_experimental_option("useAutomationExtension", False)
-
-    # ANTI-DETECTION: Set realistic Chrome preferences
-    prefs = {
-        "credentials_enable_service": False,
-        "profile.password_manager_enabled": False,
-        "profile.default_content_setting_values.notifications": 2,
-    }
-    options.add_experimental_option("prefs", prefs)
-
-    return options
-
-
-def _create_chrome_driver(_options: ChromeOptionsType, attempt_num: int) -> Optional[WebDriver]:
-    """Create Chrome WebDriver instance with multiple fallback strategies."""
+    Uses minimal options (Strategy 3) because full anti-detection options from
+    _configure_chrome_options cause 'cannot connect to chrome' errors with
+    undetected-chromedriver, which handles its own stealth internally.
+    """
     try:
         logger.debug(f"[init_webdvr] Attempting Chrome WebDriver initialization (attempt {attempt_num})...")
         start_time = time.time()
 
-        # Use undetected_chromedriver for anti-bot protection
-        # Auto-detect Chrome version and let UC handle driver download
-        logger.debug("[init_webdvr] Auto-detecting Chrome version for compatibility...")
-
-        # Use minimal configuration (Strategy 3) - this is the only one that works reliably
-        # Skip Strategies 1 & 2 which fail with "cannot connect to chrome" errors
         logger.debug("[init_webdvr] Using minimal configuration for best compatibility...")
         minimal_options = uc.ChromeOptions()
         minimal_options.add_argument("--no-sandbox")
         minimal_options.add_argument("--disable-dev-shm-usage")
+
+        # Headless mode from config
+        headless = getattr(config_schema.selenium, "headless_mode", False)
+        if headless:
+            minimal_options.add_argument("--headless=new")
+            minimal_options.add_argument("--window-size=1920,1080")
+            logger.debug("[init_webdvr] Headless mode enabled")
 
         # Persist authentication state via dedicated profile
         user_data_dir = getattr(config_schema.selenium, "chrome_user_data_dir", None)
@@ -402,7 +320,7 @@ def _configure_driver_post_init(driver: WebDriver, config: Any, _user_agent: str
     logger.debug(f"WebDriver instance fully configured successfully (attempt {attempt_num}).")
 
 
-def _handle_driver_exception(e: Exception, driver: Optional[WebDriver], attempt_num: int) -> None:
+def _handle_driver_exception(e: Exception, driver: WebDriver | None, attempt_num: int) -> None:
     """Handle exceptions during driver initialization."""
     if isinstance(e, TimeoutException):
         logger.warning(f"Timeout during WebDriver init attempt {attempt_num}: {e}")
@@ -425,7 +343,7 @@ def _handle_driver_exception(e: Exception, driver: Optional[WebDriver], attempt_
             driver.quit()
 
 
-def init_webdvr(_attach_attempt: bool = False) -> Optional[WebDriver]:
+def init_webdvr(_attach_attempt: bool = False) -> WebDriver | None:
     """
     V2.0 MODERNIZED: Uses standard Selenium WebDriver with automatic ChromeDriver management.
     Initializes standard Chrome WebDriver and returns focus to the terminal when complete.
@@ -445,16 +363,13 @@ def init_webdvr(_attach_attempt: bool = False) -> Optional[WebDriver]:
         logger.debug(f"WebDriver initialization attempt {attempt_num}/{max_init_retries}...")
 
         try:
-            # Configure Chrome options
-            options = _configure_chrome_options(config)
-
             # Get user agent for later use
             user_agent = random.choice(
                 getattr(config_schema, "USER_AGENTS", ["Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"])
             )
 
-            # Create driver
-            driver = _create_chrome_driver(options, attempt_num)
+            # Create driver (uses minimal options internally for reliability)
+            driver = _create_chrome_driver(attempt_num)
 
             # Configure driver if creation succeeded
             if driver is not None:
@@ -837,8 +752,13 @@ def test_webdriver_initialization() -> None:
     import inspect
 
     sig = inspect.signature(init_webdvr)
-    # init_webdvr should accept parameters for configuration
-    assert len(sig.parameters) >= 0, "init_webdvr should have a valid signature"
+    # init_webdvr should have the _attach_attempt parameter
+    assert "_attach_attempt" in sig.parameters, (
+        f"init_webdvr should have '_attach_attempt' parameter, got: {list(sig.parameters.keys())}"
+    )
+    # Verify the default value of _attach_attempt is False
+    param = sig.parameters["_attach_attempt"]
+    assert param.default is False, f"_attach_attempt default should be False, got {param.default}"
 
 
 def test_chrome_options_creation() -> None:

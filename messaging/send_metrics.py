@@ -22,14 +22,15 @@ Usage:
 
 from __future__ import annotations
 
+import functools
 import logging
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from testing.test_framework import TestSuite
 
@@ -39,17 +40,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Module-level reference to MetricsBundle (set by configure_send_metrics)
-_metrics_bundle: Optional[MetricsBundle] = None
+_metrics_bundle: MetricsBundle | None = None
 _metrics_enabled: bool = False
 
 
-def configure_send_metrics(metrics_bundle: Optional[MetricsBundle]) -> None:
+def configure_send_metrics(metrics_bundle: MetricsBundle | None) -> None:
     """Configure send metrics with the global MetricsBundle.
 
     Args:
         metrics_bundle: The MetricsBundle from MetricsRegistry, or None to disable.
     """
-    global _metrics_bundle, _metrics_enabled  # noqa: PLW0603
+    global _metrics_bundle, _metrics_enabled
     _metrics_bundle = metrics_bundle
     _metrics_enabled = metrics_bundle is not None
     if _metrics_enabled:
@@ -58,15 +59,28 @@ def configure_send_metrics(metrics_bundle: Optional[MetricsBundle]) -> None:
         logger.debug("Send metrics disabled (no MetricsBundle)")
 
 
+def _requires_metrics(func: Callable[..., None]) -> Callable[..., None]:
+    """Decorator that skips the function when metrics are disabled."""
+
+    @functools.wraps(func)
+    def wrapper(*args: Any, **kwargs: Any) -> None:
+        if not _metrics_enabled or _metrics_bundle is None:
+            return None
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
 # --------------------------------------------------------------------------
 # Metric Recording Functions
 # --------------------------------------------------------------------------
 
 
+@_requires_metrics
 def record_send_attempt(
     trigger_type: str,
     success: bool,
-    error_type: Optional[str] = None,
+    error_type: str | None = None,
 ) -> None:
     """Record a message send attempt.
 
@@ -75,9 +89,6 @@ def record_send_attempt(
         success: Whether the send succeeded
         error_type: Optional error category if failed (e.g., "api_error", "timeout")
     """
-    if not _metrics_enabled or _metrics_bundle is None:
-        return
-
     # Normalize trigger type to standard values
     trigger = _normalize_trigger_type(trigger_type)
     result = "success" if success else (error_type or "error")
@@ -88,15 +99,13 @@ def record_send_attempt(
         logger.debug("Failed to record send_attempts metric: %s", e)
 
 
+@_requires_metrics
 def record_safety_block(check_type: str) -> None:
     """Record a send blocked by a safety check.
 
     Args:
         check_type: The safety check that blocked (opt_out, duplicate, policy, hard_stop)
     """
-    if not _metrics_enabled or _metrics_bundle is None:
-        return
-
     # Normalize check type
     check = _normalize_check_type(check_type)
 
@@ -106,6 +115,7 @@ def record_safety_block(check_type: str) -> None:
         logger.debug("Failed to record safety_blocks metric: %s", e)
 
 
+@_requires_metrics
 def record_generation_time(source: str, seconds: float) -> None:
     """Record content generation time.
 
@@ -113,9 +123,6 @@ def record_generation_time(source: str, seconds: float) -> None:
         source: Content source (template, ai_generated, approved_draft)
         seconds: Time taken in seconds
     """
-    if not _metrics_enabled or _metrics_bundle is None:
-        return
-
     # Normalize source type
     src = _normalize_source_type(source)
 
@@ -125,7 +132,8 @@ def record_generation_time(source: str, seconds: float) -> None:
         logger.debug("Failed to record content_generation_time metric: %s", e)
 
 
-def record_api_result(endpoint: str, success: bool, status_code: Optional[int] = None) -> None:
+@_requires_metrics
+def record_api_result(endpoint: str, success: bool, status_code: int | None = None) -> None:
     """Record API call result.
 
     Args:
@@ -133,9 +141,6 @@ def record_api_result(endpoint: str, success: bool, status_code: Optional[int] =
         success: Whether the API call succeeded
         status_code: Optional HTTP status code
     """
-    if not _metrics_enabled or _metrics_bundle is None:
-        return
-
     result = "success" if success else "failure"
     family = _status_code_family(status_code) if status_code else "unknown"
 
@@ -145,15 +150,13 @@ def record_api_result(endpoint: str, success: bool, status_code: Optional[int] =
         logger.debug("Failed to record send_api_results metric: %s", e)
 
 
+@_requires_metrics
 def record_decision_path(decision_type: str) -> None:
     """Record the decision path taken by the orchestrator.
 
     Args:
         decision_type: The decision made (send, block, skip, desist)
     """
-    if not _metrics_enabled or _metrics_bundle is None:
-        return
-
     decision = decision_type.lower()
     if decision not in {"send", "block", "skip", "desist"}:
         decision = "other"

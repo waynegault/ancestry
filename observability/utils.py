@@ -9,7 +9,6 @@ extracted from utils.py.
 
 # === STANDARD LIBRARY IMPORTS ===
 import re
-from typing import Optional
 from urllib.parse import urlparse
 
 # === THIRD-PARTY IMPORTS ===
@@ -52,7 +51,7 @@ def derive_metrics_endpoint(url: str) -> str:
         return "unknown"
 
 
-def metrics_status_family(status: Optional[int]) -> str:
+def metrics_status_family(status: int | None) -> str:
     """Convert HTTP status code to status family string."""
     if status is None:
         return "error"
@@ -68,7 +67,7 @@ def metrics_status_family(status: Optional[int]) -> str:
 
 
 def resolve_request_duration(
-    response: Optional[RequestsResponse],
+    response: RequestsResponse | None,
     fallback_duration: float,
 ) -> float:
     """Prefer requests' elapsed timing when available."""
@@ -102,7 +101,89 @@ from testing.test_utilities import create_standard_test_runner
 
 def _test_module_integrity() -> bool:
     "Test that module can be imported and definitions are valid."
-    return True
+    from unittest.mock import MagicMock
+
+    from testing.test_framework import TestSuite
+
+    suite = TestSuite("Observability Utils", "observability/utils.py")
+    suite.start_suite()
+
+    def test_sanitize_metric_segment():
+        assert sanitize_metric_segment("12345") == ":id"
+        assert sanitize_metric_segment("abcdef01-2345-6789-abcd-ef0123456789") == ":uuid"
+        assert sanitize_metric_segment("person_12345") == ":person_id"
+        assert sanitize_metric_segment("tree_abc") == ":tree_id"
+        assert sanitize_metric_segment("matches") == "matches"
+        return True
+
+    suite.run_test("sanitize_metric_segment reduces high-cardinality segments", test_sanitize_metric_segment)
+
+    def test_derive_metrics_endpoint():
+        result = derive_metrics_endpoint("https://example.com/api/v1/person_123/details")
+        assert isinstance(result, str)
+        assert ":person_id" in result
+        assert derive_metrics_endpoint("") == "root"
+        assert derive_metrics_endpoint("https://example.com/") == "root"
+        return True
+
+    suite.run_test("derive_metrics_endpoint normalizes URLs", test_derive_metrics_endpoint)
+
+    def test_metrics_status_family():
+        assert metrics_status_family(200) == "2xx"
+        assert metrics_status_family(201) == "2xx"
+        assert metrics_status_family(301) == "3xx"
+        assert metrics_status_family(404) == "4xx"
+        assert metrics_status_family(429) == "4xx"
+        assert metrics_status_family(500) == "5xx"
+        assert metrics_status_family(None) == "error"
+        assert metrics_status_family(100) == "other"
+        return True
+
+    suite.run_test("metrics_status_family maps status codes correctly", test_metrics_status_family)
+
+    def test_resolve_request_duration_with_response():
+        mock_resp = MagicMock()
+        mock_resp.elapsed.total_seconds.return_value = 1.25
+        result = resolve_request_duration(mock_resp, fallback_duration=5.0)
+        assert result == 1.25
+        return True
+
+    suite.run_test("resolve_request_duration prefers response.elapsed", test_resolve_request_duration_with_response)
+
+    def test_resolve_request_duration_fallback():
+        result = resolve_request_duration(None, fallback_duration=3.5)
+        assert result == 3.5
+        return True
+
+    suite.run_test("resolve_request_duration uses fallback when no response", test_resolve_request_duration_fallback)
+
+    def test_record_api_metrics_calls_bundle():
+        import sys
+        obs_utils = sys.modules[__name__]
+        mock_bundle = MagicMock()
+        original_metrics = obs_utils.metrics
+        obs_utils.metrics = lambda: mock_bundle
+        try:
+            record_api_metrics("test_endpoint", "GET", "success", "2xx", 0.5)
+            mock_bundle.api_requests.inc.assert_called_once_with("test_endpoint", "GET", "success")
+            mock_bundle.api_latency.observe.assert_called_once_with("test_endpoint", "2xx", 0.5)
+        finally:
+            obs_utils.metrics = original_metrics
+        return True
+
+    suite.run_test("record_api_metrics emits to metrics bundle", test_record_api_metrics_calls_bundle)
+
+    def test_all_functions_are_callable():
+        assert callable(sanitize_metric_segment)
+        assert callable(derive_metrics_endpoint)
+        assert callable(metrics_status_family)
+        assert callable(resolve_request_duration)
+        assert callable(record_api_metrics)
+        return True
+
+    suite.run_test("All utility functions are callable", test_all_functions_are_callable)
+
+    return suite.finish_suite()
 
 
 run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)

@@ -1,12 +1,12 @@
-from __future__ import annotations
 
 import sys
 import time
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, Literal, Optional, cast
+from typing import Any, Literal, cast
 
 if __package__ in {None, ""}:
     REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -92,7 +92,7 @@ class PersistenceHooks:
             dict[str, Person],
             dict[str, dict[str, Any]],
         ],
-        tuple[Optional[dict[str, Any]], Literal["new", "updated", "skipped", "error"], Optional[str]],
+        tuple[dict[str, Any] | None, Literal["new", "updated", "skipped", "error"], str | None],
     ]
     execute_bulk_db_operations: Callable[[SqlAlchemySession, list[dict[str, Any]], dict[str, Person]], bool]
 
@@ -301,7 +301,7 @@ def _check_if_fetch_needed(existing_person: Any, match_api_data: dict[str, Any],
     return needs_fetch
 
 
-def needs_ethnicity_refresh(existing_dna_match: Optional[Any]) -> bool:
+def needs_ethnicity_refresh(existing_dna_match: Any | None) -> bool:
     """Return True when ethnicity data should be refreshed for the match."""
 
     if existing_dna_match is None:
@@ -313,7 +313,7 @@ def needs_ethnicity_refresh(existing_dna_match: Optional[Any]) -> bool:
         return True
 
     try:
-        age_seconds = (datetime.now(timezone.utc) - last_updated).total_seconds()
+        age_seconds = (datetime.now(UTC) - last_updated).total_seconds()
         return age_seconds >= refresh_interval_days * 86400
     except Exception:
         return True
@@ -374,9 +374,9 @@ def _prepare_bulk_db_data(
 
 
 def _handle_match_processing_result(
-    prepared_data: Optional[dict[str, Any]],
+    prepared_data: dict[str, Any] | None,
     status: Literal["new", "updated", "skipped", "error"],
-    error_msg: Optional[str],
+    error_msg: str | None,
     log_ref_short: str,
     prepared_bulk_data: list[dict[str, Any]],
     page_statuses: dict[str, int],
@@ -466,8 +466,8 @@ def _deduplicate_person_creates(person_creates_raw: list[dict[str, Any]]) -> lis
     logger.debug(f"De-duplicating {len(person_creates_raw)} raw person creates based on Profile ID...")
 
     for p_data in person_creates_raw:
-        profile_id = cast(Optional[str], p_data.get("profile_id"))  # Already uppercase from prep if exists
-        uuid_for_log = cast(Optional[str], p_data.get("uuid"))  # For logging skipped items
+        profile_id = cast(str | None, p_data.get("profile_id"))  # Already uppercase from prep if exists
+        uuid_for_log = cast(str | None, p_data.get("uuid"))  # For logging skipped items
 
         if profile_id is None:
             person_creates_filtered.append(p_data)  # Allow creates with null profile ID
@@ -552,7 +552,7 @@ def _check_existing_records(
 
 
 def _handle_integrity_error_recovery(
-    session: SqlAlchemySession, insert_data: Optional[list[dict[str, Any]]] = None
+    session: SqlAlchemySession, insert_data: list[dict[str, Any]] | None = None
 ) -> bool:
     """
     Handle UNIQUE constraint violations by attempting individual inserts.
@@ -606,12 +606,12 @@ def _handle_integrity_error_recovery(
 
 def _should_skip_person_insert(
     uuid_val: str,
-    profile_id: Optional[str],
+    profile_id: str | None,
     seen_uuids: set[str],
     existing_persons_map: dict[str, Person],
     existing_uuids: set[str],
     existing_profile_ids: set[str],
-) -> tuple[bool, Optional[str]]:
+) -> tuple[bool, str | None]:
     """Check if person should be skipped during insert preparation.
 
     Args:
@@ -854,7 +854,7 @@ def _build_person_update_dict(p_data: dict[str, Any], existing_id: int) -> dict[
     if "status" in update_dict and isinstance(update_dict["status"], PersonStatusEnum):
         update_dict["status"] = update_dict["status"].value
     update_dict["id"] = existing_id
-    update_dict["updated_at"] = datetime.now(timezone.utc)
+    update_dict["updated_at"] = datetime.now(UTC)
     return update_dict
 
 
@@ -959,10 +959,10 @@ def _create_master_id_map(
 
 def _resolve_person_id(
     session: SqlAlchemySession,
-    person_uuid: Optional[str],
+    person_uuid: str | None,
     all_person_ids_map: dict[str, int],
     existing_persons_map: dict[str, Person],
-) -> Optional[int]:
+) -> int | None:
     """Resolve person ID from UUID using multiple strategies.
 
     Args:
@@ -1104,7 +1104,7 @@ def _classify_dna_match_operations(
             # Prepare for UPDATE
             update_map = op_data.copy()
             update_map["id"] = existing_match_id
-            update_map["updated_at"] = datetime.now(timezone.utc)
+            update_map["updated_at"] = datetime.now(UTC)
             if len(update_map) > 3:  # More than id/people_id/updated_at
                 dna_update_mappings.append(update_map)
             else:
@@ -1112,8 +1112,8 @@ def _classify_dna_match_operations(
         else:
             # Prepare for INSERT
             insert_map = op_data.copy()
-            insert_map.setdefault("created_at", datetime.now(timezone.utc))
-            insert_map.setdefault("updated_at", datetime.now(timezone.utc))
+            insert_map.setdefault("created_at", datetime.now(UTC))
+            insert_map.setdefault("updated_at", datetime.now(UTC))
             dna_insert_data.append(insert_map)
 
     return dna_insert_data, dna_update_mappings
@@ -1300,7 +1300,7 @@ def _prepare_family_tree_updates(tree_updates: list[dict[str, Any]]) -> list[dic
 
         update_dict_tree = {k: v for k, v in tree_data.items() if not k.startswith("_") and k != "uuid"}
         update_dict_tree["id"] = existing_tree_id
-        update_dict_tree["updated_at"] = datetime.now(timezone.utc)
+        update_dict_tree["updated_at"] = datetime.now(UTC)
 
         if len(update_dict_tree) > 2:
             tree_update_mappings.append(update_dict_tree)
@@ -1475,7 +1475,7 @@ def _test_needs_ethnicity_refresh_without_timestamp() -> bool:
 
 def _test_needs_ethnicity_refresh_with_recent_timestamp() -> bool:
     class _Dummy:
-        ethnicity_updated_at = datetime.now(timezone.utc)
+        ethnicity_updated_at = datetime.now(UTC)
 
     assert needs_ethnicity_refresh(_Dummy()) is False
     return True

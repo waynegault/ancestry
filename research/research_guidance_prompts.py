@@ -17,7 +17,7 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 import logging
-from typing import Any, Optional
+from typing import Any
 
 from testing.test_utilities import create_standard_test_runner
 
@@ -26,11 +26,11 @@ logger = logging.getLogger(__name__)
 
 def create_research_guidance_prompt(
     person_name: str,
-    relationship: Optional[str] = None,
-    shared_dna_cm: Optional[float] = None,
-    common_ancestors: Optional[list[str]] = None,
-    missing_info: Optional[list[str]] = None,
-    available_records: Optional[list[dict[str, Any]]] = None,
+    relationship: str | None = None,
+    shared_dna_cm: float | None = None,
+    common_ancestors: list[str] | None = None,
+    missing_info: list[str] | None = None,
+    available_records: list[dict[str, Any]] | None = None,
 ) -> str:
     """
     Create an AI prompt for generating research guidance.
@@ -103,8 +103,8 @@ def create_research_guidance_prompt(
 def create_conversation_response_prompt(
     person_name: str,
     their_message: str,
-    conversation_context: Optional[str] = None,
-    relationship_info: Optional[dict[str, Any]] = None,
+    conversation_context: str | None = None,
+    relationship_info: dict[str, Any] | None = None,
 ) -> str:
     """
     Create an AI prompt for generating a conversational response.
@@ -162,7 +162,7 @@ def create_brick_wall_analysis_prompt(
     ancestor_name: str,
     known_facts: list[str],
     unknown_facts: list[str],
-    searched_collections: Optional[list[str]] = None,
+    searched_collections: list[str] | None = None,
 ) -> str:
     """
     Create an AI prompt for brick wall analysis.

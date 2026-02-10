@@ -92,9 +92,9 @@ class RequestConfig:
 
     # HTTP method and data
     method: str = "GET"
-    data: Optional[dict[str, Any]] = None
-    json_data: Optional[dict[str, Any]] = None
-    headers: Optional[dict[str, str]] = None
+    data: dict[str, Any] | None = None
+    json_data: dict[str, Any] | None = None
+    headers: dict[str, str] | None = None
 
     # Timeouts (connect, read)
     timeout: tuple[int, int] = field(default_factory=lambda: (30, 90))
@@ -114,7 +114,7 @@ class RequestConfig:
 
     # Rate limiting
     apply_rate_limiting: bool = True
-    endpoint_label: Optional[str] = None  # For metrics and rate limiter
+    endpoint_label: str | None = None  # For metrics and rate limiter
 
     # Response handling
     force_text_response: bool = False
@@ -143,13 +143,13 @@ class RequestResult:
     """
 
     # Response data
-    data: Union[dict[str, Any], list[Any], str, bytes, None] = None
-    response: Optional[RequestsResponse] = None
+    data: dict[str, Any] | list[Any] | str | bytes | None = None
+    response: RequestsResponse | None = None
 
     # Status
     success: bool = False
-    status_code: Optional[int] = None
-    error: Optional[str] = None
+    status_code: int | None = None
+    error: str | None = None
 
     # Metadata
     attempts: int = 1
@@ -162,14 +162,14 @@ class RequestResult:
         return isinstance(self.data, (dict, list))
 
     @property
-    def json(self) -> Optional[Union[dict[str, Any], list[Any]]]:
+    def json(self) -> dict[str, Any] | list[Any] | None:
         """Get response as JSON if available."""
         if isinstance(self.data, (dict, list)):
             return self.data
         return None
 
     @property
-    def text(self) -> Optional[str]:
+    def text(self) -> str | None:
         """Get response as text if available."""
         if isinstance(self.data, str):
             return self.data
@@ -179,7 +179,7 @@ class RequestResult:
 
 
 # === TYPE ALIASES ===
-ApiResponseType = Union[dict[str, Any], list[Any], str, bytes, RequestsResponse, None]
+ApiResponseType = dict[str, Any] | list[Any] | str | bytes | RequestsResponse | None
 
 # === API CONSTANTS (local keys) ===
 KEY_UCDMID = "ucdmid"
@@ -201,11 +201,11 @@ class APIManager:
     def __init__(self) -> None:
         """Initialize the APIManager."""
         # User identifiers
-        self.csrf_token: Optional[str] = None
-        self.my_profile_id: Optional[str] = None
-        self.my_uuid: Optional[str] = None
-        self.my_tree_id: Optional[str] = None
-        self.tree_owner_name: Optional[str] = None
+        self.csrf_token: str | None = None
+        self.my_profile_id: str | None = None
+        self.my_uuid: str | None = None
+        self.my_tree_id: str | None = None
+        self.tree_owner_name: str | None = None
 
         # Logging flags to prevent repeated logging
         self._profile_id_logged: bool = False
@@ -238,7 +238,7 @@ class APIManager:
         logger.debug("Requests session configured with connection pooling (application-level retries)")
 
     @staticmethod
-    def _status_family(status_code: Optional[int]) -> str:
+    def _status_family(status_code: int | None) -> str:
         """Return Prometheus-friendly status family label."""
         if status_code is None or status_code < 100:
             return "unknown"
@@ -282,7 +282,7 @@ class APIManager:
         self,
         endpoint: str,
         method: str,
-        status_code: Optional[int],
+        status_code: int | None,
         result: str,
         duration_seconds: float,
     ) -> None:
@@ -321,9 +321,9 @@ class APIManager:
         logger.warning("❌ Session recovery failed or not available")
         return False
 
-    def sync_cookies_from_browser(  # noqa: PLR6301
-        self,
-        browser_manager: "BrowserManager",  # noqa: ARG002
+    @staticmethod
+    def sync_cookies_from_browser(
+        browser_manager: "BrowserManager",  # noqa: ARG004
         session_manager: Optional["SessionManager"] = None,
     ) -> bool:
         """
@@ -343,7 +343,7 @@ class APIManager:
         logger.warning("sync_cookies_from_browser called without valid session_manager. Cannot sync.")
         return False
 
-    def load_cookies_from_file(self, path: Optional[Union[str, Path]] = None) -> bool:
+    def load_cookies_from_file(self, path: str | Path | None = None) -> bool:
         """Load cookies from a JSON file into the requests session (browserless).
 
         Args:
@@ -393,7 +393,7 @@ class APIManager:
             return False
 
     def _prepare_api_headers(
-        self, headers: Optional[dict[str, str]], use_csrf_token: bool, api_description: str
+        self, headers: dict[str, str] | None, use_csrf_token: bool, api_description: str
     ) -> dict[str, str]:
         """Prepare headers for API request."""
         request_headers = {
@@ -505,7 +505,7 @@ class APIManager:
         endpoint_label: str,
         attempt: int,
         max_attempts: int,
-    ) -> tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """
         Handle response status codes for retry logic.
 
@@ -517,7 +517,7 @@ class APIManager:
         """
         # Handle rate limiting
         if response.status_code == 429:
-            retry_after: Optional[float] = None
+            retry_after: float | None = None
             retry_header = response.headers.get("Retry-After")
             if retry_header:
                 with contextlib.suppress(ValueError, TypeError):
@@ -563,7 +563,7 @@ class APIManager:
 
         # Parse response
         if config.force_text_response:
-            data: Union[dict[str, Any], list[Any], str, bytes, None] = response.text
+            data: dict[str, Any] | list[Any] | str | bytes | None = response.text
         else:
             parsed = self._parse_api_response(response, config.api_description)
             data = parsed if not isinstance(parsed, RequestsResponse) else None
@@ -588,8 +588,8 @@ class APIManager:
         attempt: int,
         total_wait_time: float,
         start_time: float,
-        last_status_code: Optional[int],
-        last_error: Optional[str],
+        last_status_code: int | None,
+        last_error: str | None,
     ) -> RequestResult:
         """Build failure RequestResult after all attempts exhausted."""
         duration = time.perf_counter() - start_time
@@ -613,7 +613,7 @@ class APIManager:
         endpoint_label: str,
         attempt: int,
         max_attempts: int,
-    ) -> tuple[Optional[RequestsResponse], Optional[int], Optional[str], bool]:
+    ) -> tuple[RequestsResponse | None, int | None, str | None, bool]:
         """
         Attempt a single request with error handling.
 
@@ -701,8 +701,8 @@ class APIManager:
         endpoint_label = config.endpoint_label or config.api_description
         total_wait_time = 0.0
         attempt = 0
-        last_error: Optional[str] = None
-        last_status_code: Optional[int] = None
+        last_error: str | None = None
+        last_status_code: int | None = None
         max_attempts = config.max_retries + 1
 
         # Sync cookies from browser if requested and available
@@ -749,9 +749,9 @@ class APIManager:
         url: str,
         method: str = "GET",
         use_csrf_token: bool = True,
-        data: Optional[dict[str, Any]] = None,
-        json_data: Optional[dict[str, Any]] = None,
-        headers: Optional[dict[str, str]] = None,
+        data: dict[str, Any] | None = None,
+        json_data: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
         timeout: int = 30,
         api_description: str = "API Request",
     ) -> ApiResponseType:
@@ -774,7 +774,7 @@ class APIManager:
         method_upper = method.upper()
         # Use api_description to match throttle profiles, fall back to sanitized URL
         endpoint_label = api_description if api_description != "API Request" else self.sanitize_endpoint_label(url)
-        status_code: Optional[int] = None
+        status_code: int | None = None
         result_label = "failure"
         start_time = time.perf_counter()
 
@@ -832,7 +832,7 @@ class APIManager:
                 duration = 0.0
             self._record_api_metrics(endpoint_label, method_upper, status_code, result_label, duration)
 
-    def get_csrf_token(self) -> Optional[str]:
+    def get_csrf_token(self) -> str | None:
         """
         Retrieve CSRF token from the API.
 
@@ -862,7 +862,7 @@ class APIManager:
 
         return None
 
-    def get_profile_id(self) -> Optional[str]:
+    def get_profile_id(self) -> str | None:
         """
         Retrieve user profile ID (ucdmid) from the API.
 
@@ -945,7 +945,7 @@ class APIManager:
             logger.warning("Some essential identifiers could not be retrieved")
         return all_ok
 
-    def verify_api_login_status(self) -> Optional[bool]:
+    def verify_api_login_status(self) -> bool | None:
         """
         Verify login status via API using comprehensive verification with fallbacks.
         Based on the original working implementation from git history.

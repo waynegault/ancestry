@@ -67,6 +67,11 @@ API_PATH_PERSON_FACTS_USER = "family-tree/person/facts/user/{owner_profile_id}/t
 # Person relationship ladder (legacy HTML parsing)
 API_PATH_PERSON_GETLADDER = "family-tree/person/tree/{tree_id}/person/{person_id}/getladder"
 
+# Person edit relationships
+API_PATH_EDIT_RELATIONSHIPS = (
+    "family-tree/person/addedit/user/{user_id}/tree/{tree_id}/person/{person_id}/editrelationships"
+)
+
 # Person relationship ladder with labels (JSON API)
 API_PATH_RELATION_LADDER_WITH_LABELS = (
     "family-tree/person/card/user/{user_id}/tree/{tree_id}/person/{person_id}/kinship/relationladderwithlabels"

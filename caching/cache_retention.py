@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Retention policies for the on-disk Cache/ hierarchy."""
 
-from __future__ import annotations
 
 # === PATH SETUP FOR PACKAGE IMPORTS ===
 import sys
@@ -15,7 +14,7 @@ import logging
 import os
 import time
 from dataclasses import asdict, dataclass
-from typing import Any, Optional
+from typing import Any
 
 from core.registry_utils import auto_register_module
 
@@ -27,9 +26,9 @@ auto_register_module(globals(), __name__)
 class RetentionPolicy:
     """Constraints applied to a cache directory."""
 
-    max_age_hours: Optional[float] = None
-    max_total_size_mb: Optional[float] = None
-    max_file_count: Optional[int] = None
+    max_age_hours: float | None = None
+    max_total_size_mb: float | None = None
+    max_file_count: int | None = None
     file_extensions: tuple[str, ...] = ()
     description: str = ""
 
@@ -71,7 +70,7 @@ class RetentionResult:
     auto_triggered: bool
     violations: dict[str, bool]
     policy: RetentionPolicy
-    last_error: Optional[str] = None
+    last_error: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         data = {
@@ -126,7 +125,7 @@ class CacheRetentionService:
     # ---- public API -------------------------------------------------------
 
     def apply_policies(
-        self, target_name: Optional[str] = None, *, auto_triggered: bool = False
+        self, target_name: str | None = None, *, auto_triggered: bool = False
     ) -> dict[str, RetentionResult]:
         """Apply retention policies and return per-target results."""
 
@@ -356,8 +355,8 @@ class CacheRetentionService:
         auto_triggered: bool,
         violations: dict[str, bool],
         start_time: float,
-        remaining_files: Optional[list[FileInfo]] = None,
-        last_error: Optional[str] = None,
+        remaining_files: list[FileInfo] | None = None,
+        last_error: str | None = None,
     ) -> RetentionResult:
         now = time.time()
         oldest_age_hours = 0.0
@@ -432,7 +431,7 @@ class CacheRetentionService:
 
 
 class ServiceState:
-    _service: Optional[CacheRetentionService] = None
+    _service: CacheRetentionService | None = None
 
 
 def get_retention_service() -> CacheRetentionService:
@@ -441,13 +440,13 @@ def get_retention_service() -> CacheRetentionService:
     return ServiceState._service
 
 
-def enforce_retention_now(target: Optional[str] = None) -> dict[str, dict[str, Any]]:
+def enforce_retention_now(target: str | None = None) -> dict[str, dict[str, Any]]:
     service = get_retention_service()
     results = service.apply_policies(target_name=target)
     return {name: result.to_dict() for name, result in results.items()}
 
 
-def auto_enforce_retention(target: Optional[str] = None) -> None:
+def auto_enforce_retention(target: str | None = None) -> None:
     """Run retention with auto-trigger semantics (no return value)."""
 
     service = get_retention_service()

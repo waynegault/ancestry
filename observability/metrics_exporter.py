@@ -10,9 +10,10 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional, cast
+from typing import TYPE_CHECKING, Any, cast
 
 # Allow running this module directly (python observability/metrics_exporter.py)
 # by ensuring the repository root is on sys.path.
@@ -34,7 +35,7 @@ from testing.test_framework import TestSuite, suppress_logging
 @dataclass
 class _PrometheusClientState:
     server_available: bool = False
-    import_error: Optional[Exception] = None
+    import_error: Exception | None = None
     start_http_server: Callable[..., Any] | None = None
 
 
@@ -74,7 +75,7 @@ _EXPORTER_LOCK = threading.RLock()
 
 
 class ObservabilityState:
-    _runtime_observability: Optional[ObservabilityConfig] = None
+    _runtime_observability: ObservabilityConfig | None = None
 
 
 _DEFAULT_PROMETHEUS_BINARY = Path("C:/Programs/Prometheus/prometheus.exe")
@@ -431,7 +432,7 @@ __all__ = [
 ]
 
 
-def apply_observability_settings(settings: Optional[ObservabilityConfig]) -> None:
+def apply_observability_settings(settings: ObservabilityConfig | None) -> None:
     """Store the latest Observability configuration for exporter helpers."""
 
     ObservabilityState._runtime_observability = settings

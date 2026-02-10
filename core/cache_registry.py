@@ -7,13 +7,13 @@ It lazily imports the underlying modules to avoid circular dependencies and
 keeps light-weight metadata for operations dashboards.
 """
 
-from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from importlib import import_module
 from threading import RLock
-from typing import Any, Callable, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +28,9 @@ class CacheComponent:
     name: str
     kind: str
     stats_fn: StatsFn
-    clear_fn: Optional[ActionFn] = None
-    warm_fn: Optional[ActionFn] = None
-    health_fn: Optional[StatsFn] = None
+    clear_fn: ActionFn | None = None
+    warm_fn: ActionFn | None = None
+    health_fn: StatsFn | None = None
 
     def safe_stats(self) -> dict[str, Any]:
         try:
@@ -42,7 +42,7 @@ class CacheComponent:
             logger.warning("Cache stats failed for %s: %s", self.name, exc)
             return {"name": self.name, "kind": self.kind, "error": str(exc)}
 
-    def safe_health(self) -> Optional[dict[str, Any]]:
+    def safe_health(self) -> dict[str, Any] | None:
         if not self.health_fn:
             return None
         try:
@@ -109,7 +109,7 @@ class CacheRegistry:
             }
             return summary
 
-    def clear(self, name: Optional[str] = None) -> dict[str, bool]:
+    def clear(self, name: str | None = None) -> dict[str, bool]:
         results: dict[str, bool] = {}
         with self._lock:
             for comp_name, component in self._components.items():
@@ -117,7 +117,7 @@ class CacheRegistry:
                     results[comp_name] = component.safe_clear()
         return results
 
-    def warm(self, name: Optional[str] = None) -> dict[str, bool]:
+    def warm(self, name: str | None = None) -> dict[str, bool]:
         results: dict[str, bool] = {}
         with self._lock:
             for comp_name, component in self._components.items():
@@ -229,7 +229,7 @@ class CacheRegistry:
 
 
 class RegistryState:
-    _registry: Optional[CacheRegistry] = None
+    _registry: CacheRegistry | None = None
 
 
 def get_cache_registry() -> CacheRegistry:

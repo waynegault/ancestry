@@ -57,7 +57,6 @@ IMPORTANT: Always run tests in venv (virtual environment)
     Linux/Mac: source .venv/bin/activate
 """
 
-from __future__ import annotations
 
 import concurrent.futures
 import json
@@ -69,48 +68,23 @@ from pathlib import Path
 from types import ModuleType
 
 from core.feature_flags import FeatureFlags, bootstrap_feature_flags
+from core.venv_bootstrap import ensure_venv
 
-
-def _ensure_venv() -> None:
-    """Ensure running in venv, auto-restart if needed."""
-    # Check if we're in a virtual environment
-    in_venv = hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
-
-    if in_venv:
-        return
-
-    # Check if .venv exists
-    venv_python = Path('.venv') / 'Scripts' / 'python.exe'
-    if not venv_python.exists():
-        # Try Unix-style path
-        venv_python = Path('.venv') / 'bin' / 'python'
-        if not venv_python.exists():
-            print("⚠️  WARNING: Not running in virtual environment and .venv not found")
-            print("   Some tests may fail due to missing dependencies")
-            return
-
-    # Re-run with venv Python using os.execv to replace current process
-    import os as _os
-
-    print(f"🔄 Re-running tests with venv Python: {venv_python}")
-    print()
-    _os.execv(str(venv_python), [str(venv_python), __file__, *sys.argv[1:]])
-
-
-_ensure_venv()
+ensure_venv()
 import re
 
 # sys already imported above for venv check
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import datetime
-from typing import Any, Callable, Final, Optional, TypedDict
+from typing import Any, Final, TypedDict
 
 try:
     import psutil as _psutil
 except ImportError:
-    psutil: Optional[ModuleType] = None
+    psutil: ModuleType | None = None
     _psutil_available = False
 else:
     psutil = _psutil
@@ -200,8 +174,8 @@ class TestExecutionMetrics:
     cpu_usage_percent: float
     start_time: str
     end_time: str
-    error_message: Optional[str] = None
-    quality_metrics: Optional[QualityMetrics] = None
+    error_message: str | None = None
+    quality_metrics: QualityMetrics | None = None
 
 
 @dataclass
@@ -309,7 +283,7 @@ class TestResultCache:
             pass  # Silently fail - caching is optional
 
     @classmethod
-    def get_module_hash(cls, module_name: str) -> Optional[str]:
+    def get_module_hash(cls, module_name: str) -> str | None:
         """Get hash of module file contents."""
         try:
             import hashlib
@@ -466,7 +440,7 @@ class PerformanceMonitor:
         self.process: Any = psutil.Process() if PSUTIL_AVAILABLE and psutil else None
         self.monitoring: bool = False
         self.metrics: list[dict[str, float]] = []
-        self.monitor_thread: Optional[threading.Thread] = None
+        self.monitor_thread: threading.Thread | None = None
 
     def start_monitoring(self) -> None:
         """Start performance monitoring in background thread."""
@@ -894,7 +868,7 @@ def _generate_module_description(module_name: str, description: str | None = Non
     return result
 
 
-def _extract_marker_count(line: str, marker: str) -> Optional[int]:
+def _extract_marker_count(line: str, marker: str) -> int | None:
     """Return integer count following a marker like '✅ Passed:'."""
     try:
         return int(line.split(marker)[1].split()[0])
@@ -1055,7 +1029,7 @@ def _try_pattern_all_tests_passed_with_counts(stdout_lines: list[str]) -> str:
     return "Unknown"
 
 
-def _extract_count_from_line(line: str, keyword: str) -> Optional[int]:
+def _extract_count_from_line(line: str, keyword: str) -> int | None:
     """Extract count from line containing keyword.
 
     Args:
@@ -1074,7 +1048,7 @@ def _extract_count_from_line(line: str, keyword: str) -> Optional[int]:
         return None
 
 
-def _find_passed_failed_counts(stdout_lines: list[str]) -> tuple[Optional[int], Optional[int]]:
+def _find_passed_failed_counts(stdout_lines: list[str]) -> tuple[int | None, int | None]:
     """Find passed and failed counts in output lines.
 
     Args:
@@ -1158,7 +1132,7 @@ def _check_for_failures_in_output(success: bool, stdout: str) -> bool:
     return success
 
 
-def _format_quality_info(quality_metrics: Optional[QualityMetrics]) -> str:
+def _format_quality_info(quality_metrics: QualityMetrics | None) -> str:
     """Format quality metrics into a display string."""
     if not quality_metrics:
         return ""
@@ -1192,7 +1166,7 @@ def _format_violation_message(violation: str) -> str:
     return f"• {violation}"
 
 
-def _print_quality_violations(quality_metrics: Optional[QualityMetrics]) -> None:
+def _print_quality_violations(quality_metrics: QualityMetrics | None) -> None:
     """Print quality violation details."""
     if not quality_metrics or quality_metrics.quality_score >= 95 or not quality_metrics.violations:
         return
@@ -1249,10 +1223,10 @@ def _print_failure_details(result: subprocess.CompletedProcess[str], failure_ind
 def _build_test_command(
     module_name: str,
     coverage: bool,
-    db_path: Optional[str] = None,
-    cache_path: Optional[str] = None,
-    log_path: Optional[str] = None,
-    user_data_dir: Optional[str] = None,
+    db_path: str | None = None,
+    cache_path: str | None = None,
+    log_path: str | None = None,
+    user_data_dir: str | None = None,
 ) -> tuple[list[str], dict[str, str]]:
     """Build the command and environment for running tests."""
     cmd = [sys.executable]
@@ -1317,7 +1291,7 @@ def _run_quality_analysis(module_name: str):
 
 
 def _create_test_metrics(
-    module_name: str, test_result: dict[str, Any], quality_metrics: Optional[QualityMetrics] = None
+    module_name: str, test_result: dict[str, Any], quality_metrics: QualityMetrics | None = None
 ) -> TestExecutionMetrics:
     """
     Create TestExecutionMetrics object from test result data.
@@ -1362,10 +1336,10 @@ def _create_error_metrics(module_name: str, error_message: str) -> TestExecution
 def _run_test_subprocess(
     module_name: str,
     coverage: bool,
-    db_path: Optional[str] = None,
-    cache_path: Optional[str] = None,
-    log_path: Optional[str] = None,
-    user_data_dir: Optional[str] = None,
+    db_path: str | None = None,
+    cache_path: str | None = None,
+    log_path: str | None = None,
+    user_data_dir: str | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], float, str]:
     """Run the test subprocess and return result, duration, and timestamp."""
     start_time = time.time()
@@ -1428,7 +1402,7 @@ def _print_test_result(
     success: bool,
     duration: float,
     test_count: str,
-    quality_metrics: Optional[QualityMetrics],
+    quality_metrics: QualityMetrics | None,
     result: subprocess.CompletedProcess[str],
 ) -> None:
     """Print test result summary with quality info and failure details."""
@@ -1457,11 +1431,11 @@ def run_module_tests(
     description: str | None = None,
     enable_monitoring: bool = False,
     coverage: bool = False,
-    db_path: Optional[str] = None,
-    cache_path: Optional[str] = None,
-    log_path: Optional[str] = None,
-    user_data_dir: Optional[str] = None,
-) -> tuple[bool, int, Optional[TestExecutionMetrics]]:
+    db_path: str | None = None,
+    cache_path: str | None = None,
+    log_path: str | None = None,
+    user_data_dir: str | None = None,
+) -> tuple[bool, int, TestExecutionMetrics | None]:
     """Run tests for a specific module with optional performance monitoring."""
     # Print description
     desc = _generate_module_description(module_name, description)
@@ -1490,7 +1464,7 @@ def run_module_tests(
         _print_test_result(success, duration, test_count, quality_metrics, result)
 
         # Create metrics object (always include quality metrics for final summary)
-        metrics: Optional[TestExecutionMetrics] = None
+        metrics: TestExecutionMetrics | None = None
         test_result: dict[str, Any] = {
             "duration": duration,
             "success": success,
@@ -1512,7 +1486,7 @@ def run_module_tests(
 
 def _monitor_and_collect_results(
     future_to_module: dict[
-        concurrent.futures.Future[tuple[bool, int, Optional[TestExecutionMetrics]]], tuple[str, str]
+        concurrent.futures.Future[tuple[bool, int, TestExecutionMetrics | None]], tuple[str, str]
     ],
 ) -> tuple[list[TestExecutionMetrics], int, int]:
     """Monitor running tests and collect results."""

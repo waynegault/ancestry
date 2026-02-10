@@ -16,18 +16,12 @@ Usage:
     )
 """
 
-from __future__ import annotations
 
 import sys
 import threading
-from typing import Any, Protocol, TypedDict, runtime_checkable
 
 # Ensure Python 3.9+ compatibility
-if sys.version_info >= (3, 11):
-    from typing import NotRequired
-else:
-    from typing_extensions import NotRequired
-
+from typing import Any, NotRequired, Protocol, TypedDict, runtime_checkable
 
 # =============================================================================
 # Protocol Classes (Duck Typing with Type Safety)

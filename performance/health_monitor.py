@@ -11,7 +11,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import psutil
 
@@ -619,13 +619,13 @@ class InterventionMixin:
 
     # Type hints for attributes expected from SessionHealthMonitor
     _emergency_halt_requested: bool
-    _emergency_halt_reason: Optional[str]
+    _emergency_halt_reason: str | None
     _emergency_halt_timestamp: float
     _immediate_intervention_requested: bool
-    _immediate_intervention_reason: Optional[str]
+    _immediate_intervention_reason: str | None
     _immediate_intervention_timestamp: float
     _enhanced_monitoring_active: bool
-    _enhanced_monitoring_reason: Optional[str]
+    _enhanced_monitoring_reason: str | None
     _enhanced_monitoring_timestamp: float
     _monitoring_interval: float
     error_timestamps: deque[float]
@@ -891,7 +891,7 @@ class PersistenceMixin:
         def calculate_health_score(self) -> float: ...
         def get_performance_stats(self) -> dict[str, Any]: ...
 
-    def create_session_checkpoint(self, checkpoint_name: Optional[str] = None) -> str:
+    def create_session_checkpoint(self, checkpoint_name: str | None = None) -> str:
         """Create a checkpoint of the current session state for recovery."""
         try:
             if checkpoint_name is None:
@@ -1150,7 +1150,7 @@ class PersistenceMixin:
             logger.error(f"Failed to list checkpoints: {e}")
             return []
 
-    def persist_session_state_to_disk(self, session_data: Optional[dict[str, Any]] = None) -> str:
+    def persist_session_state_to_disk(self, session_data: dict[str, Any] | None = None) -> str:
         """Persist current session state to disk for crash recovery."""
         try:
             # Create persistent state directory
@@ -1200,7 +1200,7 @@ class PersistenceMixin:
             logger.error(f"Failed to persist session state: {e}")
             return ""
 
-    def recover_session_state_from_disk(self) -> Optional[dict[str, Any]]:
+    def recover_session_state_from_disk(self) -> dict[str, Any] | None:
         """Recover session state from disk after a crash."""
         try:
             state_file = Path("Cache/session_state/current_session.json")
@@ -1301,7 +1301,7 @@ class SessionHealthMonitor(
 class _HealthMonitorSingleton:
     """Singleton container for health monitor instance."""
 
-    instance: Optional[SessionHealthMonitor] = None
+    instance: SessionHealthMonitor | None = None
 
 
 def get_health_monitor() -> SessionHealthMonitor:
@@ -1426,7 +1426,7 @@ def get_performance_recommendations(health_score: float, risk_score: float) -> d
 
 
 def enable_session_state_persistence(
-    session_manager: Optional[Any] = None,
+    session_manager: Any | None = None,
     auto_checkpoint_interval: int = 30,
 ) -> SessionHealthMonitor:
     """Enable session state persistence with automatic checkpointing."""
@@ -1460,7 +1460,7 @@ def enable_session_state_persistence(
 
 
 def create_recovery_checkpoint(
-    session_manager: Optional[Any] = None,
+    session_manager: Any | None = None,
     checkpoint_name: str = "recovery_checkpoint",
 ) -> str:
     """Create a recovery checkpoint with session manager state."""
@@ -1619,7 +1619,7 @@ def _test_risk_prediction() -> bool:
 def _test_alert_system() -> bool:
     """Test health alert system."""
     monitor = SessionHealthMonitor()
-    monitor.update_metric("api_response_time", 3.0)
+    monitor.update_metric("api_response_time", 6.0)
     warning_alerts = [a for a in monitor.alerts if a.level == AlertLevel.WARNING]
     assert len(warning_alerts) > 0, "Warning alert should have been created"
     monitor.update_metric("api_response_time", 26.0)

@@ -39,9 +39,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy.orm import Session
 
@@ -147,7 +147,7 @@ class MessageSendContext:
     person: Person
     send_trigger: SendTrigger
     conversation_logs: list[ConversationLog] = field(default_factory=list)
-    conversation_state: Optional[ConversationState] = None
+    conversation_state: ConversationState | None = None
     additional_data: dict[str, Any] = field(default_factory=dict)
 
 
@@ -185,8 +185,8 @@ class SendDecision:
     """
 
     should_send: bool
-    block_reason: Optional[str] = None
-    message_type: Optional[str] = None
+    block_reason: str | None = None
+    message_type: str | None = None
     content_source: ContentSource = ContentSource.TEMPLATE
     safety_results: list[SafetyCheckResult] = field(default_factory=list)
 
@@ -207,10 +207,10 @@ class SendResult:
     """
 
     success: bool
-    message_id: Optional[str] = None
-    error: Optional[str] = None
+    message_id: str | None = None
+    error: str | None = None
     database_updates: list[str] = field(default_factory=list)
-    decision: Optional[SendDecision] = None
+    decision: SendDecision | None = None
 
 
 # ------------------------------------------------------------------------------
@@ -255,7 +255,8 @@ class MessageSendOrchestrator:
             raise RuntimeError("Database session not available")
         return session
 
-    def is_enabled(self) -> bool:  # noqa: PLR6301
+    @staticmethod
+    def is_enabled() -> bool:
         """
         Check if the unified orchestrator is enabled via feature flag.
 
@@ -337,7 +338,8 @@ class MessageSendOrchestrator:
     # Safety Check Methods (Phase 1.2)
     # --------------------------------------------------------------------------
 
-    def _check_opt_out_status(self, context: MessageSendContext) -> SafetyCheckResult:  # noqa: PLR6301
+    @staticmethod
+    def _check_opt_out_status(context: MessageSendContext) -> SafetyCheckResult:
         """
         Check if the person has opted out of contact.
 
@@ -375,7 +377,8 @@ class MessageSendOrchestrator:
             passed=True,
         )
 
-    def _check_app_mode_policy(self, context: MessageSendContext) -> SafetyCheckResult:  # noqa: PLR6301
+    @staticmethod
+    def _check_app_mode_policy(context: MessageSendContext) -> SafetyCheckResult:
         """
         Check if app mode policy allows sending to this person.
 
@@ -405,7 +408,8 @@ class MessageSendOrchestrator:
             passed=True,
         )
 
-    def _check_conversation_hard_stops(self, context: MessageSendContext) -> SafetyCheckResult:  # noqa: PLR6301
+    @staticmethod
+    def _check_conversation_hard_stops(context: MessageSendContext) -> SafetyCheckResult:
         """
         Check for conversation states that should block sending.
 
@@ -464,7 +468,7 @@ class MessageSendOrchestrator:
 
         try:
             # Check for recent outbound messages
-            cutoff_time = datetime.now(timezone.utc) - timedelta(hours=duplicate_window_hours)
+            cutoff_time = datetime.now(UTC) - timedelta(hours=duplicate_window_hours)
 
             recent_outbound = (
                 self.db_session.query(ConversationLog)
@@ -581,7 +585,7 @@ class MessageSendOrchestrator:
             safety_results=safety_results,
         )
 
-    def _determine_message_strategy(self, context: MessageSendContext) -> tuple[Optional[str], ContentSource]:
+    def _determine_message_strategy(self, context: MessageSendContext) -> tuple[str | None, ContentSource]:
         """
         Determine the message type and content source based on the trigger.
 
@@ -617,7 +621,8 @@ class MessageSendOrchestrator:
 
         return None, ContentSource.TEMPLATE
 
-    def _get_next_sequence_message_type(self, context: MessageSendContext) -> Optional[str]:  # noqa: PLR6301
+    @staticmethod
+    def _get_next_sequence_message_type(context: MessageSendContext) -> str | None:
         """
         Get the next message type in the automated sequence.
 
@@ -648,7 +653,7 @@ class MessageSendOrchestrator:
     # Content Generation Methods (Phase 1.4)
     # --------------------------------------------------------------------------
 
-    def _generate_content(self, context: MessageSendContext, decision: SendDecision) -> Optional[str]:
+    def _generate_content(self, context: MessageSendContext, decision: SendDecision) -> str | None:
         """
         Generate or retrieve the message content.
 
@@ -675,7 +680,7 @@ class MessageSendOrchestrator:
         self._logger.error(f"Unknown content source: {content_source}")
         return None
 
-    def _generate_template_content(self, context: MessageSendContext, decision: SendDecision) -> Optional[str]:
+    def _generate_template_content(self, context: MessageSendContext, decision: SendDecision) -> str | None:
         """
         Generate content from a message template.
 
@@ -705,7 +710,7 @@ class MessageSendOrchestrator:
         # This will be fully implemented when Action 8 integration is complete
         return context.additional_data.get("message_content")
 
-    def _generate_ai_reply_content(self, context: MessageSendContext) -> Optional[str]:
+    def _generate_ai_reply_content(self, context: MessageSendContext) -> str | None:
         """
         Generate an AI reply to a received message.
 
@@ -732,7 +737,8 @@ class MessageSendOrchestrator:
         self._logger.warning("No AI response provided in additional_data")
         return None
 
-    def _generate_desist_acknowledgement(self, context: MessageSendContext) -> Optional[str]:  # noqa: PLR6301
+    @staticmethod
+    def _generate_desist_acknowledgement(context: MessageSendContext) -> str | None:
         """
         Generate a DESIST acknowledgement message.
 
@@ -757,7 +763,7 @@ class MessageSendOrchestrator:
             "I apologize for any inconvenience. Best wishes."
         )
 
-    def _extract_approved_draft_content(self, context: MessageSendContext) -> Optional[str]:
+    def _extract_approved_draft_content(self, context: MessageSendContext) -> str | None:
         """
         Extract content from an approved draft.
 
@@ -840,7 +846,7 @@ class MessageSendOrchestrator:
                 database_updates=[f"error: {e!s}"],
             )
 
-    def _call_send_api(self, context: MessageSendContext, content: str) -> Optional[str]:
+    def _call_send_api(self, context: MessageSendContext, content: str) -> str | None:
         """
         Call the canonical message send API.
 
@@ -859,7 +865,7 @@ class MessageSendOrchestrator:
         person = context.person
 
         # Get existing conversation ID if available
-        existing_conv_id: Optional[str] = None
+        existing_conv_id: str | None = None
         if context.conversation_state:
             existing_conv_id = getattr(context.conversation_state, "conversation_id", None)
 
@@ -919,7 +925,7 @@ class MessageSendOrchestrator:
                 message_id=message_id,
                 direction=MessageDirectionEnum.OUT,
                 message_type=decision.message_type,
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
             )
             self.db_session.add(log_entry)
             updates.append(f"conversation_log: created (id={log_entry.id if hasattr(log_entry, 'id') else 'pending'})")
@@ -927,7 +933,7 @@ class MessageSendOrchestrator:
             # Update conversation state if exists
             if context.conversation_state:
                 context.conversation_state.last_message_type = decision.message_type
-                context.conversation_state.last_message_time = datetime.now(timezone.utc)
+                context.conversation_state.last_message_time = datetime.now(UTC)
                 updates.append("conversation_state: updated")
 
             # Update person status for DESIST acknowledgement
@@ -973,7 +979,7 @@ class MessageSendOrchestrator:
                     "content_source": decision.content_source.value,
                     "message_type": decision.message_type,
                 },
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
             )
             self.db_session.add(event)
             self.db_session.commit()
@@ -1115,9 +1121,9 @@ def should_use_orchestrator_for_action11() -> bool:
 def create_action8_context(
     person: Person,
     conversation_logs: list[ConversationLog],
-    conversation_state: Optional[ConversationState] = None,
-    template_key: Optional[str] = None,
-    message_text: Optional[str] = None,
+    conversation_state: ConversationState | None = None,
+    template_key: str | None = None,
+    message_text: str | None = None,
 ) -> MessageSendContext:
     """
     Create a MessageSendContext for Action 8 (automated sequence messages).
@@ -1151,8 +1157,8 @@ def create_action9_context(
     person: Person,
     conversation_logs: list[ConversationLog],
     ai_generated_content: str,
-    conversation_state: Optional[ConversationState] = None,
-    ai_context: Optional[dict[str, Any]] = None,
+    conversation_state: ConversationState | None = None,
+    ai_context: dict[str, Any] | None = None,
 ) -> MessageSendContext:
     """
     Create a MessageSendContext for Action 9 (AI-generated replies).
@@ -1186,8 +1192,8 @@ def create_action11_context(
     person: Person,
     conversation_logs: list[ConversationLog],
     draft_content: str,
-    draft_id: Optional[int] = None,
-    conversation_state: Optional[ConversationState] = None,
+    draft_id: int | None = None,
+    conversation_state: ConversationState | None = None,
 ) -> MessageSendContext:
     """
     Create a MessageSendContext for Action 11 (human-approved drafts).

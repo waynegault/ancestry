@@ -52,7 +52,7 @@ if str(_project_root) not in sys.path:
 import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from core.registry_utils import auto_register_module
 
@@ -68,12 +68,12 @@ class DNAMatch:
     match_id: str
     match_name: str
     estimated_relationship: str
-    shared_dna_cm: Optional[float] = None
+    shared_dna_cm: float | None = None
     testing_company: str = "Ancestry"
     confidence_level: str = "medium"
     shared_ancestors: list[str] = field(default_factory=list)
-    tree_size: Optional[int] = None
-    last_login: Optional[str] = None
+    tree_size: int | None = None
+    last_login: str | None = None
 
 
 @dataclass
@@ -82,10 +82,10 @@ class GedcomPerson:
 
     person_id: str
     full_name: str
-    birth_year: Optional[int] = None
-    death_year: Optional[int] = None
-    birth_place: Optional[str] = None
-    death_place: Optional[str] = None
+    birth_year: int | None = None
+    death_year: int | None = None
+    birth_place: str | None = None
+    death_place: str | None = None
     parents: list[str] = field(default_factory=list)
     children: list[str] = field(default_factory=list)
     spouses: list[str] = field(default_factory=list)
@@ -129,7 +129,7 @@ class DNAGedcomCrossReferencer:
         self.verification_opportunities: list[dict[str, Any]] = []
 
     def analyze_dna_gedcom_connections(
-        self, dna_matches: list[DNAMatch], gedcom_data: Any, tree_owner_info: Optional[dict[str, Any]] = None
+        self, dna_matches: list[DNAMatch], gedcom_data: Any, tree_owner_info: dict[str, Any] | None = None
     ) -> dict[str, Any]:
         """
         Analyze connections between DNA matches and GEDCOM family tree data.
@@ -227,7 +227,7 @@ class DNAGedcomCrossReferencer:
         return gedcom_people
 
     def _analyze_single_dna_match(
-        self, dna_match: DNAMatch, gedcom_people: list[GedcomPerson], tree_owner_info: Optional[dict[str, Any]]
+        self, dna_match: DNAMatch, gedcom_people: list[GedcomPerson], tree_owner_info: dict[str, Any] | None
     ):
         """Analyze a single DNA match against GEDCOM data."""
         try:
@@ -295,7 +295,7 @@ class DNAGedcomCrossReferencer:
         return name_matches
 
     def _find_relationship_matches(
-        self, dna_match: DNAMatch, gedcom_people: list[GedcomPerson], tree_owner_info: Optional[dict[str, Any]]
+        self, dna_match: DNAMatch, gedcom_people: list[GedcomPerson], tree_owner_info: dict[str, Any] | None
     ) -> list[dict[str, Any]]:
         """Find potential matches based on estimated relationship."""
         relationship_matches: list[dict[str, Any]] = []
@@ -469,31 +469,31 @@ class DNAGedcomCrossReferencer:
             return "Unknown Name"
 
     @staticmethod
-    def _extract_birth_year(_person_record: Any) -> Optional[int]:
+    def _extract_birth_year(_person_record: Any) -> int | None:
         """Extract birth year from GEDCOM record."""
         # Placeholder implementation
         return None
 
     @staticmethod
-    def _extract_death_year(_person_record: Any) -> Optional[int]:
+    def _extract_death_year(_person_record: Any) -> int | None:
         """Extract death year from GEDCOM record."""
         # Placeholder implementation
         return None
 
     @staticmethod
-    def _extract_birth_place(_person_record: Any) -> Optional[str]:
+    def _extract_birth_place(_person_record: Any) -> str | None:
         """Extract birth place from GEDCOM record."""
         # Placeholder implementation
         return None
 
     @staticmethod
-    def _extract_death_place(_person_record: Any) -> Optional[str]:
+    def _extract_death_place(_person_record: Any) -> str | None:
         """Extract death place from GEDCOM record."""
         # Placeholder implementation
         return None
 
     @staticmethod
-    def _parse_relationship_distance(relationship: str) -> Optional[int]:
+    def _parse_relationship_distance(relationship: str) -> int | None:
         """Parse relationship string to get distance."""
         # Simple implementation for common relationships
         relationship_distances = {
@@ -532,7 +532,7 @@ class DNAGedcomCrossReferencer:
         return True
 
     @staticmethod
-    def _get_expected_cm_range(relationship: str) -> Optional[tuple[float, float]]:
+    def _get_expected_cm_range(relationship: str) -> tuple[float, float] | None:
         """Get expected centimorgan range for a relationship."""
         # Simplified ranges for common relationships
         cm_ranges = {

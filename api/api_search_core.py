@@ -9,7 +9,6 @@ Priority 1 Todo #10: API Search Deduplication - Caches search results for 7 days
 to prevent duplicate API calls for the same search criteria.
 """
 
-from __future__ import annotations
 
 # === PATH SETUP FOR PACKAGE IMPORTS ===
 import sys
@@ -20,15 +19,19 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 import hashlib
-import importlib
+import itertools
 import json
-from datetime import datetime, timedelta, timezone
-from functools import lru_cache
-from types import ModuleType
-from typing import Any, Callable, TypeAlias, cast
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta, timezone
+from typing import Any, TypeAlias, cast
 
 from api.api_search_utils import get_api_family_details
-from api.api_utils import call_discovery_relationship_api, call_treesui_list_api
+from api.api_utils import (
+    _get_gedcom_utils_attr,
+    _get_gedcom_utils_module,
+    call_discovery_relationship_api,
+    call_treesui_list_api,
+)
 from config import config_schema
 from core.logging_config import logger
 from genealogy.gedcom.gedcom_utils import calculate_match_score
@@ -41,9 +44,9 @@ try:  # Optional helper for enriching API results with GEDCOM data when availabl
 except ImportError:  # pragma: no cover - gedcom_search_utils not available in some environments
     _get_cached_gedcom_data = None
 
-CandidateDict: TypeAlias = dict[str, Any]
-CandidateList: TypeAlias = list[CandidateDict]
-FieldScoreDict: TypeAlias = dict[str, Any]
+type CandidateDict = dict[str, Any]
+type CandidateList = list[CandidateDict]
+type FieldScoreDict = dict[str, Any]
 
 # -----------------------------
 # Scoring helpers (minimal port)
@@ -61,15 +64,6 @@ _cache_stats = {
 }
 
 
-@lru_cache(maxsize=1)
-def _get_gedcom_utils_module() -> ModuleType:
-    return importlib.import_module("genealogy.gedcom.gedcom_utils")
-
-
-def _get_gedcom_utils_attr(attr: str) -> Any:
-    return getattr(_get_gedcom_utils_module(), attr)
-
-
 def _clean_display_date(value: Any) -> Any:
     cleaner = cast(Callable[[Any], Any], _get_gedcom_utils_attr("_clean_display_date"))
     return cleaner(value)
@@ -80,14 +74,15 @@ def _parse_date(value: Any) -> Any:
     return parser(value)
 
 
-_LOCAL_GEDCOM_WARNING_STATE = {"emitted": False}
+_local_gedcom_warning_emitted = False
 
 
 def _log_gedcom_enrichment_warning(message: str, *args: Any) -> None:
-    if _LOCAL_GEDCOM_WARNING_STATE["emitted"]:
+    global _local_gedcom_warning_emitted
+    if _local_gedcom_warning_emitted:
         return
     logger.debug(message, *args)
-    _LOCAL_GEDCOM_WARNING_STATE["emitted"] = True
+    _local_gedcom_warning_emitted = True
 
 
 def _load_processed_gedcom_record(norm_id: Any) -> dict[str, Any] | None:
@@ -225,7 +220,7 @@ def _get_cached_search_results(cache_key: str, db_session: Any) -> CandidateList
         cache_entry = (
             db_session.query(ApiSearchCache)
             .filter(
-                ApiSearchCache.search_criteria_hash == cache_key, ApiSearchCache.expires_at > datetime.now(timezone.utc)
+                ApiSearchCache.search_criteria_hash == cache_key, ApiSearchCache.expires_at > datetime.now(UTC)
             )
             .first()
         )
@@ -240,7 +235,7 @@ def _get_cached_search_results(cache_key: str, db_session: Any) -> CandidateList
 
         # Update hit statistics
         cache_entry.hit_count += 1
-        cache_entry.last_hit_at = datetime.now(timezone.utc)
+        cache_entry.last_hit_at = datetime.now(UTC)
         db_session.commit()
 
         _cache_stats["hits"] += 1
@@ -252,7 +247,7 @@ def _get_cached_search_results(cache_key: str, db_session: Any) -> CandidateList
             logger.info(
                 f"✓ API Search Cache HIT: {cache_entry.result_count} results, "
                 f"saved API call (hit rate: {get_api_search_cache_hit_rate():.1f}%, "
-                f"entry age: {(datetime.now(timezone.utc) - cache_entry.search_timestamp).days}d)"
+                f"entry age: {(datetime.now(UTC) - cache_entry.search_timestamp).days}d)"
             )
             return results
 
@@ -303,8 +298,8 @@ def _store_search_results_in_cache(
             # Update existing entry
             existing.api_response_cached = json.dumps(results)
             existing.result_count = len(results)
-            existing.search_timestamp = datetime.now(timezone.utc)
-            existing.expires_at = datetime.now(timezone.utc) + timedelta(days=7)
+            existing.search_timestamp = datetime.now(UTC)
+            existing.expires_at = datetime.now(UTC) + timedelta(days=7)
             existing.hit_count = 0
             existing.last_hit_at = None
         else:
@@ -314,8 +309,8 @@ def _store_search_results_in_cache(
                 search_criteria_json=json.dumps(criteria, sort_keys=True, indent=2),
                 result_count=len(results),
                 api_response_cached=json.dumps(results),
-                search_timestamp=datetime.now(timezone.utc),
-                expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+                search_timestamp=datetime.now(UTC),
+                expires_at=datetime.now(UTC) + timedelta(days=7),
                 hit_count=0,
                 last_hit_at=None,
             )
@@ -399,7 +394,7 @@ def cleanup_expired_api_search_cache(db_session: Any) -> int:
         from core.database import ApiSearchCache
 
         count = (
-            db_session.query(ApiSearchCache).filter(ApiSearchCache.expires_at <= datetime.now(timezone.utc)).delete()
+            db_session.query(ApiSearchCache).filter(ApiSearchCache.expires_at <= datetime.now(UTC)).delete()
         )
         db_session.commit()
 
@@ -894,7 +889,7 @@ def _format_kinship_persons_path(kinship_persons: CandidateList, owner_name: str
     seen_names.add(first_name.lower())
 
     # Process remaining path steps without repeating the person's name at the start
-    for current_person, next_person in zip(kinship_persons, kinship_persons[1:]):
+    for current_person, next_person in itertools.pairwise(kinship_persons):
         path_lines.append(_build_relationship_line(current_person, next_person, seen_names))
 
     # Header

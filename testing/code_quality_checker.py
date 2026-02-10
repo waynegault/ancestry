@@ -17,7 +17,6 @@ Main Classes:
 - QualityChecker: Main analyzer class for code quality assessment
 """
 
-from __future__ import annotations
 
 import ast
 import logging

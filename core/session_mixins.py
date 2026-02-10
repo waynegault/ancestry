@@ -2,10 +2,12 @@
 Mixins for SessionManager to reduce class size and complexity.
 """
 
+from __future__ import annotations
+
 import logging
 import time
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional, cast
+from datetime import UTC, datetime, timezone
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urljoin
 
 from api.api_constants import API_PATH_UUID_NAVHEADER
@@ -33,7 +35,7 @@ class SessionHealthMixin:
         db_manager: DatabaseManager
         last_js_error_check: datetime
         session_ready: bool
-        session_start_time: Optional[float]
+        session_start_time: float | None
 
         def is_sess_valid(self) -> bool: ...
         def _update_session_metrics(self, force_zero: bool = False) -> None: ...
@@ -41,8 +43,8 @@ class SessionHealthMixin:
         def get_db_conn_context(self) -> Any: ...
         def _record_session_refresh_metric(self, reason: str) -> None: ...
         def close_sess(self, keep_db: bool = False) -> None: ...
-        def start_sess(self, action_name: Optional[str] = None) -> bool: ...
-        def ensure_session_ready(self, action_name: Optional[str] = None, skip_csrf: bool = False) -> bool: ...
+        def start_sess(self, action_name: str | None = None) -> bool: ...
+        def ensure_session_ready(self, action_name: str | None = None, skip_csrf: bool = False) -> bool: ...
         def _precache_csrf_token(self) -> None: ...
 
     def _check_session_health(self) -> bool:
@@ -126,14 +128,14 @@ class SessionHealthMixin:
                 return []
 
             # Filter for errors that occurred after last check
-            current_time = datetime.now(timezone.utc)
+            current_time = datetime.now(UTC)
             js_errors: list[dict[str, Any]] = []
 
             for log_entry in logs:
                 # Check if this is a JavaScript error
                 if log_entry.get('level') in {'SEVERE', 'ERROR'}:
                     # Parse timestamp (browser logs use milliseconds since epoch)
-                    log_timestamp = datetime.fromtimestamp(log_entry.get('timestamp', 0) / 1000, tz=timezone.utc)
+                    log_timestamp = datetime.fromtimestamp(log_entry.get('timestamp', 0) / 1000, tz=UTC)
 
                     # Only include errors since last check
                     if log_timestamp > self.last_js_error_check:
@@ -204,7 +206,7 @@ class SessionHealthMixin:
 
         return True
 
-    def attempt_browser_recovery(self, action_name: Optional[str] = None) -> bool:
+    def attempt_browser_recovery(self, action_name: str | None = None) -> bool:
         """
         Public method to attempt browser session recovery.
 
@@ -293,7 +295,7 @@ class SessionHealthMixin:
             )
             raise Exception(f"Session death cascade detected before {operation_name} (#{cascade_count})")
 
-    def restart_sess(self, url: Optional[str] = None) -> bool:
+    def restart_sess(self, url: str | None = None) -> bool:
         """
         Restart the session.
 
@@ -354,7 +356,7 @@ class SessionIdentifierMixin:
         _uuid_logged: bool
         _tree_id_logged: bool
         _owner_logged: bool
-        _cached_csrf_token: Optional[str]
+        _cached_csrf_token: str | None
         _csrf_cache_time: float
         ESSENTIAL_SESSION_COOKIES: tuple[str, str]
 
@@ -364,7 +366,7 @@ class SessionIdentifierMixin:
         def _get_cookies(self, names: list[str], timeout: int = 10) -> bool: ...
 
     @api_retry()
-    def _get_csrf(self) -> Optional[str]:
+    def _get_csrf(self) -> str | None:
         """
         Retrieve CSRF token from API.
 
@@ -413,7 +415,7 @@ class SessionIdentifierMixin:
             return None
 
     @api_retry()
-    def _get_my_profile_id(self) -> Optional[str]:
+    def _get_my_profile_id(self) -> str | None:
         """
         Retrieve user's profile ID (ucdmid).
 
@@ -465,7 +467,7 @@ class SessionIdentifierMixin:
             return None
 
     @api_retry()
-    def _get_my_uuid(self) -> Optional[str]:
+    def _get_my_uuid(self) -> str | None:
         """
         Retrieve user's UUID (testId).
 
@@ -519,7 +521,7 @@ class SessionIdentifierMixin:
             return None
 
     @api_retry()
-    def _get_my_tree_id(self) -> Optional[str]:
+    def _get_my_tree_id(self) -> str | None:
         """
         Retrieve user's tree ID.
 
@@ -560,7 +562,7 @@ class SessionIdentifierMixin:
             return None
 
     @api_retry()
-    def _get_tree_owner(self, tree_id: Optional[str]) -> Optional[str]:
+    def _get_tree_owner(self, tree_id: str | None) -> str | None:
         """
         Retrieve tree owner name.
 
@@ -597,7 +599,7 @@ class SessionIdentifierMixin:
             logger.error(f"Error calling api_utils.call_tree_owner_api: {e}", exc_info=True)
             return None
 
-    def get_tree_owner(self, tree_id: Optional[str]) -> Optional[str]:
+    def get_tree_owner(self, tree_id: str | None) -> str | None:
         """Public wrapper for _get_tree_owner."""
         return self._get_tree_owner(tree_id)
 
@@ -607,27 +609,27 @@ class SessionIdentifierMixin:
         self._csrf_cache_time = 0
 
     @property
-    def my_tree_id(self) -> Optional[str]:
+    def my_tree_id(self) -> str | None:
         """Delegate my_tree_id to api_manager."""
         return self.api_manager.my_tree_id
 
     @property
-    def my_uuid(self) -> Optional[str]:
+    def my_uuid(self) -> str | None:
         """Delegate my_uuid to api_manager."""
         return self.api_manager.my_uuid
 
     @property
-    def my_profile_id(self) -> Optional[str]:
+    def my_profile_id(self) -> str | None:
         """Delegate my_profile_id to api_manager."""
         return self.api_manager.my_profile_id
 
     @property
-    def csrf_token(self) -> Optional[str]:
+    def csrf_token(self) -> str | None:
         """Delegate csrf_token to api_manager."""
         return self.api_manager.csrf_token
 
     @property
-    def tree_owner_name(self) -> Optional[str]:
+    def tree_owner_name(self) -> str | None:
         """Delegate tree_owner_name to api_manager."""
         return self.api_manager.tree_owner_name
 
@@ -640,7 +642,63 @@ from testing.test_utilities import create_standard_test_runner
 
 def _test_module_integrity() -> bool:
     "Test that module can be imported and definitions are valid."
-    return True
+    from testing.test_framework import TestSuite
+
+    suite = TestSuite("Session Mixins", "core/session_mixins.py")
+    suite.start_suite()
+
+    def test_session_health_mixin_class_exists():
+        assert isinstance(SessionHealthMixin, type)
+        assert hasattr(SessionHealthMixin, '_check_session_health')
+        assert hasattr(SessionHealthMixin, '_is_session_death_cascade')
+        assert hasattr(SessionHealthMixin, 'should_halt_operations')
+        assert hasattr(SessionHealthMixin, '_reset_session_health_monitoring')
+        assert hasattr(SessionHealthMixin, '_check_js_errors')
+        assert hasattr(SessionHealthMixin, 'monitor_js_errors')
+        assert hasattr(SessionHealthMixin, 'check_browser_health')
+        assert hasattr(SessionHealthMixin, 'validate_system_health')
+        assert hasattr(SessionHealthMixin, 'check_cascade_before_operation')
+        assert hasattr(SessionHealthMixin, 'restart_sess')
+        assert hasattr(SessionHealthMixin, 'attempt_browser_recovery')
+        return True
+
+    suite.run_test("SessionHealthMixin class and methods exist", test_session_health_mixin_class_exists)
+
+    def test_session_identifier_mixin_class_exists():
+        assert isinstance(SessionIdentifierMixin, type)
+        assert hasattr(SessionIdentifierMixin, '_get_csrf')
+        assert hasattr(SessionIdentifierMixin, '_get_my_profile_id')
+        assert hasattr(SessionIdentifierMixin, '_get_my_uuid')
+        assert hasattr(SessionIdentifierMixin, '_get_my_tree_id')
+        assert hasattr(SessionIdentifierMixin, '_get_tree_owner')
+        assert hasattr(SessionIdentifierMixin, 'get_tree_owner')
+        assert hasattr(SessionIdentifierMixin, 'invalidate_csrf_cache')
+        return True
+
+    suite.run_test("SessionIdentifierMixin class and methods exist", test_session_identifier_mixin_class_exists)
+
+    def test_mixin_methods_are_callable():
+        assert callable(SessionHealthMixin._check_session_health)
+        assert callable(SessionHealthMixin.should_halt_operations)
+        assert callable(SessionHealthMixin.validate_system_health)
+        assert callable(SessionIdentifierMixin._get_csrf)
+        assert callable(SessionIdentifierMixin.get_tree_owner)
+        assert callable(SessionIdentifierMixin.invalidate_csrf_cache)
+        return True
+
+    suite.run_test("Mixin methods are callable", test_mixin_methods_are_callable)
+
+    def test_identifier_mixin_properties():
+        assert isinstance(SessionIdentifierMixin.my_tree_id, property)
+        assert isinstance(SessionIdentifierMixin.my_uuid, property)
+        assert isinstance(SessionIdentifierMixin.my_profile_id, property)
+        assert isinstance(SessionIdentifierMixin.csrf_token, property)
+        assert isinstance(SessionIdentifierMixin.tree_owner_name, property)
+        return True
+
+    suite.run_test("SessionIdentifierMixin properties exist", test_identifier_mixin_properties)
+
+    return suite.finish_suite()
 
 
 run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)

@@ -12,30 +12,9 @@ messaging, and genealogical research tools.
 import sys
 from pathlib import Path
 
+from core.venv_bootstrap import ensure_venv
 
-def _ensure_venv() -> None:
-    """Ensure we are running inside the local .venv; re-run with it if not."""
-    in_venv = hasattr(sys, "real_prefix") or (hasattr(sys, "base_prefix") and sys.base_prefix != sys.prefix)
-    if in_venv:
-        return
-
-    venv_candidates = [Path(".venv") / "Scripts" / "python.exe", Path(".venv") / "bin" / "python"]
-    venv_python = next((p for p in venv_candidates if p.exists()), None)
-
-    if venv_python is None:
-        print("❌ No virtual environment found at .venv. Please create it before running main.py.")
-        sys.exit(1)
-
-    # Re-run using the venv interpreter while preserving stdin/stdout. Avoid execv
-    # because some Windows shells detach stdin on exec replacement.
-    import subprocess
-
-    print(f"🔄 Re-running with venv Python: {venv_python}")
-    result = subprocess.run([str(venv_python), __file__, *sys.argv[1:]], check=False)
-    sys.exit(result.returncode)
-
-
-_ensure_venv()
+ensure_venv(strict=True)
 
 # === SUPPRESS CONFIG WARNINGS FOR PRODUCTION ===
 # === CORE INFRASTRUCTURE ===
@@ -51,8 +30,9 @@ logger = logging.getLogger(__name__)
 # === STANDARD LIBRARY IMPORTS ===
 import importlib
 import time
+from collections.abc import Callable
 from importlib import import_module
-from typing import Any, Callable, Optional, cast
+from typing import Any, cast
 
 from actions.action10 import run_gedcom_then_api_fallback
 from actions.action12_shared_matches import fetch_shared_matches
@@ -129,7 +109,7 @@ else:
         _metrics_import_error = RuntimeError("metrics() not found in observability.metrics_registry")
 
 
-def _create_config_manager() -> Optional[ConfigManager]:
+def _create_config_manager() -> ConfigManager | None:
     """Instantiate ConfigManager if available."""
     try:
         return get_config_manager()
@@ -183,7 +163,7 @@ def _check_action_confirmation(choice: str) -> bool:
     return True
 
 
-def _execute_meta_action(metadata: ActionMetadata) -> Optional[bool]:
+def _execute_meta_action(metadata: ActionMetadata) -> bool | None:
     """Execute a meta action and return loop control signal."""
 
     action_func = metadata.function
@@ -223,7 +203,7 @@ def _validate_action_args(metadata: ActionMetadata, arg_tokens: list[str]) -> bo
     return True
 
 
-def _parse_start_page_argument(arg_tokens: list[str]) -> Optional[int]:
+def _parse_start_page_argument(arg_tokens: list[str]) -> int | None:
     """Parse optional start page for Action 6."""
 
     if not arg_tokens:
@@ -464,14 +444,28 @@ def _test_clear_log_file_function() -> bool:
     return True
 
 
-def _test_main_function_structure() -> bool:
-    """Ensure main() signature stays parameter-free with exception handling."""
+def _test_parse_menu_choice_behavior() -> bool:
+    """Verify _parse_menu_choice correctly splits input into action ID and arguments."""
+    # Simple numeric action
+    action_id, args = _parse_menu_choice("6")
+    assert action_id == "6", f"Expected action_id '6', got '{action_id}'"
+    assert args == [], f"Expected empty args, got {args}"
 
-    import inspect
+    # Action with trailing argument (e.g. start page)
+    action_id, args = _parse_menu_choice("6 50")
+    assert action_id == "6", f"Expected action_id '6', got '{action_id}'"
+    assert args == ["50"], f"Expected ['50'], got {args}"
 
-    assert callable(main), "main() function should be callable"
-    sig = inspect.signature(main)
-    assert len(sig.parameters) == 0, "main() should take no parameters"
+    # Letter action
+    action_id, args = _parse_menu_choice("q")
+    assert action_id == "q", f"Expected action_id 'q', got '{action_id}'"
+    assert args == [], f"Expected empty args, got {args}"
+
+    # Empty / whitespace-only input
+    action_id, args = _parse_menu_choice("  ")
+    assert not action_id, f"Blank input should yield empty action_id, got '{action_id}'"
+    assert args == [], f"Blank input should yield empty args, got {args}"
+
     return True
 
 
@@ -505,90 +499,49 @@ def _test_reset_db_actn_integration() -> bool:
     return True
 
 
-def _test_edge_case_handling() -> bool:
-    """Verify required action modules can be imported and have expected exports.
+def _test_parse_start_page_argument_behavior() -> bool:
+    """Verify _parse_start_page_argument handles valid, invalid, and edge-case inputs."""
+    # Empty list → None (auto-resume from checkpoint)
+    result = _parse_start_page_argument([])
+    assert result is None, f"Empty list should return None, got {result}"
 
-    Tests module imports, export existence, and function signatures.
-    """
-    import inspect
+    # Valid positive integer
+    result = _parse_start_page_argument(["5"])
+    assert result == 5, f"Expected 5, got {result}"
 
-    required_modules = [
-        ("actions.action6_gather", "coord"),  # Main coordinator function
-        ("actions.action7_inbox", "InboxProcessor"),  # Main class
-        ("actions.action8_messaging", "send_messages_to_matches"),  # Main function
-        ("actions.action9_process_productive", "process_productive_messages"),  # Main function
-        ("actions.action10", "main"),  # Main function
-    ]
+    # Large valid page
+    result = _parse_start_page_argument(["999"])
+    assert result == 999, f"Expected 999, got {result}"
 
-    for module_name, expected_export in required_modules:
-        module = importlib.import_module(module_name)
-        assert hasattr(module, expected_export), f"{module_name} should have {expected_export}"
-        export = getattr(module, expected_export)
-        assert callable(export), f"{module_name}.{expected_export} should be callable"
+    # Zero is invalid (not > 0)
+    result = _parse_start_page_argument(["0"])
+    assert result is None, f"Zero should return None, got {result}"
 
-        # Verify signature structure for functions
-        if inspect.isfunction(export):
-            sig = inspect.signature(export)
-            # All coordinator functions should accept session_manager as first param
-            params = list(sig.parameters.keys())
-            if module_name == "actions.action6_gather":
-                assert "session_manager" in params, "coord should accept session_manager parameter"
-            # Verify return annotation exists for type safety
-            if sig.return_annotation != inspect.Parameter.empty:
-                # Return annotation is defined - good practice
-                pass
+    # Negative is invalid
+    result = _parse_start_page_argument(["-1"])
+    assert result is None, f"Negative should return None, got {result}"
+
+    # Non-numeric string
+    result = _parse_start_page_argument(["abc"])
+    assert result is None, f"Non-numeric should return None, got {result}"
 
     return True
 
 
-def _test_import_error_handling() -> bool:
-    """Confirm core imports remain registered and have proper interfaces.
+def _test_config_manager_creation() -> bool:
+    """Verify _create_config_manager returns a valid ConfigManager with expected interface."""
+    cm = _create_config_manager()
+    assert cm is not None, "ConfigManager should be created successfully"
+    assert isinstance(cm, ConfigManager), f"Expected ConfigManager instance, got {type(cm)}"
 
-    Tests that required imports are present and have expected attributes/methods.
-    """
-    import inspect
+    # Verify it produces a usable config object
+    cfg = cm.get_config()
+    assert cfg is not None, "ConfigManager.get_config() should return a config object"
+    assert hasattr(cfg, "api"), "Config should have 'api' section"
 
-    module_globals = globals()
-
-    # Test function imports are callable with proper signatures
-    function_imports = [
-        "gather_dna_matches",
-        "srch_inbox_actn",
-        "send_messages_action",
-        "process_productive_messages_action",
-    ]
-
-    for import_name in function_imports:
-        assert import_name in module_globals, f"{import_name} should be imported"
-        func = module_globals[import_name]
-        assert callable(func), f"{import_name} should be callable"
-        # Verify function has a signature we can inspect
-        sig = inspect.signature(func)
-        assert sig is not None, f"{import_name} should have inspectable signature"
-
-    # Test config has expected API attribute structure
-    assert "config" in module_globals, "config should be imported"
-    cfg = module_globals["config"]
-    assert hasattr(cfg, "api"), "config should have api attribute"
-    api_attr = cfg.api
-    # API config should have rate limiting settings
-    assert hasattr(api_attr, "max_pages") or hasattr(api_attr, "requests_per_second"), (
-        "config.api should have rate limiting or pagination settings"
-    )
-
-    # Test logger has expected logging methods
-    assert "logger" in module_globals, "logger should be imported"
-    log = module_globals["logger"]
-    for method in ["info", "debug", "warning", "error"]:
-        assert hasattr(log, method), f"logger should have {method} method"
-        assert callable(getattr(log, method)), f"logger.{method} should be callable"
-
-    # Test SessionManager is properly importable
-    assert "SessionManager" in module_globals, "SessionManager should be imported"
-    sm_class = module_globals["SessionManager"]
-    assert callable(sm_class), "SessionManager should be callable (class)"
-    # Verify it's a class, not just any callable
-    assert inspect.isclass(sm_class), "SessionManager should be a class"
+    # Verify API config exposes rate-limiting / pagination settings
+    api_cfg = cfg.api
+    assert hasattr(api_cfg, "max_pages"), "config.api should have max_pages setting"
 
     return True
 
@@ -616,133 +569,121 @@ def _test_validate_action_config() -> bool:
     return True
 
 
-def _test_action_integration() -> bool:
-    """Confirm action hooks remain callable with expected signatures.
+def _test_action_registry_completeness() -> bool:
+    """Verify all expected actions are registered with callable functions after wiring."""
+    registry = get_action_registry()
 
-    Tests that all action functions have proper signatures for menu dispatch.
-    """
-    import inspect
+    # Every primary action ID that _assign_action_registry_functions wires up
+    expected_primary = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+                        "10", "11", "12", "13", "14", "15", "16"]
 
-    from actions.action10 import main as run_action10
+    for action_id in expected_primary:
+        metadata = registry.get_action(action_id)
+        assert metadata is not None, f"Action '{action_id}' should be registered"
+        assert metadata.function is not None, f"Action '{action_id}' should have a function assigned"
+        assert callable(metadata.function), f"Action '{action_id}' function should be callable"
 
-    actions_to_test: list[tuple[str, Callable[..., Any]]] = [
-        ("gather_dna_matches", gather_dna_matches),
-        ("srch_inbox_actn", srch_inbox_actn),
-        ("send_messages_action", send_messages_action),
-        ("process_productive_messages_action", process_productive_messages_action),
-        ("run_action10", run_action10),
-    ]
-
-    for action_name, action_func in actions_to_test:
-        assert callable(action_func), f"{action_name} should be callable"
-        assert action_func is not None, f"{action_name} should not be None"
-
-        # Verify action functions have inspectable signatures
-        sig = inspect.signature(action_func)
-        params = list(sig.parameters.keys())
-
-        # Most action functions should accept session_manager or similar context
-        # This validates the dependency injection pattern
-        if action_name != "run_action10":  # action10.main may have different signature
-            # Action functions typically accept session context
-            assert len(params) >= 0, f"{action_name} signature should be inspectable"
-
-        # Verify return annotation is bool or None (action success indicator)
-        if sig.return_annotation != inspect.Parameter.empty:
-            ret_type = sig.return_annotation
-            # Allow bool, None, or Optional[bool]
-            valid_returns = {bool, type(None)}
-            if hasattr(ret_type, "__origin__"):  # Handle Optional, Union types
-                pass  # Complex type annotation - accept it
-            elif ret_type not in valid_returns:
-                # Some actions return other types - that's fine
-                pass
+    # Verify a sample of utility / meta actions are wired
+    for action_id in ["q", "c", "w", "t"]:
+        metadata = registry.get_action(action_id)
+        assert metadata is not None, f"Utility action '{action_id}' should be registered"
+        assert metadata.function is not None, f"Utility action '{action_id}' missing function"
 
     return True
 
 
-def _test_import_performance() -> bool:
-    """Reload config module to ensure performance stays reasonable."""
-    start_time = time.time()
+def _test_feature_flags_initialization() -> bool:
+    """Verify feature flags are properly bootstrapped from config."""
+    assert feature_flags is not None, "feature_flags should be initialized at module level"
 
-    config_module = sys.modules.get("config")
-    if config_module:
-        importlib.reload(config_module)
+    all_flags = feature_flags.get_all_flags()
+    assert isinstance(all_flags, dict), f"get_all_flags should return dict, got {type(all_flags)}"
 
-    duration = time.time() - start_time
-    assert duration < 1.0, f"Module reloading should be fast, took {duration:.3f}s"
+    # Flags should be deterministic across calls
+    all_flags_again = feature_flags.get_all_flags()
+    assert all_flags == all_flags_again, "Feature flags should be stable across calls"
+
     return True
 
 
-def _test_memory_efficiency() -> bool:
-    """Track module globals to guard against excessive state."""
+def _test_action_metadata_properties() -> bool:
+    """Verify _get_action_metadata returns correct properties for known action IDs."""
+    # Primary action
+    meta6 = _get_action_metadata("6")
+    assert meta6 is not None, "Action 6 should have metadata"
+    assert meta6.id == "6", f"Expected id '6', got '{meta6.id}'"
+    assert isinstance(meta6.name, str) and len(meta6.name) > 0, "Action should have a non-empty name"
+    assert meta6.max_args >= 1, "Action 6 should accept at least one arg (start page)"
 
-    import inspect
-    from types import ModuleType
+    # Meta action (quit)
+    meta_q = _get_action_metadata("q")
+    assert meta_q is not None, "Quit action should have metadata"
+    assert meta_q.is_meta_action is True, "Quit should be a meta action"
 
-    module_size = sys.getsizeof(sys.modules[__name__])
-    assert module_size < 10000, f"Module size should be reasonable, got {module_size} bytes"
+    # Nonexistent action returns None
+    meta_invalid = _get_action_metadata("zzz_nonexistent")
+    assert meta_invalid is None, "Nonexistent action should return None"
 
-    tracked_state: dict[str, Any] = {
-        name: value
-        for name, value in globals().items()
-        if not name.startswith("__")
-        and not isinstance(value, ModuleType)
-        and not inspect.isfunction(value)
-        and not inspect.isclass(value)
-    }
+    # Empty string returns None
+    meta_empty = _get_action_metadata("")
+    assert meta_empty is None, "Empty action_id should return None"
 
-    globals_count = len(tracked_state)
-    assert globals_count < 80, f"Stateful global variables should be reasonable, got {globals_count}"
     return True
 
 
-def _test_function_call_performance() -> bool:
-    """Ensure menu callable checks stay performant."""
+def _test_validate_action_args_behavior() -> bool:
+    """Verify _validate_action_args enforces argument limits from ActionMetadata."""
+    # Action 6 accepts a start-page argument
+    meta6 = _get_action_metadata("6")
+    assert meta6 is not None, "Action 6 metadata required"
 
-    start_time = time.time()
+    # No args always valid
+    assert _validate_action_args(meta6, []) is True, "Empty args should pass"
 
-    for _ in range(1000):
-        result = callable(menu)
-        assert result is True, "menu should be callable"
+    # Valid single arg within max_args
+    assert _validate_action_args(meta6, ["50"]) is True, "Single arg should pass for Action 6"
 
-    duration = time.time() - start_time
-    assert duration < 0.1, f"1000 function checks should be fast, took {duration:.3f}s"
+    # Exceeding max_args should fail
+    too_many = ["1"] * (meta6.max_args + 1)
+    assert _validate_action_args(meta6, too_many) is False, "Exceeding max_args should return False"
+
+    # Meta action with max_args=0 should reject any argument
+    meta_q = _get_action_metadata("q")
+    if meta_q is not None and meta_q.max_args == 0:
+        assert _validate_action_args(meta_q, ["extra"]) is False, "max_args=0 should reject args"
+
     return True
 
 
-def _test_error_handling_structure() -> bool:
-    """Ensure main() retains try/except/finally scaffolding."""
-
-    import inspect
-
-    main_source = inspect.getsource(main)
-    assert "try:" in main_source, "main() should have try-except structure"
-    assert "except" in main_source, "main() should have exception handling"
-    assert "finally:" in main_source, "main() should have finally block"
-    assert "KeyboardInterrupt" in main_source, "main() should handle KeyboardInterrupt"
+def _test_cleanup_handles_none_session() -> bool:
+    """Verify cleanup_session_manager safely handles a None session (early-exit path)."""
+    # main() passes None when session_manager was never initialized
+    try:
+        cleanup_session_manager(None)
+    except Exception as exc:
+        raise AssertionError(f"cleanup_session_manager(None) should not raise, got: {exc}") from exc
     return True
 
 
-def _test_cleanup_procedures() -> bool:
-    """Check main() references cleanup code paths."""
-
-    import inspect
-
-    main_source = inspect.getsource(main)
-    assert "finally:" in main_source, "main() should have finally block for cleanup"
-    assert "cleanup" in main_source.lower(), "main() should mention cleanup"
+def _test_dispatch_handles_invalid_action() -> bool:
+    """Verify _dispatch_menu_action returns True (continue) for an unknown action ID."""
+    sm = SessionManager()
+    # An obviously-invalid choice should print 'Invalid choice' and keep the loop going
+    result = _dispatch_menu_action("zzz_nonexistent_999", sm, config)
+    assert result is True, "Invalid choice should return True to continue the menu loop"
     return True
 
 
-def _test_exception_handling_coverage() -> bool:
-    """Verify exception logging references stay intact."""
+def _test_health_monitor_initialization() -> bool:
+    """Verify health monitoring initializes and provides valid status."""
+    monitor = initialize_health_monitoring()
+    assert monitor is not None, "Health monitor should initialize"
 
-    import inspect
+    # Should not request emergency halt in a normal test context
+    halt = monitor.should_emergency_halt()
+    assert isinstance(halt, bool), f"should_emergency_halt should return bool, got {type(halt)}"
+    assert halt is False, "Health monitor should not halt during tests"
 
-    main_source = inspect.getsource(main)
-    assert "Exception" in main_source, "main() should handle general exceptions"
-    assert "logger" in main_source, "main() should use logger for error reporting"
     return True
 
 
@@ -764,11 +705,11 @@ def main_module_tests() -> bool:
         )
 
         suite.run_test(
-            test_name="main() function structure and signature",
-            test_func=_test_main_function_structure,
-            test_summary="Main function structure and parameter requirements",
-            method_description="Testing main function callable status and parameter signature",
-            expected_outcome="Main function has proper structure and takes no parameters",
+            test_name="_parse_menu_choice splits action ID and arguments correctly",
+            test_func=_test_parse_menu_choice_behavior,
+            test_summary="Menu choice parsing separates action ID from trailing arguments",
+            method_description="Testing _parse_menu_choice with numeric, letter, and edge-case inputs",
+            expected_outcome="Action ID and argument tokens are correctly extracted from raw input",
         )
 
         suite.run_test(
@@ -780,19 +721,19 @@ def main_module_tests() -> bool:
         )
 
         suite.run_test(
-            test_name="Edge case handling and module import validation",
-            test_func=_test_edge_case_handling,
-            test_summary="Edge cases and import validation scenarios",
-            method_description="Testing edge conditions and module import status",
-            expected_outcome="Edge cases are handled and imports are properly validated",
+            test_name="_parse_start_page_argument handles valid, invalid, and edge-case inputs",
+            test_func=_test_parse_start_page_argument_behavior,
+            test_summary="Start-page argument parsing with boundary and invalid values",
+            method_description="Testing _parse_start_page_argument with positive, zero, negative, and non-numeric inputs",
+            expected_outcome="Valid pages returned as int; invalid inputs return None for auto-resume",
         )
 
         suite.run_test(
-            test_name="Import error scenarios and required module presence",
-            test_func=_test_import_error_handling,
-            test_summary="Import error handling and required module validation",
-            method_description="Testing essential module imports and availability",
-            expected_outcome="All essential modules are imported and available",
+            test_name="_create_config_manager returns valid ConfigManager with API settings",
+            test_func=_test_config_manager_creation,
+            test_summary="ConfigManager factory produces usable config with api section",
+            method_description="Testing _create_config_manager instantiation and get_config().api access",
+            expected_outcome="ConfigManager created, get_config() returns object with api.max_pages",
         )
 
         suite.run_test(
@@ -804,59 +745,59 @@ def main_module_tests() -> bool:
         )
 
         suite.run_test(
-            test_name="All action function integration with main application",
-            test_func=_test_action_integration,
-            test_summary="Action functions integrate properly with main application",
-            method_description="Testing action function availability and callable status",
-            expected_outcome="All action functions integrate properly and are callable",
+            test_name="Action registry has all expected actions wired with functions",
+            test_func=_test_action_registry_completeness,
+            test_summary="All primary and utility actions registered with callable functions",
+            method_description="Testing action registry for IDs 0-16 plus q/c/w/t after wiring",
+            expected_outcome="Every expected action ID has non-None callable function assigned",
         )
 
         suite.run_test(
-            test_name="Module import and reload performance",
-            test_func=_test_import_performance,
-            test_summary="Import performance and module caching efficiency",
-            method_description="Testing module import and reload times for performance",
-            expected_outcome="Module imports and reloads complete within reasonable time limits",
+            test_name="Feature flags bootstrapped from config and stable across calls",
+            test_func=_test_feature_flags_initialization,
+            test_summary="Feature flags initialized at module level with deterministic output",
+            method_description="Testing bootstrap_feature_flags result and get_all_flags consistency",
+            expected_outcome="Feature flags return a dict that is stable across successive calls",
         )
 
         suite.run_test(
-            test_name="Memory usage efficiency and global variable management",
-            test_func=_test_memory_efficiency,
-            test_summary="Memory usage efficiency and resource management",
-            method_description="Testing module memory usage and global variable count",
-            expected_outcome="Memory usage is reasonable and global variables are controlled",
+            test_name="_get_action_metadata returns correct properties for known IDs",
+            test_func=_test_action_metadata_properties,
+            test_summary="Action metadata lookup returns correct id, name, max_args, and is_meta_action",
+            method_description="Testing _get_action_metadata for action 6, quit, nonexistent, and empty ID",
+            expected_outcome="Known actions return correct metadata; invalid IDs return None",
         )
 
         suite.run_test(
-            test_name="Function call performance and responsiveness",
-            test_func=_test_function_call_performance,
-            test_summary="Function call performance and execution speed",
-            method_description="Testing basic function call performance with multiple iterations",
-            expected_outcome="Function calls execute efficiently within performance limits",
+            test_name="_validate_action_args enforces max_args limits from metadata",
+            test_func=_test_validate_action_args_behavior,
+            test_summary="Argument validation accepts/rejects args based on ActionMetadata.max_args",
+            method_description="Testing _validate_action_args with empty, valid, and excess arguments",
+            expected_outcome="Empty args always pass; excess args rejected; within-limit args accepted",
         )
 
         suite.run_test(
-            test_name="main() error handling structure and exception coverage",
-            test_func=_test_error_handling_structure,
-            test_summary="Error handling structure in main function",
-            method_description="Testing main function for proper try-except-finally structure",
-            expected_outcome="Main function has comprehensive error handling structure",
+            test_name="cleanup_session_manager safely handles None session",
+            test_func=_test_cleanup_handles_none_session,
+            test_summary="Cleanup path handles early-exit case where session was never created",
+            method_description="Testing cleanup_session_manager(None) does not raise",
+            expected_outcome="Function completes without exception when given None",
         )
 
         suite.run_test(
-            test_name="Cleanup procedures and resource management",
-            test_func=_test_cleanup_procedures,
-            test_summary="Cleanup procedures and resource management implementation",
-            method_description="Testing cleanup code presence and resource management",
-            expected_outcome="Proper cleanup procedures are implemented for resource management",
+            test_name="_dispatch_menu_action returns True for unknown action ID",
+            test_func=_test_dispatch_handles_invalid_action,
+            test_summary="Menu dispatch gracefully handles nonexistent action IDs",
+            method_description="Testing _dispatch_menu_action with an invalid choice string",
+            expected_outcome="Returns True (continue loop) and prints 'Invalid choice'",
         )
 
         suite.run_test(
-            test_name="Exception handling coverage and logging integration",
-            test_func=_test_exception_handling_coverage,
-            test_summary="Exception handling coverage and error logging",
-            method_description="Testing exception handling scope and logging integration",
-            expected_outcome="Exception handling covers expected scenarios with proper logging",
+            test_name="Health monitor initializes and reports no emergency halt",
+            test_func=_test_health_monitor_initialization,
+            test_summary="Health monitoring system initializes and returns safe status",
+            method_description="Testing initialize_health_monitoring and should_emergency_halt in test context",
+            expected_outcome="Monitor initializes successfully and does not request halt",
         )
 
     return bool(suite.finish_suite())

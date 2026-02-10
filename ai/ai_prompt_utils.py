@@ -133,7 +133,7 @@ def save_prompts(prompts_data: dict[str, Any]) -> bool:
         return False
 
 
-def get_prompt(prompt_key: str) -> Optional[str]:
+def get_prompt(prompt_key: str) -> str | None:
     """
     Get a specific prompt by key.
 
@@ -149,11 +149,41 @@ def get_prompt(prompt_key: str) -> Optional[str]:
     return None
 
 
+def supports_json_prompts() -> bool:
+    """Return True when JSON prompt helpers are available."""
+    return True
+
+
+def get_prompt_with_experiment(
+    prompt_key: str,
+    *,
+    variants: dict[str, str] | None = None,  # noqa: ARG001
+    user_id: str | None = None,  # noqa: ARG001
+) -> str | None:
+    """Return a prompt variant when experiment helpers are available.
+
+    Falls back to :func:`get_prompt` when no experiment infrastructure is
+    configured.  *variants* and *user_id* are accepted for API
+    compatibility with callers that pass experiment context.
+    """
+    # Experiment infrastructure is optional; fall back to plain prompt lookup.
+    return get_prompt(prompt_key)
+
+
+def get_prompt_version(prompt_key: str) -> str | None:  # noqa: ARG001
+    """Return the configured prompt version, if available.
+
+    *prompt_key* is accepted for API compatibility but is currently unused
+    as version tracking is not yet wired up.
+    """
+    return None
+
+
 def update_prompt(
     prompt_key: str,
     new_prompt: str,
-    name: Optional[str] = None,
-    description: Optional[str] = None,
+    name: str | None = None,
+    description: str | None = None,
 ) -> bool:
     """
     Update a specific prompt by key.
@@ -313,10 +343,7 @@ def backup_prompts_file() -> bool:
         return False
 
 
-from typing import Optional
-
-
-def cleanup_old_backups(keep_count: int = 5, logs_dir: Optional[Path] = None) -> int:
+def cleanup_old_backups(keep_count: int = 5, logs_dir: Path | None = None) -> int:
     """
     Clean up old backup files, keeping only the most recent ones.
 
@@ -369,15 +396,50 @@ def _test_prompts_loading() -> None:
 
 def _test_prompt_validation() -> None:
     """Test prompt structure validation"""
+    # Valid prompts should pass validation
     prompts = load_prompts()
     is_valid, validation_errors = validate_prompt_structure(prompts)
-    assert is_valid or len(validation_errors) >= 0, "Should validate structure"
+    assert is_valid, f"Valid prompts should pass validation, got errors: {validation_errors}"
+    assert len(validation_errors) == 0, "Valid prompts should have zero errors"
+
+    # Invalid prompts (missing required keys) should fail validation
+    invalid_data: dict[str, Any] = {"prompts": {}}  # missing 'version' and 'last_updated'
+    is_valid_bad, bad_errors = validate_prompt_structure(invalid_data)
+    assert not is_valid_bad, "Prompts missing required keys should fail validation"
+    assert len(bad_errors) > 0, "Should report missing required keys"
+
+    # Invalid prompt entry (non-dict value) should fail
+    invalid_entry: dict[str, Any] = {"version": "1", "last_updated": "2025-01-01", "prompts": {"bad_key": "not_a_dict"}}
+    is_valid_entry, entry_errors = validate_prompt_structure(invalid_entry)
+    assert not is_valid_entry, "Non-dict prompt entry should fail validation"
+    assert any("not a dictionary" in e for e in entry_errors), "Should report non-dict prompt entry"
 
 
 def _test_backup_functionality() -> None:
     """Test backup operations"""
-    # Test that backup function exists and is callable
-    assert callable(load_prompts), "load_prompts should be callable"
+    import os
+    import tempfile
+
+    # Create a temporary prompts file and verify backup creates a copy
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_prompts = Path(tmpdir) / "ai_prompts.json"
+        tmp_prompts.write_text('{"version": "1.0", "last_updated": "2025-01-01", "prompts": {}}', encoding="utf-8")
+        logs_dir = Path(tmpdir) / "Logs"
+        logs_dir.mkdir(exist_ok=True)
+
+        # Perform backup using shutil (mirrors backup_prompts_file logic)
+        backup_file = logs_dir / "ai_prompts.bak.test"
+        shutil.copy2(tmp_prompts, backup_file)
+
+        assert backup_file.exists(), "Backup file should be created"
+        backup_content = backup_file.read_text(encoding="utf-8")
+        assert '"version"' in backup_content, "Backup should contain original content"
+        assert Path(str(backup_file)).stat().st_size > 0, "Backup file should not be empty"
+
+    # Also verify the real backup function is callable and returns bool
+    assert callable(backup_prompts_file), "backup_prompts_file should be callable"
+    result = backup_prompts_file()
+    assert isinstance(result, bool), "backup_prompts_file should return a bool"
 
 
 def _test_import_functionality() -> None:
@@ -389,19 +451,44 @@ def _test_import_functionality() -> None:
 
 def _test_error_handling() -> None:
     """Test error handling"""
-    # Test that functions handle errors gracefully
-    try:
-        prompts = load_prompts()
-        assert isinstance(prompts, dict), "Should handle errors gracefully"
-    except Exception:
-        pass  # Expected to handle errors
+    # get_prompt should return None for non-existent keys (not raise)
+    result = get_prompt("__completely_nonexistent_key_12345__")
+    assert result is None, "get_prompt should return None for missing key"
+
+    # validate_prompt_structure should return errors for wrong types, not crash
+    empty_data: dict[str, Any] = {}
+    is_valid, errors = validate_prompt_structure(empty_data)
+    assert not is_valid, "Empty dict should fail validation"
+    assert isinstance(errors, list), "Errors should be a list"
+    assert len(errors) > 0, "Should report errors for empty dict"
+
+    # save_prompts should reject invalid data and return False
+    bad_data: dict[str, Any] = {"bad": "data"}
+    save_result = save_prompts(bad_data)
+    assert save_result is False, "save_prompts should return False for invalid data"
 
 
 def _test_prompt_operations() -> None:
     """Test get/update operations"""
-    # Test that prompt operations work
     prompts = load_prompts()
-    assert isinstance(prompts, dict), "Should support prompt operations"
+    prompts_dict = prompts.get("prompts", {})
+
+    # Verify prompts dict is non-empty (ai_prompts.json should have content)
+    assert len(prompts_dict) > 0, "Prompts file should contain at least one prompt"
+
+    # Verify each prompt entry has required structure fields
+    for key, entry in prompts_dict.items():
+        assert isinstance(entry, dict), f"Prompt '{key}' should be a dict"
+        assert "prompt" in entry, f"Prompt '{key}' should have a 'prompt' field"
+        assert isinstance(entry["prompt"], str), f"Prompt '{key}' prompt field should be a string"
+        assert len(entry["prompt"]) > 0, f"Prompt '{key}' should have non-empty prompt text"
+
+    # Verify get_prompt returns actual content for an existing key
+    first_key = next(iter(prompts_dict))
+    retrieved = get_prompt(first_key)
+    assert retrieved is not None, f"get_prompt('{first_key}') should return content"
+    assert isinstance(retrieved, str), "get_prompt should return a string"
+    assert len(retrieved) > 0, "Retrieved prompt should be non-empty"
 
 
 # ==============================================
@@ -485,64 +572,6 @@ def get_prompts_summary() -> dict[str, Any]:
             "backup_count": 0,
             "error": str(e),
         }
-
-
-# =============================================================================
-# DEAD CODE - Commented out 2025-12-18 (Technical Debt)
-# Reason: Replaced by run_comprehensive_tests(), never called
-# See: todo.md "Technical Debt" section
-# =============================================================================
-# def quick_test() -> dict[str, Any]:
-#     """
-#     Perform a quick test of the AI prompt utilities.
-#
-#     Returns:
-#         dict[str, Any]: Test results
-#     """
-#     results: dict[str, Any] = {"passed": 0, "failed": 0, "errors": []}
-#
-#     try:
-#         # Test 1: Load prompts
-#         prompts = load_prompts()
-#         if "prompts" in prompts:
-#             results["passed"] += 1
-#         else:
-#             results["failed"] += 1
-#             results["errors"].append("Failed to load prompts structure")
-#
-#         # Test 2: Validate structure
-#         is_valid, validation_errors = validate_prompt_structure(prompts)
-#         if is_valid:
-#             results["passed"] += 1
-#         else:
-#             results["failed"] += 1
-#             results["errors"].extend(validation_errors)
-#
-#         # Test 3: Get summary
-#         summary = get_prompts_summary()
-#         if "total_prompts" in summary:
-#             results["passed"] += 1
-#         else:
-#             results["failed"] += 1
-#             results["errors"].append("Failed to generate prompts summary")
-#
-#         # Test 4: Test import functionality
-#         imported_count, imported_keys = import_improved_prompts()
-#         if imported_count and imported_keys:
-#             results["passed"] += 1
-#         else:
-#             results["failed"] += 1
-#             results["errors"].append("Failed to test import functionality")
-#
-#     except Exception as e:
-#         results["failed"] += 1
-#         results["errors"].append(f"Unexpected error: {e!s}")
-#
-#     results["total"] = results["passed"] + results["failed"]
-#     results["success_rate"] = results["passed"] / results["total"] * 100 if results["total"] > 0 else 0
-#
-#     return results
-# =============================================================================
 
 
 # ==============================================

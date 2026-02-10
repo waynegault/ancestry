@@ -9,16 +9,15 @@ inbox/messaging stack easier to evolve and removes ~70 lines of duplicated
 utilities across the three actions.
 """
 
-from __future__ import annotations
 
 import logging
 import sys
 from collections.abc import Mapping
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Optional, Protocol
+from typing import Any, Protocol
 
 if __package__ in {None, ""}:
     REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -61,7 +60,7 @@ def _coerce_enum(value: Any, enum_cls: type[Enum], default: Any) -> Any:
     return default
 
 
-def _coerce_numeric_like(value: str) -> Optional[int | float]:
+def _coerce_numeric_like(value: str) -> int | float | None:
     """Attempt to coerce a numeric-looking string to int/float."""
 
     stripped = value.strip()
@@ -99,7 +98,7 @@ def safe_column_value(
     attr_name: str,
     default: Any = None,
     *,
-    enum_overrides: Optional[EnumOverrideMap] = None,
+    enum_overrides: EnumOverrideMap | None = None,
 ) -> Any:
     """Safely extract the attribute ``attr_name`` from ``obj``.
 
@@ -124,7 +123,7 @@ def safe_column_value(
     return _coerce_value(value, default)
 
 
-def build_safe_column_value(enum_overrides: Optional[EnumOverrideMap] = None) -> SafeColumnValueFunc:
+def build_safe_column_value(enum_overrides: EnumOverrideMap | None = None) -> SafeColumnValueFunc:
     """Return a partially-applied ``safe_column_value`` for module-level reuse."""
 
     def _wrapped(obj: Any, attr_name: str, default: Any = None) -> Any:
@@ -140,10 +139,10 @@ def _get_conversation_state(person: Any) -> Any:
 def log_conversation_state_change(
     person: Any,
     change_type: str,
-    old_value: Optional[str] = None,
-    new_value: Optional[str] = None,
+    old_value: str | None = None,
+    new_value: str | None = None,
     *,
-    logger: Optional[logging.Logger] = None,
+    logger: logging.Logger | None = None,
     log_prefix: str = "",
 ) -> None:
     """Log structured conversation-state transitions for observability."""
@@ -179,7 +178,7 @@ def log_conversation_state_change(
 def cancel_pending_messages_on_status_change(
     person: Any,
     *,
-    logger: Optional[logging.Logger] = None,
+    logger: logging.Logger | None = None,
     log_prefix: str = "",
 ) -> bool:
     """Cancel out-of-tree follow-ups when a match is now in-tree."""
@@ -218,7 +217,7 @@ def cancel_pending_messages_on_status_change(
 def cancel_pending_on_reply(
     person: Any,
     *,
-    logger: Optional[logging.Logger] = None,
+    logger: logging.Logger | None = None,
     log_prefix: str = "",
 ) -> bool:
     """Switch conversation state to await reply when the recipient engages."""
@@ -269,11 +268,11 @@ def cancel_pending_on_reply(
 
 
 def calculate_days_since_login(
-    last_logged_in: Optional[datetime],
+    last_logged_in: datetime | None,
     log_prefix: str = "",
     *,
-    logger: Optional[logging.Logger] = None,
-) -> Optional[int]:
+    logger: logging.Logger | None = None,
+) -> int | None:
     """Return whole days since ``last_logged_in`` in UTC, handling naive tzinfo."""
 
     if not last_logged_in:
@@ -281,11 +280,11 @@ def calculate_days_since_login(
 
     logger = logger or _LOGGER
     try:
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
         if last_logged_in.tzinfo is None:
-            last_logged_in = last_logged_in.replace(tzinfo=timezone.utc)
-        elif last_logged_in.tzinfo != timezone.utc:
-            last_logged_in = last_logged_in.astimezone(timezone.utc)
+            last_logged_in = last_logged_in.replace(tzinfo=UTC)
+        elif last_logged_in.tzinfo != UTC:
+            last_logged_in = last_logged_in.astimezone(UTC)
         return (now_utc - last_logged_in).days
     except Exception as exc:  # pragma: no cover - defensive logging
         logger.warning(f"{log_prefix}: Error calculating days since login: {exc}")
@@ -294,7 +293,7 @@ def calculate_days_since_login(
 
 def determine_engagement_tier(
     engagement_score: int,
-    days_since_login: Optional[int],
+    days_since_login: int | None,
     thresholds: Mapping[str, int],
     intervals: Mapping[str, int],
 ) -> tuple[timedelta, str]:
@@ -319,10 +318,10 @@ def determine_engagement_tier(
 
 def calculate_adaptive_interval(
     engagement_score: int,
-    last_logged_in: Optional[datetime],
+    last_logged_in: datetime | None,
     log_prefix: str = "",
     *,
-    logger: Optional[logging.Logger] = None,
+    logger: logging.Logger | None = None,
 ) -> timedelta:
     """Production-only adaptive timing offset driven by engagement + login recency."""
 
@@ -356,16 +355,16 @@ def calculate_adaptive_interval(
     return interval
 
 
-def is_tree_creation_recent(created_at: datetime, person: Any, *, logger: Optional[logging.Logger] = None) -> bool:
+def is_tree_creation_recent(created_at: datetime, person: Any, *, logger: logging.Logger | None = None) -> bool:
     """Check if a FamilyTree record was created within the configured recency window."""
 
     logger = logger or _LOGGER
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
 
     if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=timezone.utc)
-    elif created_at.tzinfo != timezone.utc:
-        created_at = created_at.astimezone(timezone.utc)
+        created_at = created_at.replace(tzinfo=UTC)
+    elif created_at.tzinfo != UTC:
+        created_at = created_at.astimezone(UTC)
 
     days_since_creation = (now_utc - created_at).days
     recent_threshold_days = getattr(config_schema, "status_change_recent_days", 7)
@@ -400,9 +399,9 @@ def has_message_after_tree_creation(person: Any, created_at: datetime) -> bool:
         if log_timestamp is None:
             continue
         if log_timestamp.tzinfo is None:
-            log_timestamp = log_timestamp.replace(tzinfo=timezone.utc)
-        elif log_timestamp.tzinfo != timezone.utc:
-            log_timestamp = log_timestamp.astimezone(timezone.utc)
+            log_timestamp = log_timestamp.replace(tzinfo=UTC)
+        elif log_timestamp.tzinfo != UTC:
+            log_timestamp = log_timestamp.astimezone(UTC)
         if log_timestamp > created_at:
             return True
 
@@ -412,7 +411,7 @@ def has_message_after_tree_creation(person: Any, created_at: datetime) -> bool:
 def detect_status_change_to_in_tree(
     person: Any,
     *,
-    logger: Optional[logging.Logger] = None,
+    logger: logging.Logger | None = None,
 ) -> bool:
     """Detect recent out-of-tree to in-tree transitions requiring message cancellations."""
 
@@ -437,7 +436,7 @@ def detect_status_change_to_in_tree(
         return False
 
     try:
-        created_days = (datetime.now(timezone.utc) - created_at).days
+        created_days = (datetime.now(UTC) - created_at).days
     except Exception:  # pragma: no cover - defensive
         created_days = "?"
 
@@ -453,7 +452,7 @@ def calculate_follow_up_action(
     conv_state: Any,
     log_prefix: str = "",
     *,
-    logger: Optional[logging.Logger] = None,
+    logger: logging.Logger | None = None,
 ) -> tuple[str, datetime | None]:
     """Return follow-up action tuple using adaptive timing helper."""
 
@@ -528,7 +527,7 @@ def _test_safe_column_value_direct_call() -> bool:
 def _make_stub_person() -> SimpleNamespace:
     conv_state = SimpleNamespace(
         next_action="send_follow_up",
-        next_action_date=datetime.now(timezone.utc) + timedelta(days=10),
+        next_action_date=datetime.now(UTC) + timedelta(days=10),
         conversation_phase="initial_outreach",
         engagement_score=55,
     )
@@ -561,7 +560,7 @@ def _test_log_conversation_state_change_without_state() -> bool:
 
 
 def _test_calculate_days_since_login_handles_timezones() -> bool:
-    base_now = datetime.now(timezone.utc)
+    base_now = datetime.now(UTC)
     naive_login = (base_now - timedelta(days=5)).replace(tzinfo=None)
     aware_login = (base_now - timedelta(days=3)).astimezone(timezone(timedelta(hours=-5)))
 
@@ -596,8 +595,8 @@ def _test_is_tree_creation_recent_respects_threshold() -> bool:
     config_schema.status_change_recent_days = 10
     try:
         person = SimpleNamespace(username="Tester", id=1)
-        recent_creation = datetime.now(timezone.utc) - timedelta(days=5)
-        old_creation = datetime.now(timezone.utc) - timedelta(days=25)
+        recent_creation = datetime.now(UTC) - timedelta(days=5)
+        old_creation = datetime.now(UTC) - timedelta(days=25)
 
         assert is_tree_creation_recent(recent_creation, person)
         assert is_tree_creation_recent(old_creation, person) is False
@@ -607,7 +606,7 @@ def _test_is_tree_creation_recent_respects_threshold() -> bool:
 
 
 def _test_has_message_after_tree_creation_detects_activity() -> bool:
-    created_at = datetime.now(timezone.utc) - timedelta(days=30)
+    created_at = datetime.now(UTC) - timedelta(days=30)
     # Use actual enum value since MessageDirectionEnum is imported
     direction_out = MessageDirectionEnum.OUT if MessageDirectionEnum else "OUT"
     log_before = SimpleNamespace(direction=direction_out, latest_timestamp=created_at - timedelta(days=1))
@@ -642,7 +641,7 @@ def _test_calculate_follow_up_action() -> bool:
 def _test_cancel_pending_messages_updates_state() -> bool:
     conv_state = SimpleNamespace(
         next_action="send_follow_up",
-        next_action_date=datetime.now(timezone.utc) + timedelta(days=10),
+        next_action_date=datetime.now(UTC) + timedelta(days=10),
         engagement_score=55,
     )
     person = SimpleNamespace(username="Tester", id=1, conversation_state=conv_state)

@@ -11,12 +11,11 @@ responses. This ensures the service correctly:
 These tests do not require a live Ancestry session.
 """
 
-from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
-from typing import Any, Optional, Protocol, cast
+from datetime import UTC, datetime, timezone
+from typing import Any, Protocol, cast
 
 from api.tree_update import (
     FACT_TYPE_TO_EVENT_TYPE,
@@ -48,8 +47,8 @@ class APIManagerProtocol(Protocol):
     def post(
         self,
         url: str,
-        json: Optional[dict[str, Any]] = None,
-        headers: Optional[dict[str, str]] = None,
+        json: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> Any:
         """Make POST request."""
@@ -58,7 +57,7 @@ class APIManagerProtocol(Protocol):
     def get(
         self,
         url: str,
-        headers: Optional[dict[str, str]] = None,
+        headers: dict[str, str] | None = None,
         **kwargs: Any,
     ) -> Any:
         """Make GET request."""
@@ -91,7 +90,7 @@ class MockResponse:
     """Mock HTTP response for testing."""
 
     status_code: int
-    _json_data: Optional[dict[str, Any]] = None
+    _json_data: dict[str, Any] | None = None
     text: str = ""
 
     def json(self) -> dict[str, Any]:
@@ -100,7 +99,7 @@ class MockResponse:
         return self._json_data
 
 
-def create_success_response(data: Optional[dict[str, Any]] = None) -> MockResponse:
+def create_success_response(data: dict[str, Any] | None = None) -> MockResponse:
     """Create a successful API response."""
     return MockResponse(
         status_code=200,
@@ -157,8 +156,8 @@ class MockAPIManager(APIManagerProtocol):
     def post(
         self,
         url: str,
-        json: Optional[dict[str, Any]] = None,
-        headers: Optional[dict[str, str]] = None,
+        json: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
         **_kwargs: Any,
     ) -> MockResponse:
         """Mock POST request."""
@@ -175,7 +174,7 @@ class MockAPIManager(APIManagerProtocol):
     def get(
         self,
         url: str,
-        headers: Optional[dict[str, str]] = None,
+        headers: dict[str, str] | None = None,
         **_kwargs: Any,
     ) -> MockResponse:
         """Mock GET request."""
@@ -430,20 +429,20 @@ def _test_api_request_error_handling() -> None:
             """Protocol method - not used for failure tests."""
             pass
 
-        def post(  # noqa: PLR6301
-            self,
+        @staticmethod
+        def post(
             url: str,
-            json: Optional[dict[str, Any]] = None,
-            headers: Optional[dict[str, str]] = None,
+            json: dict[str, Any] | None = None,
+            headers: dict[str, str] | None = None,
             **_kwargs: Any,
         ) -> Any:
             _ = (url, json, headers)  # Unused parameters for failure simulation
             raise ConnectionError("Network unavailable")
 
-        def get(  # noqa: PLR6301
-            self,
+        @staticmethod
+        def get(
             url: str,
-            headers: Optional[dict[str, str]] = None,
+            headers: dict[str, str] | None = None,
             **_kwargs: Any,
         ) -> Any:
             _ = (url, headers)  # Unused parameters for failure simulation
@@ -481,7 +480,7 @@ def _test_api_request_error_handling() -> None:
 
 def _test_tree_update_response_timestamp() -> None:
     """Test TreeUpdateResponse has automatic timestamp."""
-    before = datetime.now(timezone.utc)
+    before = datetime.now(UTC)
 
     response = TreeUpdateResponse(
         result=TreeUpdateResult.SUCCESS,
@@ -490,7 +489,7 @@ def _test_tree_update_response_timestamp() -> None:
         message="Test",
     )
 
-    after = datetime.now(timezone.utc)
+    after = datetime.now(UTC)
 
     assert response.timestamp >= before
     assert response.timestamp <= after

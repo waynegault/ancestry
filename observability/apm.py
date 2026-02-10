@@ -33,11 +33,11 @@ import random
 import threading
 import time
 import uuid
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Callable, Optional, TypeVar, cast
+from typing import Any, Optional, TypeVar, cast
 
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -57,9 +57,9 @@ class Span:
     name: str
     trace_id: str
     span_id: str
-    parent_span_id: Optional[str] = None
+    parent_span_id: str | None = None
     start_time: float = field(default_factory=time.time)
-    end_time: Optional[float] = None
+    end_time: float | None = None
     status: SpanStatus = SpanStatus.UNSET
     attributes: dict[str, Any] = field(default_factory=dict)
     events: list[dict[str, Any]] = field(default_factory=list)
@@ -75,7 +75,7 @@ class Span:
         """Set a span attribute."""
         self.attributes[key] = value
 
-    def add_event(self, name: str, attributes: Optional[dict[str, Any]] = None) -> None:
+    def add_event(self, name: str, attributes: dict[str, Any] | None = None) -> None:
         """Add an event to the span."""
         self.events.append(
             {
@@ -85,13 +85,13 @@ class Span:
             }
         )
 
-    def set_status(self, status: SpanStatus, description: Optional[str] = None) -> None:
+    def set_status(self, status: SpanStatus, description: str | None = None) -> None:
         """Set the span status."""
         self.status = status
         if description:
             self.attributes["status_description"] = description
 
-    def end(self, status: Optional[SpanStatus] = None) -> None:
+    def end(self, status: SpanStatus | None = None) -> None:
         """End the span."""
         self.end_time = time.time()
         if status:
@@ -126,7 +126,8 @@ class SpanExporter:
 class ConsoleSpanExporter(SpanExporter):
     """Exports spans to console (for debugging)."""
 
-    def export(self, spans: list[Span]) -> bool:  # noqa: PLR6301
+    @staticmethod
+    def export(spans: list[Span]) -> bool:
         for span in spans:
             logger.info(
                 "SPAN: %s [%s] %.2fms - %s",
@@ -207,7 +208,7 @@ class Tracer:
         self,
         enabled: bool = True,
         sample_rate: float = 1.0,
-        exporters: Optional[list[SpanExporter]] = None,
+        exporters: list[SpanExporter] | None = None,
     ) -> None:
         """Configure the tracer."""
         self._enabled = enabled
@@ -225,19 +226,19 @@ class Tracer:
         """Determine if this trace should be sampled."""
         return self._enabled and random.random() < self._sample_rate
 
-    def _get_current_span(self) -> Optional[Span]:
+    def _get_current_span(self) -> Span | None:
         """Get the current span from thread-local context."""
         return getattr(self._context, "current_span", None)
 
-    def _set_current_span(self, span: Optional[Span]) -> None:
+    def _set_current_span(self, span: Span | None) -> None:
         """Set the current span in thread-local context."""
         self._context.current_span = span
 
     def start_span(
         self,
         name: str,
-        attributes: Optional[dict[str, Any]] = None,
-    ) -> Optional[Span]:
+        attributes: dict[str, Any] | None = None,
+    ) -> Span | None:
         """Start a new span."""
         if not self._should_sample():
             return None
@@ -259,7 +260,7 @@ class Tracer:
         self._set_current_span(span)
         return span
 
-    def end_span(self, span: Optional[Span], status: Optional[SpanStatus] = None) -> None:
+    def end_span(self, span: Span | None, status: SpanStatus | None = None) -> None:
         """End a span and queue for export."""
         if span is None:
             return
@@ -298,8 +299,8 @@ class Tracer:
     def span(
         self,
         name: str,
-        attributes: Optional[dict[str, Any]] = None,
-    ) -> Generator[Optional[Span], None, None]:
+        attributes: dict[str, Any] | None = None,
+    ) -> Generator[Span | None, None, None]:
         """Context manager for creating spans."""
         span = self.start_span(name, attributes)
         try:
@@ -325,8 +326,8 @@ class Tracer:
 
 
 def trace(
-    name: Optional[str] = None,
-    attributes: Optional[dict[str, Any]] = None,
+    name: str | None = None,
+    attributes: dict[str, Any] | None = None,
 ) -> Callable[[F], F]:
     """
     Decorator to automatically trace a function.
@@ -369,7 +370,7 @@ def configure_apm(
     enabled: bool = True,
     sample_rate: float = 1.0,
     export_to_console: bool = False,
-    export_to_file: Optional[Path] = None,
+    export_to_file: Path | None = None,
 ) -> None:
     """
     Configure APM with common options.
@@ -482,7 +483,7 @@ def _test_tracer_exception_handling() -> bool:
     tracer.reset()
     tracer.configure(enabled=True, sample_rate=1.0)
 
-    captured_span: Optional[Span] = None
+    captured_span: Span | None = None
     try:
         with tracer.span("error_test") as span:
             captured_span = span

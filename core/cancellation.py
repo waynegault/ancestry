@@ -8,7 +8,6 @@ running in other threads. Actions should periodically check is_cancel_requested(
 inside their main loops and exit cleanly when True.
 """
 
-from __future__ import annotations
 
 import sys
 import threading

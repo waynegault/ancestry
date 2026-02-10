@@ -17,8 +17,8 @@ from __future__ import annotations
 import logging
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Optional, cast
+from datetime import UTC, datetime, timedelta, timezone
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import MagicMock
 
 from testing.test_framework import TestSuite
@@ -47,8 +47,8 @@ class MockPerson:
     in_my_tree: bool = False
     contactable: bool = True
     automation_enabled: bool = True
-    administrator_profile_id: Optional[str] = None
-    conversation_state: Optional[Any] = None
+    administrator_profile_id: str | None = None
+    conversation_state: Any | None = None
 
 
 @dataclass
@@ -59,9 +59,9 @@ class MockConversationLog:
     conversation_id: str = "conv_123"
     people_id: int = 1
     direction: str = "OUT"
-    latest_timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    latest_timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     message_text: str = "Test message"
-    message_template_id: Optional[int] = None
+    message_template_id: int | None = None
 
 
 @dataclass
@@ -69,11 +69,11 @@ class MockConversationState:
     """Mock ConversationState for testing."""
 
     people_id: int = 1
-    status: Optional[str] = None
-    state: Optional[str] = None
+    status: str | None = None
+    state: str | None = None
     conversation_phase: str = "initial_outreach"
-    last_message_type: Optional[str] = None
-    last_message_time: Optional[datetime] = None
+    last_message_type: str | None = None
+    last_message_time: datetime | None = None
     safety_flag: bool = False
 
 
@@ -384,26 +384,49 @@ def _test_context_creation_desist() -> None:
 
 def _test_database_update_records_structure() -> None:
     """Test that _update_database_records returns proper update list (4.1.5)."""
+    import inspect
+    from unittest.mock import MagicMock, patch
+
     from messaging.send_orchestrator import (
+        MessageSendContext,
         MessageSendOrchestrator,
+        SendTrigger,
     )
 
     session_manager = _get_mock_session_manager()
     orchestrator = MessageSendOrchestrator(session_manager)
 
-    # Test the structure of _update_database_records method
-    # We can't fully test without a real DB, but we verify the method exists
-    # and has the correct signature
-    assert hasattr(orchestrator, "_update_database_records"), "_update_database_records method should exist"
-
-    # Verify the method accepts the expected parameters by checking its signature
-    import inspect
-
+    # Verify method signature
     sig = inspect.signature(orchestrator._update_database_records)
     params = list(sig.parameters.keys())
     assert "context" in params, "Method should accept context parameter"
     assert "decision" in params, "Method should accept decision parameter"
     assert "message_id" in params, "Method should accept message_id parameter"
+    assert len(params) == 3, f"Expected 3 params (context, decision, message_id), got {len(params)}: {params}"
+
+    # Verify return type annotation is list[str]
+    ret = sig.return_annotation
+    assert str(ret) == "list[str]", f"Return annotation should be list[str], got {ret}"
+
+    # Call with mocked DB session and verify it returns a list of strings
+    mock_db = MagicMock()
+    session_manager.get_db_conn.return_value = mock_db
+
+    person = _get_mock_person()
+    context = MessageSendContext(
+        person=person,
+        send_trigger=SendTrigger.AUTOMATED_SEQUENCE,
+    )
+    mock_decision = MagicMock()
+    mock_decision.message_type = "Test_Template"
+
+    result = orchestrator._update_database_records(context, mock_decision, "msg_123")
+
+    assert isinstance(result, list), f"Should return list, got {type(result).__name__}"
+    for item in result:
+        assert isinstance(item, str), f"Each update record should be str, got {type(item).__name__}"
+    # Verify the method produced at least one update record (either success or error)
+    assert len(result) > 0, "Method should produce at least one update record"
 
 
 def _test_feature_flag_checks() -> None:
@@ -482,7 +505,7 @@ def _test_duplicate_prevention_recent_send() -> None:
     )
 
     # Create recent outbound log
-    recent_time = datetime.now(timezone.utc) - timedelta(minutes=2)
+    recent_time = datetime.now(UTC) - timedelta(minutes=2)
     recent_log = MockConversationLog(
         direction="OUT",
         latest_timestamp=recent_time,

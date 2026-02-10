@@ -23,10 +23,13 @@ import contextlib
 import importlib
 import json
 import os
+import platform
 import subprocess
-import winreg
 from functools import lru_cache
 from typing import Any
+
+if platform.system() == "Windows":
+    import winreg
 
 
 @lru_cache(maxsize=1)
@@ -703,8 +706,7 @@ def provide_recommendations(
             print(f"{index}. {title}")
             for line in details:
                 print(f"   {line}")
-        return
-
+    else:
         print("✓ No obvious issues detected")
         print("\nIf browser automation still fails, try:")
         print("1. Update Chrome to the latest version")

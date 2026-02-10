@@ -1,7 +1,7 @@
 # Ancestry Research Automation Platform - AI Agent Instructions
 
 ## Project Overview
-Python-based genealogical research automation for Ancestry.com featuring DNA match collection, AI-powered conversation analysis, personalized messaging, and automated task generation. Built with enterprise-grade architecture: SQLAlchemy ORM, Selenium WebDriver, multi-provider AI integration (Google Gemini, DeepSeek), and comprehensive quality assurance with various test modules.
+Python-based genealogical research automation for Ancestry.com featuring DNA match collection, AI-powered conversation analysis, personalized messaging, and automated task generation. Built with enterprise-grade architecture: SQLAlchemy ORM, Selenium WebDriver, multi-provider AI integration (Gemini, DeepSeek, Moonshot, Local LLM, Grok, Inception via `OpenAICompatibleProvider` base class), and comprehensive quality assurance with various test modules.
 
 ## Quick Reference: Critical Commands
 
@@ -107,7 +107,7 @@ if __name__ == "__main__":
     success = run_comprehensive_tests()
     sys.exit(0 if success else 1)
 ```
-- 58 test modules validated by `run_all_tests.py` (supports `--fast`, `--analyze-logs`)
+- 200 test modules validated by `run_all_tests.py` (supports `--fast`, `--analyze-logs`)
 - Tests embedded in source files (not separate test/ directory)
 - Zero fake passes - every test must validate real behavior
 
@@ -211,14 +211,14 @@ Computes quality scores (0-100) based on:
 **Quality Regression Gate** (`quality_regression_gate.py`):
 ```bash
 # Check for quality regression (CI/CD integration)
-python quality_regression_gate.py
+python -m ai.quality_regression_gate
 # Exit 1 if median score drops >5 points from baseline
 
 # Generate new baseline after prompt improvements
-python prompt_telemetry.py --baseline
+python -m ai.prompt_telemetry --baseline
 
 # View current statistics
-python prompt_telemetry.py --stats
+python -m ai.prompt_telemetry --stats
 ```
 
 **Monitoring Commands**:
@@ -230,7 +230,7 @@ Get-Content Logs\prompt_experiments.jsonl -Tail 20
 Get-Content Logs\prompt_experiment_alerts.jsonl -Tail 10
 
 # Analyze quality trends
-python prompt_telemetry.py --stats
+python -m ai.prompt_telemetry --stats
 ```
 
 ## Phase 2: Tree-Aware Q&A System
@@ -311,7 +311,7 @@ Get-Content Logs\app.log -Wait | Select-String "429|rate|worker"
 ### Debugging AI Extraction Issues
 ```bash
 # Check telemetry statistics
-python prompt_telemetry.py --stats
+python -m ai.prompt_telemetry --stats
 # Review: median quality scores, parse success rate
 
 # Review recent AI responses
@@ -319,10 +319,10 @@ Get-Content Logs\prompt_experiments.jsonl -Tail 20
 # Check: parse_success: true/false, quality_score values
 
 # Test specific prompt in isolation
-python -c "from ai_interface import call_ai; print(call_ai('intent_classification', {'message': 'Test message'}))"
+python -c "from ai.ai_interface import call_ai; print(call_ai('intent_classification', {'message': 'Test message'}))"
 
 # Regenerate baseline after prompt improvements
-python prompt_telemetry.py --baseline
+python -m ai.prompt_telemetry --baseline
 ```
 
 ### Debugging Database Issues
@@ -390,7 +390,7 @@ ruff check --fix .
 ### Type Hints (Pyright)
 - Required for all new functions
 - `pyrightconfig.json` configures standard checking
-- Nullable types: Use `Optional[Type]` not `Type | None` for Python 3.9 compatibility
+- Nullable types: Use modern PEP 604 syntax `X | None` instead of `Optional[X]`
 
 ### Logging Discipline
 ```python
@@ -504,11 +504,11 @@ _check_session_health_proactive(session_manager, current_page)
 - **Symptom**: Quality scores consistently <70 in telemetry logs
 - **Diagnosis**:
   ```bash
-  python prompt_telemetry.py --stats  # Check median scores
+  python -m ai.prompt_telemetry --stats  # Check median scores
   Get-Content Logs\prompt_experiments.jsonl -Tail 20  # Review recent extractions
   ```
 - **Solution**: Review/update prompts in `ai_prompts.json`, add variants for A/B testing
-- **Prevention**: Run `python quality_regression_gate.py` before deployment
+- **Prevention**: Run `python -m ai.quality_regression_gate` before deployment
 
 ### Session Expiry During Long Operations
 - **Symptom**: 403 errors appearing after 40 minutes of action execution
@@ -659,52 +659,85 @@ finally:
 
 ```
 main.py                 # Entry point with menu, exec_actn() pattern
-database.py             # SQLAlchemy ORM models
-utils.py                # RateLimiter, nav helpers, login flows
-core_imports.py         # Core import system and function registry
-standard_imports.py     # Standardized imports - single source of truth
+run_all_tests.py        # Test orchestrator with parallel execution
 actions/
   action6_gather.py     # DNA match gathering
   action7_inbox.py      # Inbox processing
   action8_messaging.py  # Automated messaging
   action9_process_productive.py  # Productive conversation processing
   action10.py           # GEDCOM analysis and genealogical intelligence
-  action16_unified_send.py  # Unified outbound messaging (replaces running 8+9+11 separately)
+  action11_send_approved_drafts.py
+  action12_shared_matches.py
+  action13_triangulation.py   # DNA triangulation
+  action14_research_tools.py
+  action15_tree_updates.py
+  action16_unified_send.py  # Unified outbound messaging
+  action_review.py      # Match review
   gather/               # Checkpoint, fetch, metrics, orchestration, persistence
+ai/
+  ai_interface.py       # Multi-provider AI abstraction
+  ai_prompts.json       # Prompt library with versioning
+  prompt_telemetry.py   # AI performance monitoring & quality baseline
+  quality_regression_gate.py  # Quality gate for CI/CD
+  ab_testing.py         # A/B testing framework
+  sentiment_adaptation.py  # Dynamic tone adaptation
+  providers/
+    base.py             # OpenAICompatibleProvider base class (template method pattern)
+    gemini.py           # Google Gemini adapter
+    deepseek.py         # DeepSeek adapter (extends OpenAICompatibleProvider)
+    moonshot.py         # Moonshot/Kimi adapter (extends OpenAICompatibleProvider)
+    local_llm.py        # LM Studio adapter (extends OpenAICompatibleProvider)
+api/
+  api_constants.py      # Shared API endpoint path constants
+  api_utils.py          # API request helpers
+  api_search_core.py    # Search API integration
+  api_search_utils.py   # Search utilities
 core/
   session_manager.py    # Central orchestrator (THE critical component)
   browser_manager.py    # WebDriver lifecycle
   api_manager.py        # REST client with rate limiting coordination
   database_manager.py   # Connection pooling
+  database.py           # SQLAlchemy ORM models
   error_handling.py     # Exception hierarchy, retry decorators, circuit breaker
+  rate_limiter.py       # Token bucket algorithm
+  utils.py              # Utility functions
+  venv_bootstrap.py     # Shared venv initialization
 config/
   config_schema.py      # Type-safe dataclass definitions
   config_manager.py     # .env loading and validation
-ai/
-  ai_interface.py       # Multi-provider AI abstraction
-  ai_prompts.json       # Prompt library with versioning
-  prompt_telemetry.py   # AI performance monitoring
-  quality_regression_gate.py  # Quality gate for CI/CD
-caching/                # Disk-based cache implementation (concrete)
+browser/
+  chromedriver.py       # Chrome WebDriver management
+  css_selectors.py      # CSS selector constants
+  selenium_utils.py     # Selenium helper functions
+caching/
   cache.py              # High-performance disk caching
   cache_manager.py      # Centralized cache management
   cache_retention.py    # Retention policies for cache directories
+cli/                    # CLI tools (review queue, research, maintenance)
+integrations/
+  ms_graph_utils.py     # Microsoft Graph API (To-Do tasks)
+messaging/
+  inbound.py            # Inbound message orchestrator
+  send_orchestrator.py  # Unified message send pipeline
+  safety.py             # Safety checks & guardrails
+  send_audit.py         # Audit trail for send decisions
+observability/          # Prometheus metrics, analytics, APM
+performance/
+  grafana_checker.py    # Grafana health, password reset, datasource cleanup
 testing/
   test_framework.py     # TestSuite, assertion utilities
   test_utilities.py     # Centralized test helper functions
-  test_integration_workflow.py  # Integration workflow tests
-  code_quality_checker.py  # Code quality metrics and analysis
-  dead_code_scan.py     # Dead code detection
-  import_audit.py       # Import standardization auditing
-  check_type_ignores.py # Type ignore directive scanning
   run_tests_fast.py     # Fast unit test runner
-run_all_tests.py        # Test orchestrator with parallel execution
+  code_quality_checker.py  # Code quality metrics and analysis
+scripts/                # Operational scripts (dry run, dashboards, metrics server)
+ui/                     # Interactive menu, review server
 ```
 
 ## Key Dependencies
 - **selenium 4.31.0+**: Browser automation (ChromeDriver auto-updates via webdriver-manager)
 - **SQLAlchemy 2.0.40+**: Database ORM with soft deletes, connection pooling
 - **google-generativeai 0.8.4**: Google Gemini AI provider
+- **openai 1.0.0+**: OpenAI-compatible client (DeepSeek, Moonshot, Local LLM, Grok via OpenAICompatibleProvider)
 - **requests 2.32.3+**: HTTP client for API calls (shares rate limiter with Selenium)
 - **beautifulsoup4 4.13.3+**: HTML parsing for inbox scraping
 - **tqdm 4.67.1+**: Progress bars with ETA calculation

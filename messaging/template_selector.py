@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from testing.test_framework import TestSuite
 
@@ -82,9 +82,9 @@ class TemplateSelectionResult:
 class TemplateSelectionContext:
     """Context for template selection decisions."""
 
-    family_tree: Optional[FamilyTree] = None
-    dna_match: Optional[DnaMatch] = None
-    person_id: Optional[int] = None
+    family_tree: FamilyTree | None = None
+    dna_match: DnaMatch | None = None
+    person_id: int | None = None
     enable_ab_testing: bool = False
     prefer_short: bool = False
     additional_context: dict[str, Any] = field(default_factory=dict)
@@ -131,8 +131,8 @@ class TemplateSelector:
     def select_template(
         self,
         base_template_key: str,
-        person: Optional[Person] = None,
-        context: Optional[TemplateSelectionContext] = None,
+        person: Person | None = None,
+        context: TemplateSelectionContext | None = None,
     ) -> TemplateSelectionResult:
         """
         Select the appropriate template variant for a person.
@@ -183,7 +183,7 @@ class TemplateSelector:
     def select_initial_template(
         self,
         person: Person,
-        context: Optional[TemplateSelectionContext] = None,
+        context: TemplateSelectionContext | None = None,
     ) -> TemplateSelectionResult:
         """Select initial outreach template."""
         ctx = context or TemplateSelectionContext()
@@ -194,7 +194,7 @@ class TemplateSelector:
     def select_followup_template(
         self,
         person: Person,
-        context: Optional[TemplateSelectionContext] = None,
+        context: TemplateSelectionContext | None = None,
     ) -> TemplateSelectionResult:
         """Select follow-up template."""
         ctx = context or TemplateSelectionContext()
@@ -205,7 +205,7 @@ class TemplateSelector:
     def select_final_reminder_template(
         self,
         person: Person,
-        context: Optional[TemplateSelectionContext] = None,
+        context: TemplateSelectionContext | None = None,
     ) -> TemplateSelectionResult:
         """Select final reminder template."""
         ctx = context or TemplateSelectionContext()
@@ -216,7 +216,7 @@ class TemplateSelector:
     @staticmethod
     def _prepare_context(
         ctx: TemplateSelectionContext,
-        person: Optional[Person],
+        person: Person | None,
     ) -> TemplateSelectionContext:
         """Prepare context with person_id if available."""
         if person and ctx.person_id is None:
@@ -227,7 +227,7 @@ class TemplateSelector:
         self,
         base_template_key: str,
         ctx: TemplateSelectionContext,
-    ) -> Optional[TemplateSelectionResult]:
+    ) -> TemplateSelectionResult | None:
         """Try A/B test selection if enabled."""
         if ctx.enable_ab_testing and ctx.person_id:
             return self._select_ab_test_variant(base_template_key, ctx.person_id)
@@ -237,7 +237,7 @@ class TemplateSelector:
         self,
         base_template_key: str,
         ctx: TemplateSelectionContext,
-    ) -> Optional[TemplateSelectionResult]:
+    ) -> TemplateSelectionResult | None:
         """Try distant relationship variant if applicable."""
         if ctx.family_tree and self._is_distant_relationship(ctx.family_tree):
             return self._select_distant_variant(base_template_key)
@@ -247,7 +247,7 @@ class TemplateSelector:
         self,
         base_template_key: str,
         ctx: TemplateSelectionContext,
-    ) -> Optional[TemplateSelectionResult]:
+    ) -> TemplateSelectionResult | None:
         """Try confidence-based variant if score > 0."""
         confidence_score = self._calculate_confidence_score(ctx)
         if confidence_score > 0:
@@ -354,7 +354,7 @@ class TemplateSelector:
     def _try_short_variant(
         self,
         base_template_key: str,
-    ) -> Optional[TemplateSelectionResult]:
+    ) -> TemplateSelectionResult | None:
         """Try to select short variant if it exists."""
         short_key = self._get_short_key(base_template_key)
         if short_key:
@@ -365,7 +365,7 @@ class TemplateSelector:
             )
         return None
 
-    def _get_short_key(self, base_template_key: str) -> Optional[str]:
+    def _get_short_key(self, base_template_key: str) -> str | None:
         """Get short template key if it exists."""
         short_key = f"{base_template_key}_Short"
         return short_key if short_key in self._templates else None
@@ -387,7 +387,7 @@ class TemplateSelector:
         return score
 
     @staticmethod
-    def _family_tree_confidence(family_tree: Optional[FamilyTree]) -> int:
+    def _family_tree_confidence(family_tree: FamilyTree | None) -> int:
         """Calculate confidence from family tree data."""
         if not family_tree:
             return 0
@@ -408,7 +408,7 @@ class TemplateSelector:
         return score
 
     @staticmethod
-    def _dna_match_confidence(dna_match: Optional[DnaMatch]) -> int:
+    def _dna_match_confidence(dna_match: DnaMatch | None) -> int:
         """Calculate confidence from DNA match data."""
         if not dna_match:
             return 0

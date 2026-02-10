@@ -16,9 +16,10 @@ import logging
 import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 # Ensure project root is on sys.path when running as a script
 parent_dir = str(Path(__file__).resolve().parent.parent)
@@ -195,7 +196,7 @@ class BackgroundScheduler:
             logger.debug(f"Disabled task: {name}")
             return True
 
-    def get_task_status(self, name: str) -> Optional[dict[str, Any]]:
+    def get_task_status(self, name: str) -> dict[str, Any] | None:
         """Get status information for a task."""
         with self._lock:
             if name not in self._tasks:
@@ -223,13 +224,13 @@ class BackgroundScheduler:
 
 
 # Module-level scheduler instance
-_scheduler: Optional[BackgroundScheduler] = None
+_scheduler: BackgroundScheduler | None = None
 _scheduler_lock = threading.Lock()
 
 
 def get_scheduler() -> BackgroundScheduler:
     """Get or create the global scheduler instance."""
-    global _scheduler  # noqa: PLW0603
+    global _scheduler
     with _scheduler_lock:
         if _scheduler is None:
             _scheduler = BackgroundScheduler()
@@ -390,7 +391,10 @@ def module_tests() -> bool:
     # Test: Task registration
     def test_task_registration() -> None:
         scheduler = BackgroundScheduler()
-        callback = lambda: None  # noqa: E731
+
+        def callback() -> None:
+            pass
+
         scheduler.register_task(
             name="test_task",
             interval_seconds=60.0,
@@ -521,7 +525,7 @@ def module_tests() -> bool:
 
     # Test: get_scheduler singleton
     def test_get_scheduler_singleton() -> None:
-        global _scheduler  # noqa: PLW0603
+        global _scheduler
         _scheduler = None  # Reset for test
 
         sched1 = get_scheduler()

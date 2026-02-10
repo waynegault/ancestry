@@ -36,9 +36,10 @@ import json
 import threading
 import time
 import weakref
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import wraps
-from typing import TYPE_CHECKING, Any, Callable, Optional, Union, cast
+from typing import TYPE_CHECKING, Any, Optional, Union, cast
 
 # === LEVERAGE EXISTING CACHE INFRASTRUCTURE ===
 from caching.cache import (
@@ -140,7 +141,7 @@ class APIResponseCache(BaseCacheModule):
         method: str,
         params: dict[str, Any],
         response: Any,
-        ttl: Optional[int] = None,
+        ttl: int | None = None,
     ) -> bool:
         """Cache API response with service-specific TTL"""
         if not cache:
@@ -174,7 +175,7 @@ class APIResponseCache(BaseCacheModule):
             logger.warning(f"Failed to cache {service}.{method} response: {e}")
             return False
 
-    def get_cached_api_response(self, service: str, method: str, params: dict[str, Any]) -> Optional[Any]:
+    def get_cached_api_response(self, service: str, method: str, params: dict[str, Any]) -> Any | None:
         """Retrieve cached API response if valid"""
         if not cache:
             return None
@@ -251,7 +252,7 @@ class DatabaseQueryCache(BaseCacheModule):
 
         return get_unified_cache_key("db_query", query_hash)
 
-    def cache_query_result(self, query: str, params: tuple[Any, ...], result: Any, ttl: Optional[int] = None) -> bool:
+    def cache_query_result(self, query: str, params: tuple[Any, ...], result: Any, ttl: int | None = None) -> bool:
         """Cache database query result"""
         if not cache:
             return False
@@ -277,7 +278,7 @@ class DatabaseQueryCache(BaseCacheModule):
             logger.warning(f"Failed to cache database query: {e}")
             return False
 
-    def get_cached_query_result(self, query: str, params: tuple[Any, ...] = ()) -> Optional[Any]:
+    def get_cached_query_result(self, query: str, params: tuple[Any, ...] = ()) -> Any | None:
         """Retrieve cached database query result"""
         if not cache:
             return None
@@ -399,7 +400,7 @@ _memory_optimizer = MemoryOptimizer()
 # === CACHING DECORATORS ===
 
 
-def cached_api_call(service: str, ttl: Optional[int] = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def cached_api_call(service: str, ttl: int | None = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator for caching API calls with intelligent TTL management.
 
@@ -444,7 +445,7 @@ def cached_api_call(service: str, ttl: Optional[int] = None) -> Callable[[Callab
     return decorator
 
 
-def cached_database_query(ttl: Optional[int] = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def cached_database_query(ttl: int | None = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator for caching database query results.
 
@@ -479,7 +480,7 @@ def cached_database_query(ttl: Optional[int] = None) -> Callable[[Callable[..., 
     return decorator
 
 
-def memory_optimized(gc_threshold: Optional[float] = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+def memory_optimized(gc_threshold: float | None = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator for functions that should trigger memory optimization.
 
@@ -555,7 +556,7 @@ def get_system_cache_stats() -> dict[str, Any]:
     }
 
 
-def clear_system_caches() -> dict[str, Union[int, str]]:
+def clear_system_caches() -> dict[str, int | str]:
     """Clear all system caches"""
     results = {}
 

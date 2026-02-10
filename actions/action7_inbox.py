@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from __future__ import annotations
 
 """
 Intelligent Inbox Processing & AI-Powered Message Classification
@@ -27,9 +26,9 @@ logger = logging.getLogger(__name__)
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import sys
-from collections.abc import Mapping, Sequence
-from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Literal, Optional, cast
+from collections.abc import Callable, Mapping, Sequence
+from datetime import UTC, datetime, timedelta, timezone
+from typing import Any, Literal, Optional, cast
 
 # === THIRD-PARTY IMPORTS ===
 from selenium.common.exceptions import WebDriverException
@@ -79,7 +78,7 @@ from observability.conversation_analytics import record_engagement_event, update
 ConversationHistoryInput = Sequence[Any] | Mapping[Any, Any] | None
 JSONDict = dict[str, Any]
 JSONList = list[JSONDict]
-HeadersDict = dict[str, Optional[str]]
+HeadersDict = dict[str, str | None]
 ApiResponseType = Any
 
 
@@ -205,7 +204,7 @@ class InboxProcessor:
             raise WebDriverException("Session invalid before conversation overview API call")
 
     @staticmethod
-    def _build_conversations_api_url(my_profile_id: str, limit: int, cursor: Optional[str]) -> str:
+    def _build_conversations_api_url(my_profile_id: str, limit: int, cursor: str | None) -> str:
         """Build API URL for fetching conversations."""
         api_base = urljoin(getattr(config_schema.api, "base_url", ""), "/app-api/express/v2/")
         url = f"{api_base}conversations?q=user:{my_profile_id}&limit={limit}"
@@ -218,9 +217,9 @@ class InboxProcessor:
         *,
         url: str,
         method: str = "GET",
-        headers: Optional[HeadersDict] = None,
-        data: Optional[dict[str, Any]] = None,
-        json_data: Optional[dict[str, Any]] = None,
+        headers: HeadersDict | None = None,
+        data: dict[str, Any] | None = None,
+        json_data: dict[str, Any] | None = None,
         use_csrf_token: bool = False,
         api_description: str = "Inbox API Request",
         timeout: int = 30,
@@ -230,7 +229,7 @@ class InboxProcessor:
         if api_manager is None:
             raise RuntimeError("SessionManager missing api_manager for inbox processing")
 
-        sanitized_headers: Optional[dict[str, str]] = None
+        sanitized_headers: dict[str, str] | None = None
         if headers:
             sanitized_headers = {key: str(value) for key, value in headers.items() if value is not None}
 
@@ -247,7 +246,7 @@ class InboxProcessor:
 
     def _process_conversations_response(
         self, response_data: Mapping[str, Any], my_profile_id: str
-    ) -> tuple[list[dict[str, Any]], Optional[str]]:
+    ) -> tuple[list[dict[str, Any]], str | None]:
         """Process API response and extract conversations. Returns (conversations, forward_cursor)."""
         conversations_raw = response_data.get("conversations", [])
         all_conversations_processed: list[dict[str, Any]] = []
@@ -267,7 +266,7 @@ class InboxProcessor:
         else:
             logger.warning("_get_all_conversations_api: 'conversations' key not found or not a list in API response.")
 
-        forward_cursor: Optional[str] = None
+        forward_cursor: str | None = None
         paging_data = response_data.get("paging", {})
         if isinstance(paging_data, Mapping):
             paging_dict = cast(dict[str, Any], paging_data)
@@ -279,8 +278,8 @@ class InboxProcessor:
     @cached_api_call("ancestry", ttl=900)  # 15-minute cache for conversations
     @api_retry()  # Apply retry decorator for resilience
     def _get_all_conversations_api(
-        self, session_manager: SessionManager, limit: int, cursor: Optional[str] = None
-    ) -> tuple[Optional[list[dict[str, Any]]], Optional[str]]:
+        self, session_manager: SessionManager, limit: int, cursor: str | None = None
+    ) -> tuple[list[dict[str, Any]] | None, str | None]:
         """
         Fetches a single batch of conversation overview data from the Ancestry API.
 
@@ -357,7 +356,7 @@ class InboxProcessor:
     # ==========================================================================
 
     @staticmethod
-    def _validate_conversation_data(conv_data: Mapping[str, Any]) -> Optional[tuple[str, dict[str, Any]]]:
+    def _validate_conversation_data(conv_data: Mapping[str, Any]) -> tuple[str, dict[str, Any]] | None:
         """Validate conversation data and extract basic info."""
         conversation_id = str(conv_data.get("id", "")).strip()
         last_message_data_raw = conv_data.get("last_message", {})
@@ -374,7 +373,7 @@ class InboxProcessor:
         return conversation_id, last_message_data
 
     @staticmethod
-    def _parse_message_timestamp(last_message_data: Mapping[str, Any], conversation_id: str) -> Optional[datetime]:
+    def _parse_message_timestamp(last_message_data: Mapping[str, Any], conversation_id: str) -> datetime | None:
         """Parse and validate message timestamp."""
         last_msg_ts_unix = last_message_data.get("created")
 
@@ -386,7 +385,7 @@ class InboxProcessor:
         try:
             min_ts, max_ts = 946684800, 4102444800  # Jan 1 2000 to Jan 1 2100
             if min_ts <= last_msg_ts_unix <= max_ts:
-                return datetime.fromtimestamp(last_msg_ts_unix, tz=timezone.utc)
+                return datetime.fromtimestamp(last_msg_ts_unix, tz=UTC)
             logger.warning(f"Timestamp {last_msg_ts_unix} out of reasonable range for ConvID {conversation_id}")
         except (ValueError, TypeError, OSError) as ts_err:
             logger.warning(f"Error converting timestamp {last_msg_ts_unix} for ConvID {conversation_id}: {ts_err}")
@@ -398,7 +397,7 @@ class InboxProcessor:
         members: Sequence[dict[str, Any]],
         my_profile_id: str,
         conversation_id: str,
-    ) -> Optional[tuple[str, str]]:
+    ) -> tuple[str, str] | None:
         """Find the other participant in the conversation."""
         if len(members) < 2:
             logger.warning(f"Insufficient members ({len(members)}) for ConvID {conversation_id}")
@@ -424,7 +423,7 @@ class InboxProcessor:
         )
         return None
 
-    def _extract_conversation_info(self, conv_data: dict[str, Any], my_profile_id: str) -> Optional[dict[str, Any]]:
+    def _extract_conversation_info(self, conv_data: dict[str, Any], my_profile_id: str) -> dict[str, Any] | None:
         """
         Extracts and formats key information from a single conversation overview dictionary.
 
@@ -520,10 +519,10 @@ class InboxProcessor:
             msg_dict = cast(dict[str, Any], msg_data)
             # Parse timestamp
             ts_unix = msg_dict.get("created")
-            msg_timestamp: Optional[datetime] = None
+            msg_timestamp: datetime | None = None
             if isinstance(ts_unix, (int, float)):
                 try:
-                    msg_timestamp = datetime.fromtimestamp(ts_unix, tz=timezone.utc)
+                    msg_timestamp = datetime.fromtimestamp(ts_unix, tz=UTC)
                 except Exception as ts_err:
                     logger.warning(f"Error parsing timestamp {ts_unix} in ConvID {conversation_id}: {ts_err}")
 
@@ -539,12 +538,12 @@ class InboxProcessor:
         # Sort by timestamp (oldest first)
         return sorted(
             context_messages,
-            key=lambda x: x.get("timestamp") or datetime.min.replace(tzinfo=timezone.utc),
+            key=lambda x: x.get("timestamp") or datetime.min.replace(tzinfo=UTC),
         )
 
     @cached_api_call("ancestry", ttl=600)
     @api_retry(max_attempts=2)
-    def _fetch_conversation_context(self, conversation_id: str) -> Optional[list[dict[str, Any]]]:
+    def _fetch_conversation_context(self, conversation_id: str) -> list[dict[str, Any]] | None:
         """
         Fetches the last N messages (defined by config) for a specific conversation ID
         to provide context for AI classification.
@@ -653,7 +652,7 @@ class InboxProcessor:
     # ==========================================================================
 
     @staticmethod
-    def _lookup_person_in_db(session: DbSession, profile_id: str, log_ref: str) -> tuple[Optional[Person], bool]:
+    def _lookup_person_in_db(session: DbSession, profile_id: str, log_ref: str) -> tuple[Person | None, bool]:
         """Look up person in database by profile ID.
 
         Returns:
@@ -703,7 +702,7 @@ class InboxProcessor:
             updated = True
 
         if updated:
-            person.updated_at = datetime.now(timezone.utc)
+            person.updated_at = datetime.now(UTC)
             try:
                 session.add(person)
                 session.flush()
@@ -728,7 +727,7 @@ class InboxProcessor:
     @staticmethod
     def _create_new_person(
         session: DbSession, profile_id: str, username_to_use: str, log_ref: str
-    ) -> tuple[Optional[Person], Literal["new", "error"]]:
+    ) -> tuple[Person | None, Literal["new", "error"]]:
         """Create new person record in database."""
         logger.debug(f"Person {log_ref} not found. Creating new record...")
 
@@ -788,9 +787,9 @@ class InboxProcessor:
         session: DbSession,
         profile_id: str,
         username: str,
-        conversation_id: Optional[str],
-        existing_person_arg: Optional[Person] = None,
-    ) -> tuple[Optional[Person], Literal["new", "updated", "skipped", "error"]]:
+        conversation_id: str | None,
+        existing_person_arg: Person | None = None,
+    ) -> tuple[Person | None, Literal["new", "updated", "skipped", "error"]]:
         """
         Looks up a Person by profile_id. If found, checks for updates (username,
         message_link). If not found, creates a new Person record.
@@ -840,7 +839,7 @@ class InboxProcessor:
     # End of _lookup_or_create_person
 
     @staticmethod
-    def _create_comparator(session: DbSession) -> Optional[dict[str, Any]]:
+    def _create_comparator(session: DbSession) -> dict[str, Any] | None:
         """
         Finds the most recent ConversationLog entry (highest timestamp) in the database
         to use as a comparison point for stopping inbox processing early.
@@ -853,7 +852,7 @@ class InboxProcessor:
             representing the comparator entry, or None if the table is empty or an error occurs.
             Timestamp is guaranteed to be timezone-aware (UTC).
         """
-        latest_log_entry_info: Optional[dict[str, Any]] = None
+        latest_log_entry_info: dict[str, Any] | None = None
         # Creating comparator by finding latest ConversationLog entry (removed verbose debug)
         try:
             # Step 1: Query for the entry with the maximum timestamp
@@ -871,12 +870,12 @@ class InboxProcessor:
                 log_conv_id = latest_entry.conversation_id
                 log_timestamp = latest_entry.latest_timestamp
                 # Ensure the timestamp is timezone-aware UTC
-                aware_timestamp: Optional[datetime] = None
+                aware_timestamp: datetime | None = None
                 if isinstance(log_timestamp, datetime):
                     aware_timestamp = (
-                        log_timestamp.replace(tzinfo=timezone.utc)
+                        log_timestamp.replace(tzinfo=UTC)
                         if log_timestamp.tzinfo is None
-                        else log_timestamp.astimezone(timezone.utc)
+                        else log_timestamp.astimezone(UTC)
                     )
 
                 # Step 3: Validate data and create comparator dictionary
@@ -921,7 +920,7 @@ class InboxProcessor:
     @error_context("Action 7: Search Inbox")
     def _initialize_search_stats(self) -> None:
         """Initialize search statistics and clear cancellation signals."""
-        self.stats["start_time"] = datetime.now(timezone.utc)
+        self.stats["start_time"] = datetime.now(UTC)
         # Clear any prior cancellation signals at the start of a new run
         try:
             from core.cancellation import clear_cancel
@@ -945,7 +944,7 @@ class InboxProcessor:
             "rate_delay": f"{current_delay:.2f}s",
         }
 
-    def _validate_session_state(self) -> Optional[str]:
+    def _validate_session_state(self) -> str | None:
         """Validate session manager state and return profile ID."""
         if not self.session_manager or not self.session_manager.my_profile_id:
             logger.error("search_inbox: Session manager or profile ID missing.")
@@ -1025,7 +1024,7 @@ class InboxProcessor:
             )
 
             # Update final statistics
-            self.stats["end_time"] = datetime.now(timezone.utc)
+            self.stats["end_time"] = datetime.now(UTC)
 
             summary_details = {
                 "fetched": total_api_items,
@@ -1048,7 +1047,7 @@ class InboxProcessor:
         except Exception as e:
             logger.error(f"Critical error in search_inbox: {e}", exc_info=True)
             self.stats["errors"] += 1
-            self.stats["end_time"] = datetime.now(timezone.utc)
+            self.stats["end_time"] = datetime.now(UTC)
             log_action_banner(
                 action_name="Search Inbox",
                 action_number=7,
@@ -1065,7 +1064,7 @@ class InboxProcessor:
                 with suppress(Exception):
                     session.close()
 
-    def _get_database_session_and_comparator(self) -> tuple[Optional[DbSession], Optional[str], Optional[datetime]]:
+    def _get_database_session_and_comparator(self) -> tuple[DbSession | None, str | None, datetime | None]:
         """Get database session and create comparator for inbox processing."""
         session = self.session_manager.db_manager.get_session()
         if not session:
@@ -1074,8 +1073,8 @@ class InboxProcessor:
 
         # Get the comparator (latest message in DB)
         comparator_info = self._create_comparator(session)
-        comp_conv_id: Optional[str] = None
-        comp_ts: Optional[datetime] = None  # Comparator timestamp (aware)
+        comp_conv_id: str | None = None
+        comp_ts: datetime | None = None  # Comparator timestamp (aware)
         if comparator_info:
             comp_conv_id = comparator_info.get("conversation_id")
             comp_ts = comparator_info.get("latest_timestamp")
@@ -1083,8 +1082,8 @@ class InboxProcessor:
         return session, comp_conv_id, comp_ts
 
     def _run_inbox_processing_loop(
-        self, session: DbSession, comp_conv_id: Optional[str], comp_ts: Optional[datetime], my_pid_lower: str
-    ) -> tuple[Optional[str], int, int, int, int, int, int, int]:
+        self, session: DbSession, comp_conv_id: str | None, comp_ts: datetime | None, my_pid_lower: str
+    ) -> tuple[str | None, int, int, int, int, int, int, int]:
         """Run the core inbox processing loop.
 
         Returns: (stop_reason, total_api_items, ai_classified, engagement_assessments,
@@ -1118,8 +1117,8 @@ class InboxProcessor:
         self,
         session: DbSession,
         state: dict[str, Any],
-        comp_conv_id: Optional[str],
-        comp_ts: Optional[datetime],
+        comp_conv_id: str | None,
+        comp_ts: datetime | None,
         my_pid_lower: str,
     ) -> None:
         """Process a single step of the inbox loop, handling exceptions."""
@@ -1169,7 +1168,7 @@ class InboxProcessor:
             logger.debug(f"Final commit complete: {logs_committed} logs, {persons_updated} persons updated")
 
     @staticmethod
-    def _resolve_stop_reason(stop_reason: Optional[str], max_inbox_limit: int, items_processed: int) -> str:
+    def _resolve_stop_reason(stop_reason: str | None, max_inbox_limit: int, items_processed: int) -> str:
         """Resolve the final run stop reason (stable, user-facing text)."""
 
         if stop_reason:
@@ -1224,7 +1223,7 @@ class InboxProcessor:
         ai_classified: int,
         engagement_assessments: int,
         status_updates: int,
-        stop_reason: Optional[str],
+        stop_reason: str | None,
         max_inbox_limit: int,
         session_deaths: int = 0,
         session_recoveries: int = 0,
@@ -1232,7 +1231,7 @@ class InboxProcessor:
         """Logs a unified summary of the inbox search process."""
         # Calculate run time - use 'or' to handle None values properly
         start_time = self.stats.get("start_time")
-        end_time = self.stats.get("end_time") or datetime.now(timezone.utc)
+        end_time = self.stats.get("end_time") or datetime.now(UTC)
         total_run_time = (end_time - start_time).total_seconds() if start_time else 0.0
 
         # Mark unused parameters to satisfy linter without changing signature
@@ -1264,7 +1263,7 @@ class InboxProcessor:
                 "person_updates": status_updates,
                 "session_deaths": session_deaths,
                 "session_recoveries": session_recoveries,
-                "end_time": datetime.now(timezone.utc),
+                "end_time": datetime.now(UTC),
             }
         )
 
@@ -1292,7 +1291,7 @@ class InboxProcessor:
             "conv_log_upserts_dicts": [],
             "person_updates": {},
             "stop_processing": False,
-            "min_aware_dt": datetime.min.replace(tzinfo=timezone.utc),
+            "min_aware_dt": datetime.min.replace(tzinfo=UTC),
             "conversations_needing_processing": 0,
         }
 
@@ -1338,7 +1337,7 @@ class InboxProcessor:
     # =========================================================================
 
     @staticmethod
-    def _handle_empty_batch(next_cursor_from_api: Optional[str]) -> tuple[bool, Optional[str]]:
+    def _handle_empty_batch(next_cursor_from_api: str | None) -> tuple[bool, str | None]:
         """Handle empty batch result from API."""
         if not next_cursor_from_api:
             return True, "End of Inbox Reached (Empty Batch, No Cursor)"
@@ -1348,7 +1347,7 @@ class InboxProcessor:
     @staticmethod
     def _prefetch_batch_data(
         session: DbSession, all_conversations_batch: list[dict[str, Any]], current_batch_num: int
-    ) -> tuple[dict[str, Person], dict[tuple[str, str], ConversationLog], Optional[str]]:
+    ) -> tuple[dict[str, Person], dict[tuple[str, str], ConversationLog], str | None]:
         """Prefetch Person and ConversationLog data for batch."""
         batch_conv_ids: list[str] = [
             str(c["conversation_id"]) for c in all_conversations_batch if c.get("conversation_id")
@@ -1391,7 +1390,7 @@ class InboxProcessor:
                 for log in logs:
                     timestamp = safe_column_value(log, "latest_timestamp", None)
                     if timestamp and timestamp.tzinfo is None:
-                        log.latest_timestamp = timestamp.replace(tzinfo=timezone.utc)
+                        log.latest_timestamp = timestamp.replace(tzinfo=UTC)
 
                 existing_conv_logs = {
                     (
@@ -1413,7 +1412,7 @@ class InboxProcessor:
             return {}, {}, "DB Prefetch Error"
 
     @staticmethod
-    def _extract_conversation_identifiers(conversation_info: dict[str, Any]) -> tuple[str, str, Optional[datetime]]:
+    def _extract_conversation_identifiers(conversation_info: dict[str, Any]) -> tuple[str, str, datetime | None]:
         """Extract key identifiers from conversation info."""
         profile_id_upper = str(conversation_info.get("profile_id", "UNKNOWN")).upper()
         api_conv_id = str(conversation_info.get("conversation_id", ""))
@@ -1423,17 +1422,17 @@ class InboxProcessor:
         return profile_id_upper, api_conv_id, api_latest_ts_aware
 
     @staticmethod
-    def _should_skip_invalid(api_conv_id: Optional[str], profile_id_upper: str) -> bool:
+    def _should_skip_invalid(api_conv_id: str | None, profile_id_upper: str) -> bool:
         """Check if conversation should be skipped due to invalid data."""
         return not api_conv_id or profile_id_upper == "UNKNOWN"
 
     @staticmethod
     def _check_comparator_match(
         api_conv_id: str,
-        comp_conv_id: Optional[str],
-        comp_ts: Optional[datetime],
-        api_latest_ts_aware: Optional[datetime],
-    ) -> tuple[bool, bool, bool, Optional[str]]:
+        comp_conv_id: str | None,
+        comp_ts: datetime | None,
+        api_latest_ts_aware: datetime | None,
+    ) -> tuple[bool, bool, bool, str | None]:
         """Check if conversation matches comparator. Returns (is_comparator, needs_fetch, stop_processing, stop_reason)."""
         if not comp_conv_id or api_conv_id != comp_conv_id:
             return False, False, False, None
@@ -1447,8 +1446,8 @@ class InboxProcessor:
     def _get_db_latest_timestamp(
         existing_conv_logs: dict[tuple[str, str], ConversationLog],
         api_conv_id: str,
-        min_aware_dt: Optional[datetime],
-    ) -> Optional[datetime]:
+        min_aware_dt: datetime | None,
+    ) -> datetime | None:
         """Get latest timestamp from DB logs for conversation."""
         if not min_aware_dt:
             return None
@@ -1489,8 +1488,8 @@ class InboxProcessor:
 
     def _should_fetch_based_on_timestamp(
         self,
-        api_latest_ts_aware: Optional[datetime],
-        db_latest_overall: Optional[datetime],
+        api_latest_ts_aware: datetime | None,
+        db_latest_overall: datetime | None,
         existing_conv_logs: dict[tuple[str, str], ConversationLog],
         api_conv_id: str,
     ) -> bool:
@@ -1511,12 +1510,12 @@ class InboxProcessor:
     def _determine_fetch_need(
         self,
         api_conv_id: str,
-        comp_conv_id: Optional[str],
-        comp_ts: Optional[datetime],
-        api_latest_ts_aware: Optional[datetime],
+        comp_conv_id: str | None,
+        comp_ts: datetime | None,
+        api_latest_ts_aware: datetime | None,
         existing_conv_logs: dict[tuple[str, str], ConversationLog],
-        min_aware_dt: Optional[datetime],
-    ) -> tuple[bool, bool, Optional[str]]:
+        min_aware_dt: datetime | None,
+    ) -> tuple[bool, bool, str | None]:
         """Determine if conversation needs fetching based on comparator logic.
 
         Returns: (needs_fetch, stop_processing, stop_reason)
@@ -1544,11 +1543,11 @@ class InboxProcessor:
 
     @staticmethod
     def _find_latest_messages(
-        context_messages: list[dict[str, Any]], my_pid_lower: Optional[str]
-    ) -> tuple[Optional[dict[str, Any]], Optional[dict[str, Any]]]:
+        context_messages: list[dict[str, Any]], my_pid_lower: str | None
+    ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
         """Find latest IN and OUT messages from context."""
-        latest_ctx_in: Optional[dict[str, Any]] = None
-        latest_ctx_out: Optional[dict[str, Any]] = None
+        latest_ctx_in: dict[str, Any] | None = None
+        latest_ctx_out: dict[str, Any] | None = None
 
         for msg in reversed(context_messages):
             author_lower = str(msg.get("author", ""))
@@ -1563,8 +1562,8 @@ class InboxProcessor:
 
     @staticmethod
     def _downgrade_if_non_actionable(
-        label: Optional[str], messages: list[dict[str, Any]], my_pid_lower: str
-    ) -> Optional[str]:
+        label: str | None, messages: list[dict[str, Any]], my_pid_lower: str
+    ) -> str | None:
         """Downgrade PRODUCTIVE label if message lacks actionable cues."""
         try:
             if (not label) or label != "PRODUCTIVE":
@@ -1631,7 +1630,7 @@ class InboxProcessor:
 
     def _check_critical_alerts(
         self, context_messages: list[dict[str, Any]], my_pid_lower: str, api_conv_id: str
-    ) -> tuple[bool, Optional[str], Optional[CriticalAlertCategory]]:
+    ) -> tuple[bool, str | None, CriticalAlertCategory | None]:
         """
         Phase 2: Check for Critical Alerts BEFORE AI classification.
 
@@ -1735,7 +1734,7 @@ class InboxProcessor:
     # =========================================================================
 
     @staticmethod
-    def _coerce_ai_result_to_string(ai_result: Any) -> Optional[str]:
+    def _coerce_ai_result_to_string(ai_result: Any) -> str | None:
         """Coerce AI classification result to string format."""
         if isinstance(ai_result, str):
             return ai_result
@@ -1757,7 +1756,7 @@ class InboxProcessor:
     # ==========================================================================
 
     @staticmethod
-    def _is_closed_status(ai_sentiment: Optional[str]) -> bool:
+    def _is_closed_status(ai_sentiment: str | None) -> bool:
         """Check if conversation should be marked CLOSED."""
         return ai_sentiment in {"DESIST", "UNINTERESTED"}
 
@@ -1802,7 +1801,7 @@ class InboxProcessor:
     def _is_information_shared_status(
         total_exchanges: int,
         conv_logs: list[Any],
-        ai_sentiment: Optional[str],
+        ai_sentiment: str | None,
     ) -> bool:
         """Check if conversation is INFORMATION_SHARED (2+ exchanges, productive)."""
         if total_exchanges >= 2:
@@ -1814,10 +1813,10 @@ class InboxProcessor:
         self,
         conversation_id: str,
         direction: MessageDirectionEnum,
-        ai_sentiment: Optional[str],
+        ai_sentiment: str | None,
         existing_logs: dict[tuple[str, str], Any],
         timestamp: datetime,
-    ) -> Optional[Any]:  # ConversationPhaseEnum imported at runtime
+    ) -> Any | None:  # ConversationPhaseEnum imported at runtime
         """
         Determine conversation lifecycle phase based on message history and patterns.
 
@@ -1874,7 +1873,7 @@ class InboxProcessor:
                 ),
             )
 
-            phase_result: Optional[Any] = next(
+            phase_result: Any | None = next(
                 (candidate for condition, candidate in phase_checks if condition),
                 None,
             )
@@ -1908,8 +1907,8 @@ class InboxProcessor:
 
     @staticmethod
     def _should_skip_follow_up(
-        ai_sentiment: Optional[str],
-        conversation_phase: Optional[Any],
+        ai_sentiment: str | None,
+        conversation_phase: Any | None,
     ) -> bool:
         return (ai_sentiment in {"DESIST", "UNINTERESTED"}) or (conversation_phase == ConversationPhaseEnum.CLOSED)
 
@@ -1942,7 +1941,7 @@ class InboxProcessor:
             )
             return []
 
-        default_ts = datetime(1970, 1, 1, tzinfo=timezone.utc)
+        default_ts = datetime(1970, 1, 1, tzinfo=UTC)
         normalized.sort(key=lambda log: getattr(log, "latest_timestamp", default_ts) or default_ts)
         return normalized
 
@@ -1982,7 +1981,7 @@ class InboxProcessor:
 
     def _process_follow_up_result(
         self,
-        result: Optional[Mapping[str, Any]],
+        result: Mapping[str, Any] | None,
         conversation_id: str,
     ) -> dict[str, Any]:
         if not isinstance(result, Mapping):
@@ -2018,7 +2017,7 @@ class InboxProcessor:
 
         follow_up_due_date = None
         if follow_up_required and days_until_due:
-            follow_up_due_date = datetime.now(timezone.utc) + timedelta(days=days_until_due)
+            follow_up_due_date = datetime.now(UTC) + timedelta(days=days_until_due)
             logger.info(
                 "Follow-up scheduled for %s: due in %s days (%s), awaiting: %s",
                 conversation_id,
@@ -2041,8 +2040,8 @@ class InboxProcessor:
     @staticmethod
     def _determine_follow_up_window(
         direction: MessageDirectionEnum,
-        ai_sentiment: Optional[str],
-        conversation_phase: Optional[Any],
+        ai_sentiment: str | None,
+        conversation_phase: Any | None,
     ) -> int:
         if ai_sentiment == "PRODUCTIVE":
             return 7 if direction == MessageDirectionEnum.IN else 14
@@ -2062,8 +2061,8 @@ class InboxProcessor:
     @staticmethod
     def _derive_follow_up_reason(
         follow_up_required: bool,
-        ai_sentiment: Optional[str],
-    ) -> Optional[str]:
+        ai_sentiment: str | None,
+    ) -> str | None:
         if follow_up_required:
             return "Match asked a question we should answer"
         if ai_sentiment == "CAUTIOUSLY_INTERESTED":
@@ -2075,7 +2074,7 @@ class InboxProcessor:
         follow_up_required: bool,
         pending_items: list[str],
         conversation_history_str: str,
-    ) -> tuple[Optional[str], Optional[str]]:
+    ) -> tuple[str | None, str | None]:
         if not follow_up_required:
             return None, None
 
@@ -2093,7 +2092,7 @@ class InboxProcessor:
     @staticmethod
     def _calculate_urgency_level(
         direction: MessageDirectionEnum,
-        ai_sentiment: Optional[str],
+        ai_sentiment: str | None,
     ) -> str:
         if ai_sentiment == "PRODUCTIVE" and direction == MessageDirectionEnum.IN:
             return "urgent"
@@ -2106,8 +2105,8 @@ class InboxProcessor:
         conversation_history_str: str,
         latest_message: str,
         direction: MessageDirectionEnum,
-        conversation_phase: Optional[Any],
-        ai_sentiment: Optional[str],
+        conversation_phase: Any | None,
+        ai_sentiment: str | None,
     ) -> dict[str, Any]:
         follow_up_required = direction == MessageDirectionEnum.IN and ai_sentiment == "PRODUCTIVE"
         awaiting_response_from = "me" if follow_up_required else None
@@ -2180,8 +2179,8 @@ class InboxProcessor:
         conversation_history: ConversationHistoryInput,
         latest_message: str,
         direction: MessageDirectionEnum,
-        conversation_phase: Optional[Any],
-        ai_sentiment: Optional[str],
+        conversation_phase: Any | None,
+        ai_sentiment: str | None,
         conversation_id: str,
     ) -> dict[str, Any]:
         """
@@ -2234,7 +2233,7 @@ class InboxProcessor:
             return self._default_follow_up_payload()
 
     @staticmethod
-    def _apply_importance_override(base_urgency: str) -> Optional[str]:
+    def _apply_importance_override(base_urgency: str) -> str | None:
         if base_urgency == "urgent":
             return "high"
         if base_urgency == "patient":
@@ -2243,9 +2242,9 @@ class InboxProcessor:
 
     @staticmethod
     def _load_person_for_importance(
-        db_session: Optional[DbSession],
+        db_session: DbSession | None,
         person_id: int,
-    ) -> Optional[Person]:
+    ) -> Person | None:
         if not db_session:
             logger.debug("No DB session available for task importance calculation")
             return None
@@ -2295,7 +2294,7 @@ class InboxProcessor:
         self,
         person_id: int,
         base_urgency: str = "standard",
-        session: Optional[DbSession] = None,
+        session: DbSession | None = None,
     ) -> str:
         """
         Calculate MS To-Do task importance from DNA relationship strength and engagement score.
@@ -2347,11 +2346,11 @@ class InboxProcessor:
         self,
         person_id: int,
         conversation_id: str,
-        task_title: Optional[str],
-        task_body: Optional[str],
-        due_date: Optional[datetime],
+        task_title: str | None,
+        task_body: str | None,
+        due_date: datetime | None,
         urgency_level: str = "standard",
-        session: Optional[DbSession] = None,
+        session: DbSession | None = None,
     ) -> bool:
         """
         Create MS To-Do reminder task for follow-up.
@@ -2438,10 +2437,10 @@ class InboxProcessor:
         people_id: int,
         message_content: str,
         timestamp: datetime,
-        ai_sentiment: Optional[str] = None,
-        conversation_phase: Optional[Any] = None,
-        follow_up_due_date: Optional[datetime] = None,
-        awaiting_response_from: Optional[str] = None,
+        ai_sentiment: str | None = None,
+        conversation_phase: Any | None = None,
+        follow_up_due_date: datetime | None = None,
+        awaiting_response_from: str | None = None,
     ) -> dict[str, Any]:
         """
         Create conversation log upsert dictionary.
@@ -2474,8 +2473,8 @@ class InboxProcessor:
         self,
         user_message: str,
         extracted_entities: dict[str, Any],
-        ambiguity_analysis: Optional[str] = None,
-    ) -> Optional[dict[str, Any]]:
+        ambiguity_analysis: str | None = None,
+    ) -> dict[str, Any] | None:
         """
         Generate AI-powered clarifying questions when extracted entities are incomplete or ambiguous.
 
@@ -2628,8 +2627,8 @@ class InboxProcessor:
         session: DbSession,
         people_id: int,
         direction: MessageDirectionEnum,
-        ai_sentiment: Optional[str],
-        conversation_phase: Optional[str],
+        ai_sentiment: str | None,
+        conversation_phase: str | None,
     ) -> None:
         """Record an engagement event and update metrics."""
         event_type = "message_received" if direction == MessageDirectionEnum.IN else "message_sent"
@@ -2653,8 +2652,8 @@ class InboxProcessor:
     def _build_recent_context(
         session: DbSession,
         people_id: int,
-        current_direction: Optional[MessageDirectionEnum] = None,
-        current_message_content: Optional[str] = None,
+        current_direction: MessageDirectionEnum | None = None,
+        current_message_content: str | None = None,
     ) -> str:
         """Build a compact recent conversation context for AI engagement assessment."""
         recent_logs = (
@@ -2695,7 +2694,7 @@ class InboxProcessor:
         result: dict[str, Any],
     ) -> None:
         """Upsert conversation state from AI engagement result."""
-        state: Optional[ConversationState] = (
+        state: ConversationState | None = (
             session.query(ConversationState).filter(ConversationState.people_id == people_id).one_or_none()
         )
         if not state:
@@ -2720,11 +2719,11 @@ class InboxProcessor:
         self,
         session: DbSession,
         people_id: int,
-        ai_intent: Optional[str],
-        safety_result: Optional[SafetyCheckResult],
+        ai_intent: str | None,
+        safety_result: SafetyCheckResult | None,
     ) -> None:
         """Propagate safety/intent signals into conversation_state status flags."""
-        state: Optional[ConversationState] = (
+        state: ConversationState | None = (
             session.query(ConversationState).filter(ConversationState.people_id == people_id).one_or_none()
         )
 
@@ -2752,7 +2751,7 @@ class InboxProcessor:
         state: ConversationState,
         status: ConversationStatusEnum,
         safety_flag: bool,
-        safety_result: Optional[SafetyCheckResult],
+        safety_result: SafetyCheckResult | None,
     ) -> tuple[ConversationStatusEnum, bool, str]:
         """Apply safety status with reason tracking."""
         reason = ""
@@ -2776,7 +2775,7 @@ class InboxProcessor:
 
     @staticmethod
     def _apply_intent_status(
-        state: ConversationState, status: ConversationStatusEnum, ai_intent: Optional[str]
+        state: ConversationState, status: ConversationStatusEnum, ai_intent: str | None
     ) -> tuple[ConversationStatusEnum, str]:
         """Apply intent-based status with reason tracking."""
         reason = ""
@@ -2801,7 +2800,7 @@ class InboxProcessor:
         session: DbSession,
         people_id: int,
         direction: MessageDirectionEnum,
-        current_message_content: Optional[str] = None,
+        current_message_content: str | None = None,
     ) -> bool:
         """Build context, assess engagement, and upsert state if result present."""
         formatted_context = self._build_recent_context(session, people_id, direction, current_message_content)
@@ -2818,7 +2817,7 @@ class InboxProcessor:
             return True
         return False
 
-    def _register_engagement_assessment(self, state: Optional[dict[str, Any]]) -> None:
+    def _register_engagement_assessment(self, state: dict[str, Any] | None) -> None:
         """Track successful engagement assessments in stats and loop state."""
         self.stats["engagement_assessments"] = self.stats.get("engagement_assessments", 0) + 1
         if state is not None:
@@ -2829,9 +2828,9 @@ class InboxProcessor:
         session: DbSession,
         people_id: int,
         direction: MessageDirectionEnum,
-        ai_sentiment: Optional[str] = None,
-        conversation_phase: Optional[str] = None,
-        current_message_content: Optional[str] = None,
+        ai_sentiment: str | None = None,
+        conversation_phase: str | None = None,
+        current_message_content: str | None = None,
     ) -> bool:
         """Track message analytics for conversation metrics and update conversation state (Phase 3).
 
@@ -2851,8 +2850,8 @@ class InboxProcessor:
 
     @staticmethod
     def _update_person_status_from_ai(
-        ai_sentiment: Optional[str],
-        safety_result: Optional[SafetyCheckResult],
+        ai_sentiment: str | None,
+        safety_result: SafetyCheckResult | None,
         people_id: int,
         person_updates: dict[int, PersonStatusEnum],
     ) -> None:
@@ -2971,8 +2970,8 @@ class InboxProcessor:
         existing_conv_logs: dict[tuple[str, str], ConversationLog],
         api_conv_id: str,
         direction: MessageDirectionEnum,
-        min_aware_dt: Optional[datetime],
-    ) -> Optional[datetime]:
+        min_aware_dt: datetime | None,
+    ) -> datetime | None:
         """Get database timestamp for comparison with API timestamp."""
         if not min_aware_dt:
             return None
@@ -2990,7 +2989,7 @@ class InboxProcessor:
 
     def _process_in_message(
         self,
-        latest_ctx_in: Optional[dict[str, Any]],
+        latest_ctx_in: dict[str, Any] | None,
         api_conv_id: str,
         people_id: int,
         profile_id: str,
@@ -3115,10 +3114,10 @@ class InboxProcessor:
         api_conv_id: str,
         result: dict[str, Any],
         ai_classified_count: int,
-    ) -> tuple[int, Optional[str], Optional[SafetyCheckResult]]:
+    ) -> tuple[int, str | None, SafetyCheckResult | None]:
         ai_sentiment_result = result.get("intent")
         generated_reply = result.get("generated_reply")
-        safety_result: Optional[SafetyCheckResult] = result.get("safety_result")
+        safety_result: SafetyCheckResult | None = result.get("safety_result")
         context_confidence: int = result.get("context_confidence", 80)  # Context-based confidence from orchestrator
 
         if generated_reply and self._save_draft_reply(
@@ -3149,8 +3148,8 @@ class InboxProcessor:
         people_id: int,
         message_content: str,
         ctx_ts_in_aware: datetime,
-        ai_sentiment_result: Optional[str],
-        conversation_phase: Optional[Any],
+        ai_sentiment_result: str | None,
+        conversation_phase: Any | None,
         session: DbSession,
     ) -> dict[str, Any]:
         follow_up_data = self._extract_follow_up_requirements(
@@ -3191,7 +3190,7 @@ class InboxProcessor:
 
     def _process_out_message(
         self,
-        latest_ctx_out: Optional[dict[str, Any]],
+        latest_ctx_out: dict[str, Any] | None,
         api_conv_id: str,
         people_id: int,
         ctx: ConversationProcessingContext,
@@ -3246,7 +3245,7 @@ class InboxProcessor:
                 f"OUT message for {api_conv_id} is not newer than DB (API: {ctx_ts_out_aware}, DB: {db_latest_ts_out_compare})"
             )
 
-    def _check_inbox_limit(self, items_processed: int) -> tuple[bool, Optional[str]]:
+    def _check_inbox_limit(self, items_processed: int) -> tuple[bool, str | None]:
         """Check if inbox limit reached. Returns (should_stop, stop_reason)."""
         if self.max_inbox_limit > 0 and items_processed >= self.max_inbox_limit:
             return True, f"Inbox Limit ({self.max_inbox_limit})"
@@ -3265,7 +3264,7 @@ class InboxProcessor:
         conversation_info: dict[str, Any],
         ctx: ConversationProcessingContext,
         ai_classified_count: int,
-    ) -> tuple[bool, Optional[str], int, int]:
+    ) -> tuple[bool, str | None, int, int]:
         """Process single conversation. Returns (should_stop, stop_reason, error_count_delta, ai_count)."""
         error_count_delta = 0
 
@@ -3355,7 +3354,7 @@ class InboxProcessor:
     def _fetch_and_process_batch(
         self,
         state: dict[str, Any],
-    ) -> tuple[bool, Optional[str], list[dict[str, Any]], Optional[str]]:
+    ) -> tuple[bool, str | None, list[dict[str, Any]], str | None]:
         """Fetch the next batch of conversations from the API.
 
         Returns (should_stop, stop_reason, batch, next_cursor).
@@ -3399,10 +3398,10 @@ class InboxProcessor:
         session: DbSession,
         state: dict[str, Any],
         all_conversations_batch: list[dict[str, Any]],
-        comp_conv_id: Optional[str],
-        comp_ts: Optional[datetime],
+        comp_conv_id: str | None,
+        comp_ts: datetime | None,
         my_pid_lower: str,
-    ) -> tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """Process a batch of conversations and commit database changes.
 
         Returns (should_stop, stop_reason).
@@ -3430,7 +3429,7 @@ class InboxProcessor:
         )
 
         should_stop = False
-        stop_reason: Optional[str] = None
+        stop_reason: str | None = None
 
         # Process each conversation in the batch
         for conversation_info in all_conversations_batch:
@@ -3475,13 +3474,13 @@ class InboxProcessor:
         self,
         session: DbSession,
         state: dict[str, Any],
-        comp_conv_id: Optional[str],
-        comp_ts: Optional[datetime],
+        comp_conv_id: str | None,
+        comp_ts: datetime | None,
         my_pid_lower: str,
-    ) -> tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """Process a single batch iteration. Returns (should_stop, stop_reason)."""
         all_conversations_batch: list[dict[str, Any]] = []
-        stop_reason: Optional[str] = None
+        stop_reason: str | None = None
 
         # Step 1: Fetch next batch of conversations from API
         try:
@@ -3543,10 +3542,10 @@ class InboxProcessor:
         self,
         session: DbSession,
         state: dict[str, Any],
-        comp_conv_id: Optional[str],
-        comp_ts: Optional[datetime],
+        comp_conv_id: str | None,
+        comp_ts: datetime | None,
         my_pid_lower: str,
-    ) -> tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """Public method to test single batch iteration processing. Returns (should_stop, stop_reason)."""
         return self._process_single_batch_iteration(session, state, comp_conv_id, comp_ts, my_pid_lower)
 
@@ -3989,7 +3988,7 @@ def _test_conversation_phase_initial_outreach() -> None:
         direction=MessageDirectionEnum.OUT,
         ai_sentiment=None,
         existing_logs={},
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
 
     assert phase is not None, "Phase should be determined for first message"
@@ -4008,7 +4007,7 @@ def _test_conversation_phase_response_received() -> None:
     mock_out_log = MagicMock(spec=ConversationLog)
     mock_out_log.conversation_id = "test_conv_2"
     mock_out_log.direction = DBMessageDirectionEnum.OUT
-    mock_out_log.latest_timestamp = datetime.now(timezone.utc)
+    mock_out_log.latest_timestamp = datetime.now(UTC)
     mock_out_log.ai_sentiment = None
 
     phase = processor._determine_conversation_phase(
@@ -4016,7 +4015,7 @@ def _test_conversation_phase_response_received() -> None:
         direction=MessageDirectionEnum.IN,
         ai_sentiment="PRODUCTIVE",
         existing_logs={("test_conv_2", "OUT"): mock_out_log},
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
 
     assert phase is not None, "Phase should be determined"
@@ -4032,7 +4031,7 @@ def _test_conversation_phase_information_shared() -> None:
     sm = MagicMock()
     processor = InboxProcessor(session_manager=sm)
 
-    base_time = datetime.now(timezone.utc)
+    base_time = datetime.now(UTC)
     mock_logs: dict[tuple[str, str], Any] = {}
     for i in range(3):
         mock_log = MagicMock(spec=ConversationLog)
@@ -4095,7 +4094,7 @@ def _test_follow_up_extraction_with_dict_history() -> None:
     from core.database import ConversationLog, ConversationPhaseEnum, MessageDirectionEnum as DBMessageDirectionEnum
 
     processor = InboxProcessor(session_manager=MagicMock())
-    base_time = datetime.now(timezone.utc)
+    base_time = datetime.now(UTC)
 
     log_in = MagicMock(spec=ConversationLog)
     log_in.conversation_id = "follow_up_test_dict"
@@ -4159,7 +4158,7 @@ def _test_follow_up_reminder_task_creation() -> None:
     sm = MagicMock()
     processor = InboxProcessor(session_manager=sm)
 
-    due_date = datetime.now(timezone.utc) + timedelta(days=7)
+    due_date = datetime.now(UTC) + timedelta(days=7)
     result = processor._create_follow_up_reminder_task(
         person_id=123,
         conversation_id="task_test_1",
@@ -4286,13 +4285,13 @@ def _test_conversation_log_follow_up_fields() -> None:
     sm = MagicMock()
     processor = InboxProcessor(session_manager=sm)
 
-    due_date = datetime.now(timezone.utc) + timedelta(days=14)
+    due_date = datetime.now(UTC) + timedelta(days=14)
     log_upsert = processor._create_conversation_log_upsert(
         api_conv_id="log_test_1",
         direction=MessageDirectionEnum.IN,
         people_id=456,
         message_content="Test message content",
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
         ai_sentiment="PRODUCTIVE",
         conversation_phase=None,
         follow_up_due_date=due_date,
@@ -4317,7 +4316,7 @@ def _test_conversation_phase_closed() -> None:
         direction=MessageDirectionEnum.IN,
         ai_sentiment="DESIST",
         existing_logs={},
-        timestamp=datetime.now(timezone.utc),
+        timestamp=datetime.now(UTC),
     )
 
     assert phase is not None, "Phase should be determined"

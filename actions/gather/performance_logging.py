@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import logging
+import logging.handlers
 import sys
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING
 
 # Handle standalone execution for testing
 if __package__ in {None, ""}:
@@ -84,7 +86,7 @@ def log_api_performance(
     api_name: str,
     start_time: float,
     response_status: str = "unknown",
-    session_manager: Optional[SessionManager] = None,
+    session_manager: SessionManager | None = None,
 ) -> None:
     """Log API performance metrics for monitoring and optimization."""
     duration = time.time() - start_time
@@ -102,7 +104,7 @@ def log_api_performance(
 
 
 def _update_session_performance_tracking(
-    session_manager: Optional[SessionManager],
+    session_manager: SessionManager | None,
     duration: float,
     _response_status: str,
 ) -> None:
@@ -126,10 +128,32 @@ def _update_session_performance_tracking(
 
 # === Module Tests ===
 def _test_log_api_performance() -> None:
-    """Test the log_api_performance function."""
-    start_time = time.time() - 1.5  # Simulate 1.5 second duration
-    log_api_performance("test_api", start_time, "success")
-    # Should not raise any exceptions
+    """Test the log_api_performance function logs with correct format."""
+    import logging as _logging
+
+    class _ListHandler(_logging.Handler):
+        def __init__(self) -> None:
+            super().__init__()
+            self.records: list[_logging.LogRecord] = []
+
+        def emit(self, record: _logging.LogRecord) -> None:
+            self.records.append(record)
+
+    handler = _ListHandler()
+    handler.setLevel(_logging.DEBUG)
+    logger.addHandler(handler)
+    original_level = logger.level
+    logger.setLevel(_logging.DEBUG)
+    try:
+        start_time = time.time() - 1.5  # Simulate 1.5 second duration
+        log_api_performance("test_api", start_time, "success")
+        # Verify the log contains the API name and duration info
+        log_messages = [r.getMessage() for r in handler.records]
+        api_logged = any("test_api" in msg and "1.5" in msg for msg in log_messages)
+        assert api_logged, f"Expected log with 'test_api' and duration ~1.5s, got: {log_messages}"
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(original_level)
 
 
 def _test_register_callback() -> None:
@@ -146,18 +170,84 @@ def _test_register_callback() -> None:
 
 
 def _test_duration_messages() -> None:
-    """Test duration message logging."""
-    # Test various duration thresholds
-    _log_api_duration_message("fast_api", 0.5)  # Should be debug/quiet
-    _log_api_duration_message("slow_api", 6.0)  # Should be info
-    _log_api_duration_message("very_slow_api", 12.0)  # Should be info with warning
+    """Test duration message logging at various thresholds."""
+    import logging as _logging
+
+    class _ListHandler(_logging.Handler):
+        def __init__(self) -> None:
+            super().__init__()
+            self.records: list[_logging.LogRecord] = []
+
+        def emit(self, record: _logging.LogRecord) -> None:
+            self.records.append(record)
+
+    handler = _ListHandler()
+    handler.setLevel(_logging.DEBUG)
+    logger.addHandler(handler)
+    original_level = logger.level
+    logger.setLevel(_logging.DEBUG)
+    try:
+        _log_api_duration_message("fast_api", 0.5)  # Below 2s threshold - no message
+        _log_api_duration_message("moderate_api", 3.0)  # Moderate (>2s) - debug
+        _log_api_duration_message("slow_api", 6.0)  # Slow (>5s) - info
+        _log_api_duration_message("very_slow_api", 12.0)  # Extended (>10s) - info
+
+        messages = [record.getMessage() for record in handler.records]
+        # Moderate call should produce "Moderate API call" message
+        assert any("Moderate" in m and "moderate_api" in m for m in messages), (
+            f"Expected 'Moderate API call' for 3.0s duration, got: {messages}"
+        )
+        # Slow call should produce "Slow API call" message
+        assert any("Slow" in m and "slow_api" in m for m in messages), (
+            f"Expected 'Slow API call' for 6.0s duration, got: {messages}"
+        )
+        # Very slow call should produce "Extended API call" message
+        assert any("Extended" in m and "very_slow_api" in m for m in messages), (
+            f"Expected 'Extended API call' for 12.0s duration, got: {messages}"
+        )
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(original_level)
 
 
 def _test_batch_processing_message() -> None:
-    """Test batch processing duration messages."""
-    _log_api_duration_message("batch_processing", 30.0)  # Normal
-    _log_api_duration_message("batch_processing", 100.0)  # Warning level
-    _log_api_duration_message("batch_processing", 200.0)  # High warning
+    """Test batch processing duration messages at escalating levels."""
+    import logging as _logging
+
+    class _ListHandler(_logging.Handler):
+        def __init__(self) -> None:
+            super().__init__()
+            self.records: list[_logging.LogRecord] = []
+
+        def emit(self, record: _logging.LogRecord) -> None:
+            self.records.append(record)
+
+    handler = _ListHandler()
+    handler.setLevel(_logging.DEBUG)
+    logger.addHandler(handler)
+    original_level = logger.level
+    logger.setLevel(_logging.DEBUG)
+    try:
+        _log_api_duration_message("batch_processing", 30.0)  # Normal (<90s) - debug
+        _log_api_duration_message("batch_processing", 100.0)  # Elevated (>=90s) - info
+        _log_api_duration_message("batch_processing", 200.0)  # High (>=180s) - warning
+
+        messages = [(r.levelno, r.getMessage()) for r in handler.records]
+        # Normal batch should be debug level
+        normal_msgs = [(lvl, m) for lvl, m in messages if "30.000" in m]
+        assert len(normal_msgs) > 0, f"Expected log for 30s batch, got: {messages}"
+        assert normal_msgs[0][0] == _logging.DEBUG, f"30s batch should be DEBUG, got {normal_msgs[0][0]}"
+        # Elevated batch (>=90s) should be info level
+        elevated_msgs = [(lvl, m) for lvl, m in messages if "100.000" in m]
+        assert len(elevated_msgs) > 0, f"Expected log for 100s batch, got: {messages}"
+        assert elevated_msgs[0][0] == _logging.INFO, f"100s batch should be INFO, got {elevated_msgs[0][0]}"
+        # High batch (>=180s) should be warning level
+        high_msgs = [(lvl, m) for lvl, m in messages if "200.000" in m]
+        assert len(high_msgs) > 0, f"Expected log for 200s batch, got: {messages}"
+        assert high_msgs[0][0] == _logging.WARNING, f"200s batch should be WARNING, got {high_msgs[0][0]}"
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(original_level)
 
 
 def logging_module_tests() -> bool:

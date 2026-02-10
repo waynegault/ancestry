@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """Local LLM (LM Studio) provider adapter."""
 
@@ -15,7 +14,7 @@ import logging
 from typing import Any
 
 from ai.providers.base import (
-    BaseProvider,
+    OpenAICompatibleProvider,
     ProviderConfigurationError,
     ProviderRequest,
     ProviderResponse,
@@ -24,34 +23,21 @@ from ai.providers.base import (
 
 logger = logging.getLogger(__name__)
 
-try:  # pragma: no cover - optional dependency
-    from openai import OpenAI
-except ImportError:  # pragma: no cover - handled by is_available
-    OpenAI = None
 
-
-class LocalLLMProvider(BaseProvider):
+class LocalLLMProvider(OpenAICompatibleProvider):
     """Adapter for LM Studio's OpenAI-compatible API."""
 
+    _api_key_attr = "local_llm_api_key"
+    _model_attr = "local_llm_model"
+    _base_url_attr = "local_llm_base_url"
+    _supports_response_format = False  # LM Studio doesn't support response_format
+
     def __init__(self, config: Any) -> None:
-        super().__init__(name="local_llm")
-        self._config = config
+        super().__init__(name="local_llm", config=config)
 
-    def is_available(self) -> bool:
-        return bool(OpenAI) and bool(self._config)
-
+    # Keep backward-compatible alias
     def _get_api_settings(self) -> tuple[str, str, str]:
-        api_config = getattr(self._config, "api", None)
-        if api_config is None:
-            raise ProviderConfigurationError("API configuration missing for Local LLM")
-
-        api_key = getattr(api_config, "local_llm_api_key", None)
-        model_name = getattr(api_config, "local_llm_model", None)
-        base_url = getattr(api_config, "local_llm_base_url", None)
-
-        if not all([api_key, model_name, base_url]):
-            raise ProviderConfigurationError("Local LLM configuration incomplete (api key/model/base url)")
-        return str(api_key), str(model_name), str(base_url)
+        return self._get_api_credentials()
 
     @staticmethod
     def _validate_model_loaded(client: Any, requested_name: str) -> tuple[str | None, str | None]:
@@ -77,50 +63,13 @@ class LocalLLMProvider(BaseProvider):
                 return None, "Local LLM: Connection error. Please ensure LM Studio is running."
             return None, f"Local LLM: Failed to check loaded models: {exc}"
 
-    @staticmethod
-    def _build_request(request: ProviderRequest, model_name: str) -> dict[str, Any]:
-        return {
-            "model": model_name,
-            "messages": [
-                {"role": "system", "content": request.system_prompt},
-                {"role": "user", "content": request.user_content},
-            ],
-            "max_tokens": request.max_tokens,
-            "temperature": request.temperature,
-            "stream": False,
-        }
-
-    def call(self, request: ProviderRequest) -> ProviderResponse:
-        self.ensure_available()
-        api_key, configured_model, base_url = self._get_api_settings()
-
-        if OpenAI is None:  # Defensive guard despite ensure_available()
-            raise ProviderUnavailableError("OpenAI SDK not available for Local LLM")
-
-        client = OpenAI(api_key=api_key, base_url=base_url)
-        actual_model_name, error_msg = self._validate_model_loaded(client, configured_model)
+    def _pre_call(self, client: Any, model_name: str) -> str:
+        """Validate model is loaded in LM Studio before calling."""
+        actual_model_name, error_msg = self._validate_model_loaded(client, model_name)
         if error_msg:
             raise ProviderUnavailableError(error_msg)
         assert actual_model_name is not None  # For type checkers; guarded above
-
-        payload = self._build_request(request, actual_model_name)
-        try:
-            response = client.chat.completions.create(**payload)
-        except Exception as exc:  # pragma: no cover - network/process errors
-            raise ProviderUnavailableError(f"Local LLM API call failed: {exc}") from exc
-
-        content: str | None = None
-        choices = getattr(response, "choices", None)
-        if isinstance(choices, list) and choices:
-            first_choice = choices[0]
-            message = getattr(first_choice, "message", None)
-            if message and getattr(message, "content", None):
-                content = str(message.content).strip()
-
-        if content is None:
-            logger.error("Local LLM returned an empty or invalid response structure.")
-
-        return ProviderResponse(content=content, raw_response=response)
+        return actual_model_name
 
 
 # =============================================================================
@@ -182,20 +131,32 @@ def _test_local_llm_get_api_settings() -> None:
 
 
 def _test_local_llm_build_request() -> None:
-    """Test _build_request static method."""
+    """Test _build_request method."""
+    from types import SimpleNamespace
+
+    mock_config = SimpleNamespace(
+        api=SimpleNamespace(
+            local_llm_api_key="lm-studio",
+            local_llm_model="local-model",
+            local_llm_base_url="http://localhost:1234/v1",
+        )
+    )
+    provider = LocalLLMProvider(mock_config)
     request = ProviderRequest(
         system_prompt="You are a local assistant.",
         user_content="Test prompt",
         max_tokens=256,
         temperature=0.8,
     )
-    payload = LocalLLMProvider._build_request(request, "local-model")
+    payload = provider._build_request(request, "local-model")
 
     assert payload["model"] == "local-model"
     assert payload["max_tokens"] == 256
     assert payload["temperature"] == 0.8
     assert payload["stream"] is False
     assert len(payload["messages"]) == 2
+    # Local LLM should NOT include response_format
+    assert "response_format" not in payload
 
 
 def local_llm_provider_module_tests() -> bool:

@@ -1,11 +1,10 @@
-from __future__ import annotations
 
 import sys
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Optional, cast
+from typing import Any, cast
 from unittest import mock
 
 from requests.exceptions import ConnectionError
@@ -59,13 +58,13 @@ class GatherConfiguration:
     relationship_prob_max_per_page: int
     db_error_page_threshold: int
     navigate_and_get_initial_page_data: Callable[
-        [SessionManager, int], tuple[Optional[list[dict[str, Any]]], Optional[int], bool]
+        [SessionManager, int], tuple[list[dict[str, Any]] | None, int | None, bool]
     ]
     determine_page_processing_range: Callable[[int, int], tuple[int, int]]
     do_batch: Callable[[SessionManager, list[dict[str, Any]], int], tuple[int, int, int, int, PageProcessingMetrics]]
     get_matches: Callable[
         [SessionManager, SqlAlchemySession, int],
-        Optional[tuple[list[dict[str, Any]], int]],
+        tuple[list[dict[str, Any]], int] | None,
     ]
     adjust_delay: Callable[[SessionManager, int], None]
     action_state_cls: Any
@@ -115,7 +114,7 @@ def validate_start_page(start_arg: Any) -> int:
     return start_page
 
 
-def _determine_start_page(start_arg: Optional[int]) -> tuple[int, bool, Optional[dict[str, Any]]]:
+def _determine_start_page(start_arg: int | None) -> tuple[int, bool, dict[str, Any] | None]:
     """Resolve the effective start page, optionally resuming from checkpoint."""
 
     if start_arg is not None:
@@ -156,7 +155,7 @@ class GatherOrchestrator:
     session_manager: SessionManager
     hooks: GatherConfiguration
 
-    def coord(self, start: Optional[int] = None) -> bool:
+    def coord(self, start: int | None = None) -> bool:
         action_start_time = time.time()
 
         self._validate_session_state()
@@ -168,7 +167,7 @@ class GatherOrchestrator:
         if state.get("resume_from_checkpoint"):
             checkpoint_meta = state.get("checkpoint_metadata")
             if isinstance(checkpoint_meta, dict):
-                checkpoint_data: Optional[dict[str, Any]] = cast(dict[str, Any], checkpoint_meta)
+                checkpoint_data: dict[str, Any] | None = cast(dict[str, Any], checkpoint_meta)
             else:
                 checkpoint_data = None
             planned_total = checkpoint_data.get("total_pages_in_run") if checkpoint_data else None
@@ -178,7 +177,7 @@ class GatherOrchestrator:
                 planned_total if planned_total is not None else "unknown",
             )
 
-        keyboard_interrupt: Optional[KeyboardInterrupt] = None
+        keyboard_interrupt: KeyboardInterrupt | None = None
 
         try:
             state["final_success"] = self._execute_coord_run(state, start_page)
@@ -201,7 +200,7 @@ class GatherOrchestrator:
 
     @staticmethod
     def _build_coord_state(
-        start: Optional[int],
+        start: int | None,
         action_start_time: float,
     ) -> tuple[dict[str, Any], int]:
         state = initialize_gather_state()
@@ -310,7 +309,7 @@ class GatherOrchestrator:
         self,
         start_page: int,
         state: GatherState,
-    ) -> Optional[tuple[int, int]]:
+    ) -> tuple[int, int] | None:
         try:
             _, last_page_to_process, total_pages_in_run = self._handle_initial_fetch(
                 start_page,
@@ -331,7 +330,7 @@ class GatherOrchestrator:
         start_page: int,
         last_page_to_process: int,
         total_pages_in_run: int,
-        initial_matches_on_page: Optional[list[dict[str, Any]]],
+        initial_matches_on_page: list[dict[str, Any]] | None,
         state: GatherState,
     ) -> bool:
         action_state_cls = self.hooks.action_state_cls
@@ -403,7 +402,7 @@ class GatherOrchestrator:
         self,
         current_page_num: int,
         start_page: int,
-        matches_on_page_for_batch: Optional[list[dict[str, Any]]],
+        matches_on_page_for_batch: list[dict[str, Any]] | None,
         state: GatherState,
         loop_final_success: bool,
     ) -> tuple[int, bool]:
@@ -466,10 +465,10 @@ class GatherOrchestrator:
         self,
         current_page_num: int,
         start_page: int,
-        matches_on_page_for_batch: Optional[list[dict[str, Any]]],
+        matches_on_page_for_batch: list[dict[str, Any]] | None,
         state: GatherState,
         loop_final_success: bool,
-    ) -> tuple[Optional[list[dict[str, Any]]], bool, bool]:
+    ) -> tuple[list[dict[str, Any]] | None, bool, bool]:
         if current_page_num == start_page and matches_on_page_for_batch is not None:
             return matches_on_page_for_batch, False, loop_final_success
 
@@ -496,8 +495,8 @@ class GatherOrchestrator:
         current_page_num: int,
         state: GatherState,
         max_retries: int = 3,
-    ) -> Optional[SqlAlchemySession]:
-        db_session: Optional[SqlAlchemySession] = None
+    ) -> SqlAlchemySession | None:
+        db_session: SqlAlchemySession | None = None
         for retry_attempt in range(max_retries):
             db_session = self.session_manager.db_manager.get_session()
             if db_session:
@@ -596,7 +595,7 @@ class GatherOrchestrator:
         db_session: SqlAlchemySession,
         current_page_num: int,
         state: GatherState,
-    ) -> Optional[list[dict[str, Any]]]:
+    ) -> list[dict[str, Any]] | None:
         try:
             if not self.session_manager.is_sess_valid():
                 raise ConnectionError(f"WebDriver session invalid before get_matches page {current_page_num}.")

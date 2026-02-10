@@ -27,7 +27,7 @@ import hashlib
 import json
 import os
 import statistics
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from observability.metrics_registry import metrics
@@ -182,7 +182,7 @@ def record_extraction_experiment_event(event_data: ExtractionExperimentEvent) ->
         provider_value = _normalize_provider_value(event_data.provider_name)
         provider_model = _normalize_provider_value(event_data.provider_model)
         event: dict[str, Any] = {
-            "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "timestamp_utc": datetime.now(UTC).isoformat(timespec="seconds"),
             "variant_label": event_data.variant_label,
             "prompt_key": event_data.prompt_key,
             "prompt_version": event_data.prompt_version,
@@ -463,7 +463,7 @@ def _auto_analyze_and_alert() -> None:
     if _already_alerted(signature):
         return
     alert = {
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "timestamp_utc": datetime.now(UTC).isoformat(timespec="seconds"),
         "type": "variant_performance_improvement",
         "signature": signature,
         "analysis": analysis,
@@ -495,7 +495,7 @@ def _calculate_quality_drop(scores: list[float]) -> float | None:
 def _build_regression_alert(provider: str, variant: str, drop: float) -> dict[str, Any]:
     clean_variant = variant or "unknown"
     return {
-        "timestamp_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "timestamp_utc": datetime.now(UTC).isoformat(timespec="seconds"),
         "type": "variant_median_regression",
         "signature": f"regression::{provider}::{clean_variant}::{drop}",
         "provider": provider,
@@ -549,7 +549,7 @@ def build_quality_baseline(
         "median_quality": statistics.median(scores),
         "p25": statistics.quantiles(scores, n=4)[0] if len(scores) >= 4 else None,
         "p75": statistics.quantiles(scores, n=4)[2] if len(scores) >= 4 else None,
-        "created_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "created_utc": datetime.now(UTC).isoformat(timespec="seconds"),
         "provider": provider or "all",
         "primary_provider": fallback_snapshot.get("primary_provider"),
         "fallback_order": fallback_snapshot.get("fallback_order"),

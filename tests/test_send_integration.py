@@ -15,8 +15,8 @@ from __future__ import annotations
 import logging
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import TYPE_CHECKING, Any, Optional, cast
+from datetime import UTC, datetime, timedelta, timezone
+from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import MagicMock
 
 from testing.test_framework import TestSuite
@@ -45,10 +45,10 @@ class MockPerson:
     in_my_tree: bool = False
     contactable: bool = True
     automation_enabled: bool = True
-    administrator_profile_id: Optional[str] = None
-    conversation_state: Optional[Any] = None
-    dna_match: Optional[Any] = None
-    family_tree: Optional[Any] = None
+    administrator_profile_id: str | None = None
+    conversation_state: Any | None = None
+    dna_match: Any | None = None
+    family_tree: Any | None = None
 
 
 @dataclass
@@ -59,11 +59,11 @@ class MockConversationLog:
     conversation_id: str = "conv_int_123"
     people_id: int = 1
     direction: str = "OUT"
-    latest_timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    latest_timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     message_text: str = "Test message"
-    message_template_id: Optional[int] = None
-    latest_message_content: Optional[str] = None
-    script_message_status: Optional[str] = None
+    message_template_id: int | None = None
+    latest_message_content: str | None = None
+    script_message_status: str | None = None
 
 
 @dataclass
@@ -71,14 +71,14 @@ class MockConversationState:
     """Mock ConversationState for integration testing."""
 
     people_id: int = 1
-    status: Optional[str] = None
-    state: Optional[str] = None
+    status: str | None = None
+    state: str | None = None
     conversation_phase: str = "initial_outreach"
-    last_message_type: Optional[str] = None
-    last_message_time: Optional[datetime] = None
+    last_message_type: str | None = None
+    last_message_time: datetime | None = None
     safety_flag: bool = False
-    next_action: Optional[str] = None
-    next_action_date: Optional[datetime] = None
+    next_action: str | None = None
+    next_action_date: datetime | None = None
 
 
 @dataclass
@@ -89,8 +89,8 @@ class MockDraftReply:
     people_id: int = 1
     content: str = "Approved draft content"
     status: str = "APPROVED"
-    conversation_id: Optional[str] = "conv_123"
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    conversation_id: str | None = "conv_123"
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 class MockDbSession:
@@ -230,7 +230,7 @@ def _test_full_flow_reply_received() -> None:
     inbound_log = MockConversationLog(
         direction="IN",
         message_text="I'm interested in our connection!",
-        latest_timestamp=datetime.now(timezone.utc) - timedelta(hours=1),
+        latest_timestamp=datetime.now(UTC) - timedelta(hours=1),
     )
 
     # Create context using helper
@@ -269,7 +269,7 @@ def _test_full_flow_opt_out() -> None:
     inbound_log = MockConversationLog(
         direction="IN",
         message_text="Please stop contacting me",
-        latest_timestamp=datetime.now(timezone.utc) - timedelta(minutes=30),
+        latest_timestamp=datetime.now(UTC) - timedelta(minutes=30),
     )
 
     # Create context using helper

@@ -30,8 +30,9 @@ auto_register_module(globals(), __name__)
 import importlib
 import json
 import re
+from collections.abc import Callable
 from functools import cache, lru_cache
-from typing import Any, Callable, Optional
+from typing import Any
 from urllib.parse import urljoin
 
 # === LOCAL IMPORTS ===
@@ -91,7 +92,7 @@ def load_ethnicity_metadata() -> dict[str, Any]:
 
 def fetch_tree_owner_ethnicity_regions(
     session_manager: SessionManager, tree_owner_test_guid: str
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Fetch the tree owner's DNA ethnicity regions.
 
@@ -145,7 +146,7 @@ def fetch_tree_owner_ethnicity_regions(
 
 def fetch_ethnicity_region_names(
     session_manager: SessionManager, region_keys: list[str], locale: str = "en-GB"
-) -> Optional[dict[str, str]]:
+) -> dict[str, str] | None:
     """
     Fetch the mapping of region keys to region names from public API.
 
@@ -199,7 +200,7 @@ def fetch_ethnicity_region_names(
 
 def fetch_ethnicity_comparison(
     session_manager: SessionManager, tree_owner_test_guid: str, match_test_guid: str
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Fetch ethnicity comparison between tree owner and a DNA match.
 
@@ -248,7 +249,7 @@ def fetch_ethnicity_comparison(
 
     if "comparisons" not in response:
         logger.debug(f"Ethnicity comparison response missing 'comparisons' field for match {match_test_guid}")
-        comparison_data: Optional[dict[str, Any]] = None
+        comparison_data: dict[str, Any] | None = None
     else:
         logger.debug(f"Successfully fetched ethnicity comparison for match {match_test_guid}")
         comparison_data = response
@@ -287,7 +288,7 @@ def sanitize_column_name(region_name: str) -> str:
     return f"ethnicity_{sanitized}"
 
 
-def initialize_ethnicity_columns_from_metadata(db_manager: Optional[SessionManager] = None) -> bool:
+def initialize_ethnicity_columns_from_metadata(db_manager: SessionManager | None = None) -> bool:
     """
     Initialize ethnicity columns in dna_match table using saved metadata file.
     This is a browserless/API-less version that only adds columns based on
@@ -332,7 +333,7 @@ def initialize_ethnicity_columns_from_metadata(db_manager: Optional[SessionManag
         return False
 
 
-def initialize_ethnicity_system(session_manager: SessionManager, db_manager: Optional[SessionManager] = None) -> bool:
+def initialize_ethnicity_system(session_manager: SessionManager, db_manager: SessionManager | None = None) -> bool:
     """
     Initialize the ethnicity tracking system by:
     1. Fetching tree owner's ethnicity regions from API
@@ -410,7 +411,7 @@ def initialize_ethnicity_system(session_manager: SessionManager, db_manager: Opt
         return False
 
 
-def _get_database_engine(db_manager: Optional[SessionManager]) -> Optional[Any]:
+def _get_database_engine(db_manager: SessionManager | None) -> Any | None:
     """Get database engine from SessionManager or create new one."""
     if db_manager and hasattr(db_manager, 'db_manager') and db_manager.db_manager:
         return db_manager.db_manager.engine
@@ -441,7 +442,7 @@ def _add_single_ethnicity_column(connection: Any, column_name: str, existing_col
 
 
 def _add_ethnicity_columns_to_database(
-    tree_owner_regions: list[dict[str, Any]], db_manager: Optional[SessionManager] = None
+    tree_owner_regions: list[dict[str, Any]], db_manager: SessionManager | None = None
 ) -> bool:
     """
     Add ethnicity columns to dna_match table using ALTER TABLE.
@@ -500,7 +501,7 @@ def _add_ethnicity_columns_to_database(
 
 def extract_match_ethnicity_percentages(
     comparison_data: dict[str, Any], tree_owner_region_keys: list[str]
-) -> dict[str, Optional[int]]:
+) -> dict[str, int | None]:
     """
     Extract match's ethnicity percentages for tree owner's regions.
 
@@ -517,7 +518,7 @@ def extract_match_ethnicity_percentages(
         >>> extract_match_ethnicity_percentages(comparison_data, tree_owner_region_keys)
         {'08302': 0, '06842': 16}
     """
-    percentages: dict[str, Optional[int]] = {}
+    percentages: dict[str, int | None] = {}
 
     if not comparison_data or "comparisons" not in comparison_data:
         # Return 0% for all regions if no comparison data
@@ -532,7 +533,7 @@ def extract_match_ethnicity_percentages(
     for region_key in tree_owner_region_keys:
         percentage_value = comparison_lookup.get(region_key, 0)
         try:
-            normalized_value: Optional[int] = int(percentage_value)
+            normalized_value: int | None = int(percentage_value)
         except (TypeError, ValueError):
             normalized_value = None
         percentages[region_key] = normalized_value

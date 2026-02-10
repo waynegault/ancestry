@@ -13,7 +13,6 @@ Design goals:
 - Robust to errors (analytics never breaks the main flow)
 """
 
-from __future__ import annotations
 
 # === PATH SETUP FOR PACKAGE IMPORTS ===
 import sys
@@ -31,7 +30,7 @@ logger = logging.getLogger(__name__)
 # === STANDARD LIBRARY IMPORTS ===
 import json
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Any
 
 
@@ -81,7 +80,7 @@ def log_event(
     """
     try:
         record = {
-            "ts": datetime.now(timezone.utc).isoformat(),
+            "ts": datetime.now(UTC).isoformat(),
             "action_name": action_name,
             "choice": choice,
             "success": bool(success),
@@ -196,7 +195,7 @@ def generate_weekly_summary(days: int = 7) -> dict[str, Any]:
         if not path.exists():
             return summary
 
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff = datetime.now(UTC) - timedelta(days=days)
         with path.open("r", encoding="utf-8") as f:
             for line in f:
                 obj = _parse_analytics_line(line)
@@ -382,7 +381,7 @@ def _test_weekly_summary_generation() -> bool:
             # Create sample analytics data
             sample_events = [
                 {
-                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "ts": datetime.now(UTC).isoformat(),
                     "action_name": "action1",
                     "choice": "choice1",
                     "success": True,
@@ -392,7 +391,7 @@ def _test_weekly_summary_generation() -> bool:
                     "pid": 1234,
                 },
                 {
-                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "ts": datetime.now(UTC).isoformat(),
                     "action_name": "action1",
                     "choice": "choice2",
                     "success": False,
@@ -402,7 +401,7 @@ def _test_weekly_summary_generation() -> bool:
                     "pid": 1234,
                 },
                 {
-                    "ts": datetime.now(timezone.utc).isoformat(),
+                    "ts": datetime.now(UTC).isoformat(),
                     "action_name": "action2",
                     "choice": "choice1",
                     "success": True,

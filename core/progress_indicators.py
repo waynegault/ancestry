@@ -19,9 +19,10 @@ if parent_dir not in sys.path:
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import TYPE_CHECKING, Any, Callable, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 import psutil
 from tqdm.auto import tqdm
@@ -38,7 +39,7 @@ class ProgressStats:
 
     start_time: datetime = field(default_factory=datetime.now)
     items_processed: int = 0
-    total_items: Optional[int] = None
+    total_items: int | None = None
     errors: int = 0
     warnings: int = 0
     memory_mb: float = 0.0
@@ -54,7 +55,7 @@ class ProgressStats:
         elapsed = self.elapsed_seconds()
         return self.items_processed / elapsed if elapsed > 0 else 0.0
 
-    def eta_seconds(self) -> Optional[float]:
+    def eta_seconds(self) -> float | None:
         """Calculate estimated time to completion"""
         if not self.total_items or self.items_processed == 0:
             return None
@@ -91,7 +92,7 @@ class ProgressIndicator:
     def __init__(
         self,
         description: str,
-        total: Optional[int] = None,
+        total: int | None = None,
         config: Optional['ProgressIndicatorConfig'] = None,
     ):
         from core.common_params import ProgressIndicatorConfig
@@ -145,7 +146,7 @@ class ProgressIndicator:
         warnings: int = 0,
         api_calls: int = 0,
         cache_hits: int = 0,
-        custom_status: Optional[str] = None,
+        custom_status: str | None = None,
     ) -> None:
         """Update progress with optional statistics"""
         with self._lock:
@@ -165,7 +166,7 @@ class ProgressIndicator:
                 self._update_display(custom_status)
                 self._last_update = current_time
 
-    def _update_display(self, custom_status: Optional[str] = None) -> None:
+    def _update_display(self, custom_status: str | None = None) -> None:
         """Update the progress bar display"""
         if self.progress_bar is None:
             return
@@ -229,7 +230,7 @@ class ProgressIndicator:
 
         logger.log(level, milestone_msg)
 
-    def finish(self, final_message: Optional[str] = None) -> None:
+    def finish(self, final_message: str | None = None) -> None:
         """Complete the progress tracking"""
         if self.progress_bar is not None:
             # Ensure progress bar shows completion
@@ -269,7 +270,7 @@ class ProgressIndicator:
 
 
 def create_progress_indicator(
-    description: str, total: Optional[int] = None, unit: str = "items", **kwargs: Any
+    description: str, total: int | None = None, unit: str = "items", **kwargs: Any
 ) -> ProgressIndicator:
     """Factory function to create progress indicators"""
     from core.common_params import ProgressIndicatorConfig
@@ -291,7 +292,7 @@ def create_progress_indicator(
 
 # Decorator for automatic progress tracking
 def with_progress(
-    description: str, unit: str = "items", extract_total: Optional[Callable[..., Optional[int]]] = None
+    description: str, unit: str = "items", extract_total: Callable[..., int | None] | None = None
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator to automatically add progress tracking to functions.

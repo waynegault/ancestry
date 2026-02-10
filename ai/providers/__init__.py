@@ -7,7 +7,24 @@ from testing.test_utilities import create_standard_test_runner
 
 
 def _test_module_integrity() -> bool:
-    "Test that module can be imported and definitions are valid."
+    "Test that provider submodules are discoverable."
+    import pathlib
+
+    pkg_dir = pathlib.Path(__file__).parent
+    py_files = [f.stem for f in pkg_dir.glob("*.py") if f.name != "__init__.py"]
+    missing: list[str] = []
+    pkg = __package__ or __name__
+    for name in py_files:
+        try:
+            import importlib
+            importlib.import_module(f"{pkg}.{name}")
+        except ImportError as exc:
+            missing.append(f"{name}: {exc}")
+    if missing:
+        print(f"  FAIL  {pkg}: {', '.join(missing)}")
+        return False
+    if not py_files:
+        print(f"  WARN  {__name__}: no provider modules found")
     return True
 
 

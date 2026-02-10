@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """Common types for AI provider adapters."""
 
@@ -68,6 +67,122 @@ class BaseProvider:
     def is_available(self) -> bool:  # pragma: no cover - override expected
         _ = self.name  # Explicit reference keeps linters satisfied
         return False
+
+
+# ---------------------------------------------------------------------------
+# OpenAI-compatible provider base (DeepSeek, Moonshot, Local LLM, …)
+# ---------------------------------------------------------------------------
+
+try:  # pragma: no cover - optional dependency import
+    from openai import OpenAI as _OpenAI
+except ImportError:  # pragma: no cover - handled via is_available
+    _OpenAI = None
+
+
+class OpenAICompatibleProvider(BaseProvider):
+    """Base class for providers that expose an OpenAI-compatible chat API.
+
+    Subclasses only need to set three class attributes that name the config
+    keys for api_key, model, and base_url.  Override hooks are provided for
+    provider-specific behaviour (e.g. model validation, reasoning traces).
+    """
+
+    # --- subclass must override these three ---
+    _api_key_attr: str = ""
+    _model_attr: str = ""
+    _base_url_attr: str = ""
+    # If True the ``response_format`` field is included in the API payload
+    _supports_response_format: bool = True
+
+    def __init__(self, name: str, config: Any) -> None:
+        super().__init__(name=name)
+        self._config = config
+
+    def is_available(self) -> bool:
+        return bool(_OpenAI) and bool(self._config)
+
+    # -- credential helpers --------------------------------------------------
+
+    def _get_api_credentials(self) -> tuple[str, str, str]:
+        """Extract (api_key, model, base_url) from the shared config object."""
+        api_config = getattr(self._config, "api", None)
+        if api_config is None:
+            raise ProviderConfigurationError(f"API configuration missing for {self.name}")
+
+        api_key = getattr(api_config, self._api_key_attr, None)
+        model_name = getattr(api_config, self._model_attr, None)
+        base_url = getattr(api_config, self._base_url_attr, None)
+
+        if not all([api_key, model_name, base_url]):
+            raise ProviderConfigurationError(
+                f"{self.name} configuration incomplete (api key/model/base url)"
+            )
+        return str(api_key), str(model_name), str(base_url)
+
+    # -- request / response --------------------------------------------------
+
+    def _build_request(self, request: ProviderRequest, model_name: str) -> dict[str, Any]:
+        """Build the chat completions payload."""
+        payload: dict[str, Any] = {
+            "model": model_name,
+            "messages": [
+                {"role": "system", "content": request.system_prompt},
+                {"role": "user", "content": request.user_content},
+            ],
+            "max_tokens": request.max_tokens,
+            "temperature": request.temperature,
+            "stream": False,
+        }
+        if self._supports_response_format and request.response_format_type == "json_object":
+            payload["response_format"] = {"type": "json_object"}
+        return payload
+
+    @staticmethod
+    def _extract_content(response: Any) -> str | None:
+        """Pull the text from an OpenAI-style response object."""
+        choices = getattr(response, "choices", None)
+        if isinstance(choices, list) and choices:
+            first_choice = choices[0]
+            message = getattr(first_choice, "message", None)
+            if message and getattr(message, "content", None):
+                return str(message.content).strip()
+        return None
+
+    # -- hooks (override in subclasses) --------------------------------------
+
+    @staticmethod
+    def _pre_call(_client: Any, model_name: str) -> str:
+        """Called before the API request.  Return the (possibly adjusted) model name."""
+        return model_name
+
+    def _post_extract(self, response: Any, content: str | None) -> None:
+        """Called after content extraction for provider-specific logging."""
+
+    # -- main entry point ----------------------------------------------------
+
+    def call(self, request: ProviderRequest) -> ProviderResponse:
+        self.ensure_available()
+        api_key, model_name, base_url = self._get_api_credentials()
+
+        if _OpenAI is None:  # Defensive — ensure_available should guard this
+            raise ProviderUnavailableError(f"OpenAI SDK not available for {self.name}")
+
+        client = _OpenAI(api_key=api_key, base_url=base_url)
+        model_name = self._pre_call(client, model_name)
+
+        payload = self._build_request(request, model_name)
+        try:
+            response: Any = client.chat.completions.create(**payload)
+        except Exception as exc:
+            raise ProviderUnavailableError(f"{self.name} API call failed: {exc}") from exc
+
+        content = self._extract_content(response)
+        self._post_extract(response, content)
+
+        if content is None:
+            logger.error("%s returned an empty or invalid response structure.", self.name)
+
+        return ProviderResponse(content=content, raw_response=response)
 
 
 # =============================================================================

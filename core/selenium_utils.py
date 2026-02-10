@@ -18,7 +18,7 @@ from selenium.webdriver.support.wait import WebDriverWait
 
 # === TYPE ALIASES ===
 Locator = tuple[str, str]
-DriverType = Union[WebDriver, None]
+DriverType = WebDriver | None
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,77 @@ from testing.test_utilities import create_standard_test_runner
 
 def _test_module_integrity() -> bool:
     "Test that module can be imported and definitions are valid."
-    return True
+    from unittest.mock import MagicMock, call
+
+    from testing.test_framework import TestSuite
+
+    suite = TestSuite("Selenium Utilities (core)", "core/selenium_utils.py")
+    suite.start_suite()
+
+    def test_wait_until_visible():
+        mock_waiter = MagicMock()
+        mock_waiter.until.return_value = "element"
+        result = wait_until_visible(mock_waiter, ("css selector", ".test"))
+        assert result == "element"
+        mock_waiter.until.assert_called_once()
+        return True
+
+    suite.run_test("wait_until_visible delegates to waiter.until", test_wait_until_visible)
+
+    def test_wait_until_clickable():
+        mock_waiter = MagicMock()
+        mock_waiter.until.return_value = "btn"
+        result = wait_until_clickable(mock_waiter, ("id", "submit"))
+        assert result == "btn"
+        mock_waiter.until.assert_called_once()
+        return True
+
+    suite.run_test("wait_until_clickable delegates to waiter.until", test_wait_until_clickable)
+
+    def test_wait_until_present():
+        mock_waiter = MagicMock()
+        mock_waiter.until.return_value = "node"
+        result = wait_until_present(mock_waiter, ("xpath", "//div"))
+        assert result == "node"
+        mock_waiter.until.assert_called_once()
+        return True
+
+    suite.run_test("wait_until_present delegates to waiter.until", test_wait_until_present)
+
+    def test_wait_until_not_visible():
+        mock_waiter = MagicMock()
+        mock_waiter.until.return_value = True
+        result = wait_until_not_visible(mock_waiter, ("css selector", ".loading"))
+        assert result is True
+        mock_waiter.until.assert_called_once()
+        return True
+
+    suite.run_test("wait_until_not_visible delegates to waiter.until", test_wait_until_not_visible)
+
+    def test_wait_until_not_present():
+        mock_waiter = MagicMock()
+        mock_waiter.until.return_value = True
+        result = wait_until_not_present(mock_waiter, ("css selector", ".spinner"))
+        assert result is True
+        mock_waiter.until.assert_called_once()
+        # Verify the condition callable was passed (a lambda)
+        condition = mock_waiter.until.call_args[0][0]
+        assert callable(condition)
+        return True
+
+    suite.run_test("wait_until_not_present uses lambda condition", test_wait_until_not_present)
+
+    def test_all_functions_are_callable():
+        assert callable(wait_until_visible)
+        assert callable(wait_until_clickable)
+        assert callable(wait_until_present)
+        assert callable(wait_until_not_visible)
+        assert callable(wait_until_not_present)
+        return True
+
+    suite.run_test("All wait functions are callable", test_all_functions_are_callable)
+
+    return suite.finish_suite()
 
 
 run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)

@@ -38,7 +38,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 # === CORRELATION ID STORAGE ===
 
@@ -53,7 +53,7 @@ class CorrelationContext:
     correlation_id: str
     operation_name: str
     start_time: float = field(default_factory=time.time)
-    parent_id: Optional[str] = None
+    parent_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -80,18 +80,18 @@ def generate_correlation_id() -> str:
     return uuid.uuid4().hex[:8]
 
 
-def get_correlation_id() -> Optional[str]:
+def get_correlation_id() -> str | None:
     """Get the current correlation ID, if any."""
     ctx = getattr(_correlation_context, "current", None)
     return ctx.correlation_id if ctx else None
 
 
-def get_correlation_context() -> Optional[CorrelationContext]:
+def get_correlation_context() -> CorrelationContext | None:
     """Get the full correlation context, if any."""
     return getattr(_correlation_context, "current", None)
 
 
-def set_correlation_context(ctx: Optional[CorrelationContext]) -> None:
+def set_correlation_context(ctx: CorrelationContext | None) -> None:
     """Set the current correlation context."""
     _correlation_context.current = ctx
 
@@ -99,8 +99,8 @@ def set_correlation_context(ctx: Optional[CorrelationContext]) -> None:
 @contextmanager
 def correlation_context(
     operation_name: str,
-    correlation_id: Optional[str] = None,
-    metadata: Optional[dict[str, Any]] = None,
+    correlation_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ):
     """
     Context manager for correlation tracking.
@@ -157,7 +157,8 @@ class CorrelationFilter(logging.Filter):
     in all log messages when a correlation context is active.
     """
 
-    def filter(self, record: logging.LogRecord) -> bool:  # noqa: PLR6301
+    @staticmethod
+    def filter(record: logging.LogRecord) -> bool:
         """Add correlation_id to the log record."""
         ctx = get_correlation_context()
         record.correlation_id = ctx.correlation_id if ctx else "-"
@@ -165,7 +166,7 @@ class CorrelationFilter(logging.Filter):
         return True
 
 
-def install_correlation_filter(logger_name: Optional[str] = None) -> None:
+def install_correlation_filter(logger_name: str | None = None) -> None:
     """
     Install the correlation filter on a logger.
 
@@ -189,7 +190,7 @@ def install_correlation_filter(logger_name: Optional[str] = None) -> None:
 def log_with_context(
     level: int,
     message: str,
-    logger_instance: Optional[logging.Logger] = None,
+    logger_instance: logging.Logger | None = None,
     **extra_fields: Any,
 ) -> None:
     """
@@ -217,7 +218,7 @@ def log_with_context(
 
 def log_operation_start(
     operation: str,
-    logger_instance: Optional[logging.Logger] = None,
+    logger_instance: logging.Logger | None = None,
     **context: Any,
 ) -> None:
     """Log the start of an operation with context."""
@@ -232,7 +233,7 @@ def log_operation_start(
 def log_operation_end(
     operation: str,
     success: bool = True,
-    logger_instance: Optional[logging.Logger] = None,
+    logger_instance: logging.Logger | None = None,
     **context: Any,
 ) -> None:
     """Log the end of an operation with context."""

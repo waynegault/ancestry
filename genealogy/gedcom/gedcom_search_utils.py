@@ -57,7 +57,7 @@ import importlib
 import json
 from functools import lru_cache
 from types import ModuleType, SimpleNamespace
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 from genealogy.gedcom.gedcom_utils import GedcomData, calculate_match_score
 
@@ -68,7 +68,7 @@ def _get_gedcom_utils_module() -> ModuleType:
     return importlib.import_module("gedcom_utils")
 
 
-def normalize_gedcom_id(value: Optional[str]) -> Optional[str]:
+def normalize_gedcom_id(value: str | None) -> str | None:
     normalizer = _get_gedcom_utils_module()._normalize_id
     return normalizer(value)
 
@@ -101,7 +101,7 @@ from research.relationship_utils import (
 class _GedcomDataCache:
     """Manages cached GEDCOM data state."""
 
-    data: Optional[Any] = None
+    data: Any | None = None
 
 
 def set_cached_gedcom_data(gedcom_data: Any) -> None:
@@ -138,7 +138,7 @@ def get_cached_gedcom_data() -> Any:
     return _GedcomDataCache.data
 
 
-def load_gedcom_data(gedcom_path: Path) -> Optional[GedcomData]:
+def load_gedcom_data(gedcom_path: Path) -> GedcomData | None:
     """
     Load and initialize a GedcomData instance.
 
@@ -185,7 +185,7 @@ def load_gedcom_data(gedcom_path: Path) -> Optional[GedcomData]:
         raise RuntimeError(f"Failed to load GEDCOM data from {gedcom_path}") from e
 
 
-def get_gedcom_data() -> Optional[GedcomData]:
+def get_gedcom_data() -> GedcomData | None:
     """
     Returns the cached GEDCOM data instance with aggressive caching, loading it if necessary.
 
@@ -291,8 +291,8 @@ def matches_year_criterion(key: str, criteria: dict[str, Any], value: Any, year_
 
 
 def _load_or_get_gedcom_data(
-    gedcom_data: Optional[GedcomData],
-    gedcom_path: Optional[str],
+    gedcom_data: GedcomData | None,
+    gedcom_path: str | None,
 ) -> GedcomData:
     """Load or retrieve GEDCOM data from cache or file."""
     if gedcom_data is not None:
@@ -321,7 +321,7 @@ def _load_or_get_gedcom_data(
     return loaded_data
 
 
-def _validate_gedcom_data(gedcom_data: Optional[GedcomData]) -> None:
+def _validate_gedcom_data(gedcom_data: GedcomData | None) -> None:
     """Validate that GEDCOM data is loaded and has processed cache."""
     if not gedcom_data or not getattr(gedcom_data, "processed_data_cache", None):
         raise MissingConfigError("Failed to load GEDCOM data or processed cache is empty")
@@ -398,7 +398,7 @@ def _extract_individual_filter_values(indi_data: dict[str, Any]) -> dict[str, An
     }
 
 
-def _names_mandatory_satisfied(filter_criteria: dict[str, Any], filter_values: dict[str, Any]) -> Optional[bool]:
+def _names_mandatory_satisfied(filter_criteria: dict[str, Any], filter_values: dict[str, Any]) -> bool | None:
     """Return True/False if name gating applies; None if no name provided.
 
     - If first_name and/or surname provided, both provided names must match (contains).
@@ -511,8 +511,8 @@ def _create_match_record(
 def search_gedcom_for_criteria(
     search_criteria: dict[str, Any],
     max_results: int = 10,
-    gedcom_data: Optional[GedcomData] = None,
-    gedcom_path: Optional[str] = None,
+    gedcom_data: GedcomData | None = None,
+    gedcom_path: str | None = None,
 ) -> list[dict[str, Any]]:
     """
     Search GEDCOM data for individuals matching the given criteria.
@@ -574,7 +574,7 @@ def search_gedcom_for_criteria(
 # Helper functions for get_gedcom_family_details
 
 
-def _ensure_gedcom_data(gedcom_data: Optional[GedcomData], gedcom_path: Optional[str]) -> GedcomData:
+def _ensure_gedcom_data(gedcom_data: GedcomData | None, gedcom_path: str | None) -> GedcomData:
     """Ensure GEDCOM data is loaded."""
     if gedcom_data:
         return gedcom_data
@@ -735,7 +735,7 @@ def _get_spouse_info(gedcom_data: GedcomData, spouse_id: str, fam_record: Any) -
     }
 
 
-def _get_child_info(gedcom_data: GedcomData, child_id: str) -> Optional[dict[str, Any]]:
+def _get_child_info(gedcom_data: GedcomData, child_id: str) -> dict[str, Any] | None:
     """Get child information."""
     processed_cache = cast(dict[str, Any], getattr(gedcom_data, "processed_data_cache", {}))
     child_data = processed_cache.get(child_id, {})
@@ -782,7 +782,7 @@ def _get_family_record(gedcom_data: GedcomData, fam_id: str) -> Any:
     return fam_record
 
 
-def _extract_spouse_from_family(fam_record: Any, individual_id_norm: str) -> Optional[str]:
+def _extract_spouse_from_family(fam_record: Any, individual_id_norm: str) -> str | None:
     """Extract spouse ID from family record."""
     husb_tag = fam_record.sub_tag("HUSB")
     wife_tag = fam_record.sub_tag("WIFE")
@@ -812,7 +812,7 @@ def _extract_children_from_family(fam_record: Any, gedcom_data: GedcomData) -> l
 
 def _process_family_record(
     gedcom_data: GedcomData, fam_record: Any, individual_id_norm: str
-) -> tuple[Optional[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
     """Process a single family record to extract spouse and children."""
     spouse_info = None
     children = []
@@ -865,8 +865,8 @@ def _get_spouses_and_children(
 
 def get_gedcom_family_details(
     individual_id: str,
-    gedcom_data: Optional[GedcomData] = None,
-    gedcom_path: Optional[str] = None,
+    gedcom_data: GedcomData | None = None,
+    gedcom_path: str | None = None,
 ) -> dict[str, Any]:
     """
     Get family details for a specific individual from GEDCOM data.
@@ -912,8 +912,8 @@ def get_gedcom_family_details(
 
 
 def _load_or_get_gedcom_data_optional(
-    gedcom_data: Optional[GedcomData], gedcom_path: Optional[str]
-) -> Optional[GedcomData]:
+    gedcom_data: GedcomData | None, gedcom_path: str | None
+) -> GedcomData | None:
     """Load or retrieve GEDCOM data from cache or file (optional variant that returns None on missing file)."""
     if gedcom_data:
         return gedcom_data
@@ -938,7 +938,7 @@ def _load_or_get_gedcom_data_optional(
     return load_gedcom_data(Path(str(gedcom_path))) if gedcom_path else None
 
 
-def _get_reference_id() -> Optional[str]:
+def _get_reference_id() -> str | None:
     """Get reference person ID from config."""
     return config_schema.reference_person_id if config_schema else None
 
@@ -973,10 +973,10 @@ def _find_relationship_path(individual_id_norm: str, reference_id_norm: str, ged
 
 def get_gedcom_relationship_path(
     individual_id: str,
-    reference_id: Optional[str] = None,
-    reference_name: Optional[str] = "Reference Person",
-    gedcom_data: Optional[GedcomData] = None,
-    gedcom_path: Optional[str] = None,
+    reference_id: str | None = None,
+    reference_name: str | None = "Reference Person",
+    gedcom_data: GedcomData | None = None,
+    gedcom_path: str | None = None,
 ) -> str:
     """
     Get the relationship path between an individual and the reference person.

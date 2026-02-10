@@ -9,13 +9,12 @@ protocol rather than concrete implementations, breaking import cycles.
 Track 4 Step 2: Cache Stack Unification
 """
 
-from __future__ import annotations
 
 import logging
 import sys
 from abc import abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Optional, Protocol, runtime_checkable
+from typing import Any, ClassVar, Protocol, runtime_checkable
 
 logger = logging.getLogger(__name__)
 
@@ -43,8 +42,8 @@ class CacheStats:
     evictions: int = 0
     expired: int = 0
     errors: int = 0
-    last_access_time: Optional[float] = None
-    last_write_time: Optional[float] = None
+    last_access_time: float | None = None
+    last_write_time: float | None = None
     extra: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -94,7 +93,7 @@ class CacheHealth:
     message: str
     hit_rate: float = 0.0
     is_available: bool = True
-    last_error: Optional[str] = None
+    last_error: str | None = None
     recommendations: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -141,7 +140,7 @@ class CacheBackend(Protocol):
     """
 
     @abstractmethod
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """Retrieve a value from the cache.
 
         Args:
@@ -153,7 +152,7 @@ class CacheBackend(Protocol):
         ...
 
     @abstractmethod
-    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+    def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
         """Store a value in the cache.
 
         Args:
@@ -229,7 +228,7 @@ class ScopedCacheBackend(CacheBackend, Protocol):
     """
 
     @abstractmethod
-    def get_scoped(self, service: str, endpoint: str, key: str) -> Optional[Any]:
+    def get_scoped(self, service: str, endpoint: str, key: str) -> Any | None:
         """Retrieve a scoped value from the cache.
 
         Args:
@@ -249,7 +248,7 @@ class ScopedCacheBackend(CacheBackend, Protocol):
         endpoint: str,
         key: str,
         value: Any,
-        ttl: Optional[int] = None,
+        ttl: int | None = None,
     ) -> bool:
         """Store a scoped value in the cache.
 
@@ -296,7 +295,7 @@ class CacheFactory:
     _instances: ClassVar[dict[str, CacheBackend]] = {}
 
     @classmethod
-    def get_backend(cls, name: str) -> Optional[CacheBackend]:
+    def get_backend(cls, name: str) -> CacheBackend | None:
         """Get a registered cache backend by name.
 
         Args:
@@ -476,10 +475,10 @@ def _test_cache_backend_protocol_check() -> bool:
         def __init__(self) -> None:
             self._data: dict[str, Any] = {}
 
-        def get(self, key: str) -> Optional[Any]:
+        def get(self, key: str) -> Any | None:
             return self._data.get(key)
 
-        def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+        def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
             del ttl  # Protocol requires parameter
             self._data[key] = value
             return True
@@ -520,10 +519,10 @@ def _test_cache_factory_operations() -> bool:
         def __init__(self) -> None:
             self._data: dict[str, Any] = {}
 
-        def get(self, key: str) -> Optional[Any]:
+        def get(self, key: str) -> Any | None:
             return self._data.get(key)
 
-        def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+        def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
             del ttl  # Protocol requires parameter
             self._data[key] = value
             return True

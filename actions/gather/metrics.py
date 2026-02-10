@@ -1,10 +1,9 @@
-from __future__ import annotations
 
 import logging
 import time
 from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass, field
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 from unittest import mock
 
 from testing.test_framework import TestSuite, create_standard_test_runner
@@ -38,7 +37,7 @@ class PageProcessingMetrics:
     prefetch_breakdown: dict[str, float] = field(default_factory=dict)
     prefetch_call_counts: dict[str, int] = field(default_factory=dict)
 
-    def merge(self, other: PageProcessingMetrics) -> PageProcessingMetrics:
+    def merge(self, other: "PageProcessingMetrics") -> "PageProcessingMetrics":
         """Combine metrics from another batch into this aggregate."""
 
         self.total_matches += other.total_matches
@@ -72,7 +71,7 @@ class PageProcessingMetrics:
         )
 
 
-def _format_brief_duration(seconds: Optional[float]) -> str:
+def _format_brief_duration(seconds: float | None) -> str:
     if seconds is None:
         return "--"
 
@@ -317,7 +316,7 @@ def log_timing_breakdown(state: Mapping[str, Any]) -> None:
     )
 
 
-def log_page_start(current_page: int, state: Mapping[str, Any], *, now: Optional[float] = None) -> None:
+def log_page_start(current_page: int, state: Mapping[str, Any], *, now: float | None = None) -> None:
     pages_done = int(state.get("total_pages_processed", 0))
     pages_target = int(state.get("pages_target") or 0)
     page_index = pages_done + 1
@@ -344,7 +343,7 @@ def log_page_start(current_page: int, state: Mapping[str, Any], *, now: Optional
     logger.info(" | ".join(tokens))
 
 
-def compose_progress_snapshot(state: Mapping[str, Any], *, now: Optional[float] = None) -> dict[str, Any]:
+def compose_progress_snapshot(state: Mapping[str, Any], *, now: float | None = None) -> dict[str, Any]:
     pages_done = int(state.get("total_pages_processed", 0))
     pages_target = int(state.get("pages_target") or 0)
     if pages_target <= 0:
@@ -378,8 +377,8 @@ def log_page_completion_summary(
     page_updated: int,
     page_skipped: int,
     page_errors: int,
-    metrics: Optional[PageProcessingMetrics],
-    progress: Optional[dict[str, Any]] = None,
+    metrics: PageProcessingMetrics | None,
+    progress: dict[str, Any] | None = None,
 ) -> None:
     lines: list[str] = [f"Page {page} complete:"]
 
@@ -416,7 +415,7 @@ def log_page_completion_summary(
     logger.info("\n".join(lines))
 
 
-def accumulate_page_metrics(state: MutableMapping[str, Any], page_metrics: Optional[PageProcessingMetrics]) -> None:
+def accumulate_page_metrics(state: MutableMapping[str, Any], page_metrics: PageProcessingMetrics | None) -> None:
     if not isinstance(page_metrics, PageProcessingMetrics) or not page_metrics.has_signal():
         return
 

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Centralized caching initialization helpers."""
 
-from __future__ import annotations
 
 import logging
 from importlib import import_module

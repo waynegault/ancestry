@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Audit helper for enforcing standardized import patterns."""
 
-from __future__ import annotations
 
 import ast
 import logging

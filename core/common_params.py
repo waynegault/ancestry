@@ -24,9 +24,9 @@ class GraphContext:
 
     id_to_parents: Mapping[str, Collection[str]]
     id_to_children: Mapping[str, Collection[str]]
-    current_id: Optional[str] = None
-    start_id: Optional[str] = None
-    end_id: Optional[str] = None
+    current_id: str | None = None
+    start_id: str | None = None
+    end_id: str | None = None
 
 
 @dataclass
@@ -43,8 +43,8 @@ class RetryContext:
     max_delay: float
     backoff_factor: float = 1.80  # Matches .env BACKOFF_FACTOR (gentler escalation)
     current_delay: float = 0.10  # Matches .env INITIAL_DELAY (faster initial retry)
-    retries_left: Optional[int] = None
-    retry_status_codes: Optional[Union[list[int], set[int]]] = None
+    retries_left: int | None = None
+    retry_status_codes: list[int] | set[int] | None = None
     jitter_seconds: float = 0.2
 
 
@@ -56,11 +56,11 @@ class MatchIdentifiers:
     Used in action6_gather.py for processing DNA matches.
     """
 
-    uuid: Optional[str]
+    uuid: str | None
     username: str
     in_my_tree: bool
     log_ref_short: str
-    profile_id: Optional[str] = None
+    profile_id: str | None = None
 
 
 @dataclass
@@ -72,10 +72,10 @@ class ConversationIdentifiers:
     """
 
     api_conv_id: str
-    people_id: Optional[str] = None
-    my_pid_lower: Optional[str] = None
-    effective_conv_id: Optional[str] = None
-    log_prefix: Optional[str] = None
+    people_id: str | None = None
+    my_pid_lower: str | None = None
+    effective_conv_id: str | None = None
+    log_prefix: str | None = None
 
 
 @dataclass
@@ -87,9 +87,9 @@ class ApiIdentifiers:
     """
 
     owner_profile_id: str
-    api_person_id: Optional[str] = None
-    api_tree_id: Optional[str] = None
-    owner_tree_id: Optional[str] = None
+    api_person_id: str | None = None
+    api_tree_id: str | None = None
+    owner_tree_id: str | None = None
 
 
 @dataclass
@@ -136,11 +136,11 @@ class ConversationProcessingContext:
     existing_conv_logs: dict[tuple[str, str], Any]
     conv_log_upserts_dicts: list[dict[str, Any]]
     person_updates: dict[int, Any]  # Changed from dict[str, Any] - keys are person IDs (int)
-    comp_conv_id: Optional[str] = None
-    comp_ts: Optional[Any] = None
-    my_pid_lower: Optional[str] = None
-    min_aware_dt: Optional[Any] = None
-    state: Optional[dict[str, Any]] = None
+    comp_conv_id: str | None = None
+    comp_ts: Any | None = None
+    my_pid_lower: str | None = None
+    min_aware_dt: Any | None = None
+    state: dict[str, Any] | None = None
 
 
 @dataclass
@@ -164,7 +164,7 @@ class ProcessingState:
     """
 
     batch_num: int
-    progress_bar: Optional[Any] = None
+    progress_bar: Any | None = None
     processed_in_loop: int = 0
 
 
@@ -211,8 +211,8 @@ class PrefetchedData:
     Used in action6_gather.py for _prepare_person_operation_data.
     """
 
-    combined_details: Optional[dict[str, Any]] = None
-    tree_data: Optional[dict[str, Any]] = None
+    combined_details: dict[str, Any] | None = None
+    tree_data: dict[str, Any] | None = None
 
 
 @dataclass
@@ -227,11 +227,11 @@ class RelationshipCalcContext:
     is_owner: bool
     can_calc_tree_ladder: bool
     can_calc_discovery_api: bool
-    owner_tree_id_str: Optional[str]
-    selected_tree_id_str: Optional[str]
-    owner_profile_id_str: Optional[str]
-    selected_global_id_str: Optional[str]
-    selected_person_tree_id: Optional[str]
+    owner_tree_id_str: str | None
+    selected_tree_id_str: str | None
+    owner_profile_id_str: str | None
+    selected_global_id_str: str | None
+    selected_person_tree_id: str | None
     source_of_ids: str
 
 
@@ -258,10 +258,10 @@ class ConversationState:
     Used in action8_messaging.py for conversation management.
     """
 
-    existing_conversation_id: Optional[str] = None
-    effective_conv_id: Optional[str] = None
-    latest_out_log: Optional[Any] = None  # ConversationLog object
-    latest_in_log: Optional[Any] = None  # ConversationLog object
+    existing_conversation_id: str | None = None
+    effective_conv_id: str | None = None
+    latest_out_log: Any | None = None  # ConversationLog object
+    latest_in_log: Any | None = None  # ConversationLog object
 
 
 @dataclass
@@ -288,18 +288,18 @@ class ExtractionExperimentEvent:
     variant_label: str
     prompt_key: str
     parse_success: bool
-    prompt_version: Optional[str] = None
-    extracted_data: Optional[dict[str, Any]] = None
-    suggested_tasks: Optional[Any] = None
-    raw_response_text: Optional[str] = None
-    user_id: Optional[str] = None
-    error: Optional[str] = None
-    quality_score: Optional[float] = None
-    component_coverage: Optional[float] = None
-    anomaly_summary: Optional[str] = None
-    provider_name: Optional[str] = None
-    provider_model: Optional[str] = None
-    scoring_inputs: Optional[Any] = None
+    prompt_version: str | None = None
+    extracted_data: dict[str, Any] | None = None
+    suggested_tasks: Any | None = None
+    raw_response_text: str | None = None
+    user_id: str | None = None
+    error: str | None = None
+    quality_score: float | None = None
+    component_coverage: float | None = None
+    anomaly_summary: str | None = None
+    provider_name: str | None = None
+    provider_model: str | None = None
+    scoring_inputs: Any | None = None
 
 
 @dataclass
@@ -311,10 +311,10 @@ class SearchCriteria:
     """
 
     search_name: str
-    field_name: Optional[str] = None
-    test_name: Optional[str] = None
-    candidate_data: Optional[dict[str, Any]] = None
-    name_flex: Optional[str] = None
+    field_name: str | None = None
+    test_name: str | None = None
+    candidate_data: dict[str, Any] | None = None
+    name_flex: str | None = None
 
 
 @dataclass
@@ -327,17 +327,17 @@ class RequestConfig:
 
     url: str
     method: str = "GET"
-    headers: Optional[dict[str, str]] = None
-    referer_url: Optional[str] = None
+    headers: dict[str, str] | None = None
+    referer_url: str | None = None
     use_csrf_token: bool = False
     add_default_origin: bool = False
-    timeout: Optional[int] = None
+    timeout: int | None = None
     allow_redirects: bool = True
-    data: Optional[dict[str, Any]] = None
-    json_data: Optional[dict[str, Any]] = None
-    json: Optional[dict[str, Any]] = None
+    data: dict[str, Any] | None = None
+    json_data: dict[str, Any] | None = None
+    json: dict[str, Any] | None = None
     force_text_response: bool = False
-    cookie_jar: Optional[Any] = None
+    cookie_jar: Any | None = None
 
 
 # ==============================================

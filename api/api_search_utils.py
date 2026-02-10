@@ -32,7 +32,8 @@ auto_register_module(globals(), __name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 import re
-from typing import Any, Callable, Optional, Union, cast
+from collections.abc import Callable
+from typing import Any, Optional, Union, cast
 
 # === THIRD-PARTY IMPORTS ===
 # (none currently needed)
@@ -48,12 +49,8 @@ from testing.test_utilities import create_standard_test_runner
 # === MODULE LOGGER ===
 logger = logging.getLogger(__name__)
 
-# === MODULE CONSTANTS ===
-API_UTILS_AVAILABLE = True
-RELATIONSHIP_UTILS_AVAILABLE = True
 
-
-def _extract_year_from_date(date_str: Optional[str]) -> Optional[int]:
+def _extract_year_from_date(date_str: str | None) -> int | None:
     """Extract year from a date string."""
     if not date_str or date_str == "Unknown":
         return None
@@ -72,14 +69,14 @@ def _extract_year_from_date(date_str: Optional[str]) -> Optional[int]:
 # Helper functions for _run_simple_suggestion_scoring
 
 
-def _get_scoring_weights(weights: Optional[dict[str, Union[int, float]]]) -> dict[str, Union[int, float]]:
+def _get_scoring_weights(weights: dict[str, int | float] | None) -> dict[str, int | float]:
     """Get scoring weights with defaults."""
     if weights is None:
         return dict(config_schema.common_scoring_weights)
     return weights
 
 
-def _get_year_range(date_flex: Optional[dict[str, Any]]) -> int:
+def _get_year_range(date_flex: dict[str, Any] | None) -> int:
     """Get year range for flexible matching."""
     if date_flex:
         return date_flex.get("year_match_range", 10)
@@ -89,7 +86,7 @@ def _get_year_range(date_flex: Optional[dict[str, Any]]) -> int:
 def _extract_search_criteria(search_criteria: dict[str, Any]) -> dict[str, Any]:
     """Extract and clean search criteria."""
 
-    def clean_param(p: Any) -> Optional[str]:
+    def clean_param(p: Any) -> str | None:
         return p.strip().lower() if p and isinstance(p, str) else None
 
     return {
@@ -102,23 +99,28 @@ def _extract_search_criteria(search_criteria: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _get_field(candidate: dict[str, Any], *keys: str) -> Any:
+    """Return the first non-None value from *candidate* for the given *keys*."""
+    for key in keys:
+        value = candidate.get(key)
+        if value is not None:
+            return value
+    return None
+
+
 def _extract_candidate_data(candidate: dict[str, Any]) -> dict[str, Any]:
     """Extract and clean candidate data - handle both camelCase and Title Case field names."""
 
-    def clean_param(p: Any) -> Optional[str]:
+    def clean_param(p: Any) -> str | None:
         return p.strip().lower() if p and isinstance(p, str) else None
 
     return {
-        "first_name": clean_param(candidate.get("first_name", candidate.get("firstName", candidate.get("First Name")))),
-        "surname": clean_param(candidate.get("surname", candidate.get("lastName", candidate.get("Surname")))),
-        "birth_year": candidate.get("birth_year", candidate.get("birthYear", candidate.get("Birth Year"))),
-        "birth_place": clean_param(
-            candidate.get("birth_place", candidate.get("birthPlace", candidate.get("Birth Place")))
-        ),
-        "death_year": candidate.get("death_year", candidate.get("deathYear", candidate.get("Death Year"))),
-        "death_place": clean_param(
-            candidate.get("death_place", candidate.get("deathPlace", candidate.get("Death Place")))
-        ),
+        "first_name": clean_param(_get_field(candidate, "first_name", "firstName", "First Name")),
+        "surname": clean_param(_get_field(candidate, "surname", "lastName", "Surname")),
+        "birth_year": _get_field(candidate, "birth_year", "birthYear", "Birth Year"),
+        "birth_place": clean_param(_get_field(candidate, "birth_place", "birthPlace", "Birth Place")),
+        "death_year": _get_field(candidate, "death_year", "deathYear", "Death Year"),
+        "death_place": clean_param(_get_field(candidate, "death_place", "deathPlace", "Death Place")),
     }
 
 
@@ -142,10 +144,10 @@ def _places_requirements_satisfied(search_criteria: dict[str, Any], candidate: d
 
 
 def _score_name_match(
-    search_name: Optional[str],
-    cand_name: Optional[str],
+    search_name: str | None,
+    cand_name: str | None,
     field_name: str,
-    score_value: Union[int, float],
+    score_value: int | float,
     total_score: int,
     field_scores: dict[str, int],
     reasons: list[str],
@@ -163,8 +165,8 @@ def _score_year_match(
     search_year: Any,
     cand_year: Any,
     field_name: str,
-    exact_score: Union[int, float],
-    close_score: Union[int, float],
+    exact_score: int | float,
+    close_score: int | float,
     year_range: int,
     total_score: int,
     field_scores: dict[str, int],
@@ -194,10 +196,10 @@ def _score_year_match(
 
 
 def _score_place_match(
-    search_place: Optional[str],
-    cand_place: Optional[str],
+    search_place: str | None,
+    cand_place: str | None,
     field_name: str,
-    score_value: Union[int, float],
+    score_value: int | float,
     total_score: int,
     field_scores: dict[str, int],
     reasons: list[str],
@@ -212,7 +214,7 @@ def _score_place_match(
 
 
 def _apply_bonus_scores(
-    field_scores: dict[str, int], weights: dict[str, Union[int, float]], total_score: int, reasons: list[str]
+    field_scores: dict[str, int], weights: dict[str, int | float], total_score: int, reasons: list[str]
 ) -> int:
     """Apply bonus scores for multiple matching fields."""
     # Bonus for both names matching
@@ -242,8 +244,8 @@ def _apply_bonus_scores(
 def _run_simple_suggestion_scoring(
     search_criteria: dict[str, Any],
     candidate: dict[str, Any],
-    weights: Optional[dict[str, Union[int, float]]] = None,
-    date_flex: Optional[dict[str, Any]] = None,
+    weights: dict[str, int | float] | None = None,
+    date_flex: dict[str, Any] | None = None,
 ) -> tuple[int, dict[str, int], list[str]]:
     """
     Simple scoring function for API suggestions when gedcom_utils is not available.
@@ -363,7 +365,7 @@ def _build_search_query(search_criteria: dict[str, Any]) -> str:
     return search_query.strip()
 
 
-def _get_tree_id(session_manager: SessionManager) -> Optional[str]:
+def _get_tree_id(session_manager: SessionManager) -> str | None:
     """Get tree ID from session manager or config."""
     tree_id = session_manager.my_tree_id
     if not tree_id:
@@ -372,7 +374,7 @@ def _get_tree_id(session_manager: SessionManager) -> Optional[str]:
     return tree_id
 
 
-def _parse_hyphenated_lifespan(lifespan: str) -> tuple[Optional[int], Optional[int]]:
+def _parse_hyphenated_lifespan(lifespan: str) -> tuple[int | None, int | None]:
     """Parse hyphenated lifespan format (e.g., '1850-1920')."""
     parts = lifespan.split("-")
     if len(parts) == 2:
@@ -385,7 +387,7 @@ def _parse_hyphenated_lifespan(lifespan: str) -> tuple[Optional[int], Optional[i
     return None, None
 
 
-def _parse_birth_notation(lifespan: str) -> Optional[int]:
+def _parse_birth_notation(lifespan: str) -> int | None:
     """Parse birth notation format (e.g., 'b. 1850')."""
     match = re.search(r"b\.\s*(\d{4})", lifespan.lower())
     if match:
@@ -396,7 +398,7 @@ def _parse_birth_notation(lifespan: str) -> Optional[int]:
     return None
 
 
-def _parse_death_notation(lifespan: str) -> Optional[int]:
+def _parse_death_notation(lifespan: str) -> int | None:
     """Parse death notation format (e.g., 'd. 1920')."""
     match = re.search(r"d\.\s*(\d{4})", lifespan.lower())
     if match:
@@ -407,7 +409,7 @@ def _parse_death_notation(lifespan: str) -> Optional[int]:
     return None
 
 
-def _parse_lifespan(lifespan: str) -> tuple[Optional[int], Optional[int]]:
+def _parse_lifespan(lifespan: str) -> tuple[int | None, int | None]:
     """Parse lifespan string to extract birth and death years."""
     if not lifespan:
         return None, None
@@ -425,9 +427,9 @@ def _parse_lifespan(lifespan: str) -> tuple[Optional[int], Optional[int]]:
 def _process_suggest_result(
     suggestion: dict[str, Any],
     search_criteria: dict[str, Any],
-    scoring_weights: dict[str, Union[int, float]],
-    date_flex: dict[str, Union[int, float]],
-) -> Optional[dict[str, Any]]:
+    scoring_weights: dict[str, int | float],
+    date_flex: dict[str, int | float],
+) -> dict[str, Any] | None:
     """Process a single suggestion result and return match record if score > 0."""
     try:
         person_id = suggestion.get("id")
@@ -487,7 +489,7 @@ def _process_suggest_result(
         return None
 
 
-def _extract_event_details(event_data: dict[str, Any]) -> tuple[Optional[int], str]:
+def _extract_event_details(event_data: dict[str, Any]) -> tuple[int | None, str]:
     """Extract normalized year and place from an event dictionary."""
     date_value = event_data.get("date", {}).get("normalized", "")
     place_value = event_data.get("place", {}).get("normalized", "")
@@ -497,10 +499,10 @@ def _extract_event_details(event_data: dict[str, Any]) -> tuple[Optional[int], s
 def _process_treesui_person(
     person: dict[str, Any],
     search_criteria: dict[str, Any],
-    scoring_weights: dict[str, Union[int, float]],
-    date_flex: dict[str, Union[int, float]],
+    scoring_weights: dict[str, int | float],
+    date_flex: dict[str, int | float],
     scored_matches: list[dict[str, Any]],
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Process a single treesui-list person and return match record if score > 0 and not duplicate."""
     try:
         person_id = person.get("id")
@@ -640,7 +642,7 @@ def _build_treesui_search_params(search_criteria: dict[str, Any]) -> dict[str, A
 
 def _call_treesui_api_for_search(
     session_manager: SessionManager, search_params: dict[str, Any], tree_id: str
-) -> Optional[list[dict[str, Any]]]:
+) -> list[dict[str, Any]] | None:
     """Call treesui-list API and return results."""
     if not search_params:
         return None
@@ -657,7 +659,7 @@ def _call_treesui_api_for_search(
 
 
 def _process_treesui_results(
-    treesui_results: Optional[list[dict[str, Any]]],
+    treesui_results: list[dict[str, Any]] | None,
     search_criteria: dict[str, Any],
     scored_matches: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
@@ -740,7 +742,7 @@ def _validate_api_session(session_manager: SessionManager) -> bool:
     return True
 
 
-def _resolve_tree_id(session_manager: SessionManager, tree_id: Optional[str]) -> Optional[str]:
+def _resolve_tree_id(session_manager: SessionManager, tree_id: str | None) -> str | None:
     """Resolve tree ID from session manager or config."""
     if tree_id:
         return tree_id
@@ -775,7 +777,7 @@ def _get_facts_data_from_api(
     person_id: str,
     tree_id: str,
     owner_profile_id: str,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """
     Call Edit Relationships API and return family relationship data.
 
@@ -792,7 +794,7 @@ def _get_facts_data_from_api(
     from api.api_utils import call_edit_relationships_api
 
     # Call the Edit Relationships API
-    api_response: Optional[dict[str, Any]] = call_edit_relationships_api(
+    api_response: dict[str, Any] | None = call_edit_relationships_api(
         session_manager=session_manager,
         user_id=owner_profile_id,
         tree_id=tree_id,
@@ -966,7 +968,7 @@ def _format_person_from_relationship_data(person_obj: dict[str, Any]) -> dict[st
     }
 
 
-def _format_date(day: Optional[int], month: Optional[int], year: Optional[int]) -> str:
+def _format_date(day: int | None, month: int | None, year: int | None) -> str:
     """Format a date from day/month/year components."""
     if not year:
         return "Unknown"
@@ -1070,7 +1072,7 @@ LEGACY_FAMILY_DETAIL_HELPERS: tuple[Callable[..., Any], ...] = (
 )
 
 
-def _find_target_person_in_list(persons: list[Any], person_id: str) -> Optional[dict[str, Any]]:
+def _find_target_person_in_list(persons: list[Any], person_id: str) -> dict[str, Any] | None:
     """Find target person in persons list by matching person_id in gid."""
     for person in persons:
         person_gid = person.get("gid", {}).get("v", "")
@@ -1150,7 +1152,7 @@ def _extract_siblings(
 def get_api_family_details(
     session_manager: SessionManager,
     person_id: str,
-    tree_id: Optional[str] = None,
+    tree_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Get family details for a specific individual from Ancestry New Family View API.
@@ -1223,7 +1225,7 @@ def _extract_full_name_from_names(names_list: list[Any]) -> str:
     return f"{given_name} {surname}".strip() if given_name or surname else "Unknown"
 
 
-def _extract_year_from_event_type(events: list[Any], event_type: str) -> Optional[int]:
+def _extract_year_from_event_type(events: list[Any], event_type: str) -> int | None:
     """Extract year from specific event type (Birth or Death)."""
     for event in events:
         if event.get("t") == event_type:
@@ -1252,7 +1254,7 @@ def _parse_person_from_newfamilyview(person: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _get_tree_id_for_relationship(session_manager: SessionManager, tree_id: Optional[str]) -> Optional[str]:
+def _get_tree_id_for_relationship(session_manager: SessionManager, tree_id: str | None) -> str | None:
     """Get tree ID from session manager or config."""
     if tree_id:
         return tree_id
@@ -1265,7 +1267,7 @@ def _get_tree_id_for_relationship(session_manager: SessionManager, tree_id: Opti
     return tree_id if tree_id else None
 
 
-def _get_reference_id_for_relationship(reference_id: Optional[str]) -> Optional[str]:
+def _get_reference_id_for_relationship(reference_id: str | None) -> str | None:
     """Get reference ID from parameter or config."""
     if reference_id:
         return reference_id

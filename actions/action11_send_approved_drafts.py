@@ -12,16 +12,15 @@ This action:
 - Supports feature flags for gradual rollout (ACTION11_SEND_ENABLED)
 """
 
-from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from enum import Enum
 from types import SimpleNamespace
-from typing import Any, Callable, Optional
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -121,7 +120,7 @@ def _normalize_enum(value: Any) -> str:
     return str(getattr(value, "value", value) or "").upper()
 
 
-def _conversation_state_blocks_outbound(person: Person) -> Optional[str]:
+def _conversation_state_blocks_outbound(person: Person) -> str | None:
     conv_state = getattr(person, "conversation_state", None)
     if not conv_state:
         return None
@@ -140,7 +139,7 @@ def _conversation_state_blocks_outbound(person: Person) -> Optional[str]:
     return None
 
 
-def _person_blocks_outbound(person: Person) -> Optional[str]:
+def _person_blocks_outbound(person: Person) -> str | None:
     status_str = _normalize_enum(getattr(person, "status", None))
     if status_str in {"DESIST", "ARCHIVE", "BLOCKED"}:
         return f"person_status_{status_str.lower()}"
@@ -158,7 +157,7 @@ def _person_blocks_outbound(person: Person) -> Optional[str]:
     return None
 
 
-def _touch_conversation_state_after_send(db_session: Session, people_id: int) -> Optional[str]:
+def _touch_conversation_state_after_send(db_session: Session, people_id: int) -> str | None:
     """
     Update conversation state after successful outbound send.
 
@@ -170,7 +169,7 @@ def _touch_conversation_state_after_send(db_session: Session, people_id: int) ->
 
     Phase 1.6.4 Implementation: ConversationState Synchronization
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     conv_state = db_session.query(ConversationState).filter_by(people_id=people_id).first()
     if conv_state is None:
@@ -197,7 +196,7 @@ def _touch_conversation_state_after_send(db_session: Session, people_id: int) ->
     conv_state.conversation_phase = new_phase
     conv_state.next_action = "await_reply"
     conv_state.next_action_date = None
-    conv_state.updated_at = datetime.now(timezone.utc)
+    conv_state.updated_at = datetime.now(UTC)
     db_session.add(conv_state)
 
     logger.debug(
@@ -211,21 +210,21 @@ def _touch_conversation_state_after_send(db_session: Session, people_id: int) ->
     return new_phase
 
 
-def _fetch_approved_drafts(db_session: Session, *, statuses: list[str], max_to_send: Optional[int]) -> list[DraftReply]:
+def _fetch_approved_drafts(db_session: Session, *, statuses: list[str], max_to_send: int | None) -> list[DraftReply]:
     query = db_session.query(DraftReply).filter(DraftReply.status.in_(statuses)).order_by(DraftReply.created_at.asc())
     if max_to_send is not None and max_to_send > 0:
         query = query.limit(max_to_send)
     return query.all()
 
 
-def _get_person_for_draft(db_session: Session, draft: DraftReply) -> tuple[Optional[Person], Optional[str]]:
+def _get_person_for_draft(db_session: Session, draft: DraftReply) -> tuple[Person | None, str | None]:
     person = db_session.query(Person).filter(Person.id == draft.people_id).first()
     if person is None:
         return None, "person_missing"
     return person, None
 
 
-def _get_message_text_for_draft(draft: DraftReply) -> tuple[Optional[str], Optional[str]]:
+def _get_message_text_for_draft(draft: DraftReply) -> tuple[str | None, str | None]:
     from core.draft_content import strip_review_only_content
 
     message_text = strip_review_only_content(draft.content or "").strip()
@@ -234,7 +233,7 @@ def _get_message_text_for_draft(draft: DraftReply) -> tuple[Optional[str], Optio
     return message_text, None
 
 
-def _app_mode_blocks_outbound(person: Person, app_mode: str) -> Optional[str]:
+def _app_mode_blocks_outbound(person: Person, app_mode: str) -> str | None:
     if app_mode == "dry_run":
         return None
 
@@ -244,7 +243,7 @@ def _app_mode_blocks_outbound(person: Person, app_mode: str) -> Optional[str]:
     return decision.reason
 
 
-def _check_duplicate_send(db_session: Session, draft: DraftReply, person_id: int) -> Optional[str]:
+def _check_duplicate_send(db_session: Session, draft: DraftReply, person_id: int) -> str | None:
     """
     Phase 1.6.3: Duplicate Send Prevention
 
@@ -266,7 +265,7 @@ def _check_duplicate_send(db_session: Session, draft: DraftReply, person_id: int
 
     # Guard 2: Check for recent outbound log to same person (idempotency window: 5 minutes)
     idempotency_window = timedelta(minutes=5)
-    cutoff = datetime.now(timezone.utc) - idempotency_window
+    cutoff = datetime.now(UTC) - idempotency_window
 
     recent_outbound = (
         db_session.query(ConversationLog)
@@ -294,7 +293,7 @@ def _gather_send_context(
     db_session: Session,
     draft: DraftReply,
     app_mode: str,
-) -> tuple[Optional[Person], Optional[str], Optional[str], Optional[str]]:
+) -> tuple[Person | None, str | None, str | None, str | None]:
     """Collect pre-send context and detect skip reasons."""
 
     person, person_skip = _get_person_for_draft(db_session, draft)
@@ -373,8 +372,8 @@ def _send_via_orchestrator(
     draft: DraftReply,
     person: Person,
     message_text: str,
-    _existing_conv_id: Optional[str],  # Reserved for future use
-) -> Optional[tuple[str, Optional[str]]]:
+    _existing_conv_id: str | None,  # Reserved for future use
+) -> tuple[str, str | None] | None:
     """
     Try to send via orchestrator if enabled.
 
@@ -425,8 +424,8 @@ def _send_single_approved_draft(
     session_manager: Any,
     draft: DraftReply,
     app_mode: str,
-    send_fn: Callable[[Any, Person, str, Optional[str], str], tuple[str, Optional[str]]],
-) -> tuple[str, Optional[str]]:
+    send_fn: Callable[[Any, Person, str, str | None, str], tuple[str, str | None]],
+) -> tuple[str, str | None]:
     """Send one draft and persist results. Returns (outcome, reason)."""
     person, message_text, existing_conv_id, skip_reason = _gather_send_context(db_session, draft, app_mode)
     if skip_reason:
@@ -467,7 +466,7 @@ def _send_single_approved_draft(
 
     # Phase 1.6.1: Transaction Safety
     # All database updates within a single transaction with proper rollback
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     effective_id = effective_conv_id or existing_conv_id or f"draft_{draft.id}"
 
     try:
@@ -538,9 +537,9 @@ def run_send_approved_drafts(
     *,
     db_session: Session,
     session_manager: Any,
-    max_to_send: Optional[int] = None,
+    max_to_send: int | None = None,
     include_auto_approved: bool = False,
-    send_fn: Callable[[Any, Person, str, Optional[str], str], tuple[str, Optional[str]]] = call_send_message_api,
+    send_fn: Callable[[Any, Person, str, str | None, str], tuple[str, str | None]] = call_send_message_api,
 ) -> SendApprovedDraftsSummary:
     """Core runner implementation (callable from Action wrapper and tests).
 
@@ -610,7 +609,7 @@ def run_send_approved_drafts(
 
 def _handle_draft_outcome(
     outcome: str,
-    reason: Optional[str],
+    reason: str | None,
     summary: SendApprovedDraftsSummary,
     circuit_breaker: SessionCircuitBreaker,
 ) -> None:
@@ -735,8 +734,8 @@ def _test_sends_and_marks_sent() -> bool:
         session.commit()
 
         def fake_send(
-            _sm: Any, _person: Person, _text: str, _conv: Optional[str], _lp: str
-        ) -> tuple[str, Optional[str]]:
+            _sm: Any, _person: Person, _text: str, _conv: str | None, _lp: str
+        ) -> tuple[str, str | None]:
             assert _text == "Hello there", "Review-only content must be stripped before send"
             return SEND_SUCCESS_DRY_RUN, "conv_123"
 
@@ -790,7 +789,7 @@ def _test_skips_desist_people() -> bool:
     session.add(draft)
     session.commit()
 
-    def fake_send(*_: Any, **__: Any) -> tuple[str, Optional[str]]:
+    def fake_send(*_: Any, **__: Any) -> tuple[str, str | None]:
         raise AssertionError("send_fn should not be called for DESIST")
 
     summary = run_send_approved_drafts(

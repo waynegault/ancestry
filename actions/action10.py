@@ -53,13 +53,13 @@ import os
 import re
 import sys
 import time
-from collections.abc import Generator, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from contextlib import contextmanager, redirect_stdout
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from typing import Any, Callable, Optional, cast
+from typing import Any, Optional, cast
 
 # === CORE INFRASTRUCTURE ===
 # from standard_imports import setup_module
@@ -101,10 +101,10 @@ SearchAPIFunc = Callable[[SessionManager, dict[str, Any], int], MatchList]
 class ComparisonConfig:
     """Configuration inputs needed for the GEDCOM/API comparison run."""
 
-    gedcom_path: Optional[Path]
-    reference_person_id_raw: Optional[str]
-    reference_person_name: Optional[str]
-    date_flex: Optional[dict[str, Any]]
+    gedcom_path: Path | None
+    reference_person_id_raw: str | None
+    reference_person_name: str | None
+    date_flex: dict[str, Any] | None
     scoring_weights: dict[str, Any]
     max_display_results: int
 
@@ -154,10 +154,10 @@ from testing.test_framework import mock_logger_context
 class _GedcomCacheState:
     """Manages GEDCOM cache state for tests."""
 
-    cache: Optional[GedcomData] = None
+    cache: GedcomData | None = None
 
 
-def normalize_gedcom_id(value: Optional[str]) -> Optional[str]:
+def normalize_gedcom_id(value: str | None) -> str | None:
     return gedcom_utils.normalize_id(value)
 
 
@@ -170,7 +170,7 @@ FAMILY_INFO_KEYWORDS = (
 )
 
 
-def get_cached_gedcom() -> Optional[GedcomData]:
+def get_cached_gedcom() -> GedcomData | None:
     """Load GEDCOM data once and cache it for all tests"""
     if _GedcomCacheState.cache is None:
         gedcom_path = (
@@ -338,10 +338,10 @@ def _format_test_person_analysis(field_scores: dict[str, int], total_score: floa
 
 
 def _perform_gedcom_search(
-    gedcom_path: Optional[Path],
+    gedcom_path: Path | None,
     criteria: dict[str, Any],
     scoring_weights: dict[str, Any],
-    date_flex: Optional[dict[str, Any]],
+    date_flex: dict[str, Any] | None,
 ) -> tuple[Any, MatchList]:
     """Perform GEDCOM search and return data and matches."""
 
@@ -412,7 +412,7 @@ def _perform_api_search_fallback(
 def _format_table_row(row: Sequence[str], widths: Sequence[int]) -> str:
     """Return padded string for display rows."""
 
-    return " | ".join(col.ljust(width) for col, width in zip(row, widths))
+    return " | ".join(col.ljust(width) for col, width in zip(row, widths, strict=False))
 
 
 def _compute_table_widths(rows: Sequence[Sequence[str]], headers: Sequence[str]) -> list[int]:
@@ -481,7 +481,7 @@ def _display_search_results(gedcom_matches: MatchList, api_matches: MatchList, m
 
 
 def _load_match_helpers_safely() -> tuple[
-    Optional[IDNormalizer], Optional[MatchAnalyzer], Optional[SupplementaryHandler]
+    IDNormalizer | None, MatchAnalyzer | None, SupplementaryHandler | None
 ]:
     try:
         return load_match_analysis_helpers()
@@ -493,10 +493,10 @@ def _load_match_helpers_safely() -> tuple[
 def _display_gedcom_details(
     gedcom_matches: MatchList,
     gedcom_data: Any,
-    reference_person_id_raw: Optional[str],
-    reference_person_name: Optional[str],
-    normalize_id: Optional[IDNormalizer],
-    analyze_top_match_fn: Optional[MatchAnalyzer],
+    reference_person_id_raw: str | None,
+    reference_person_name: str | None,
+    normalize_id: IDNormalizer | None,
+    analyze_top_match_fn: MatchAnalyzer | None,
 ) -> None:
     if not (gedcom_matches and gedcom_data is not None and analyze_top_match_fn):
         return
@@ -518,7 +518,7 @@ def _display_api_details(
     gedcom_matches: MatchList,
     api_matches: MatchList,
     session_manager: SessionManager,
-    supplementary_handler: Optional[SupplementaryHandler],
+    supplementary_handler: SupplementaryHandler | None,
 ) -> None:
     if not (api_matches and not gedcom_matches and supplementary_handler):
         return
@@ -532,8 +532,8 @@ def _display_detailed_match_info(
     gedcom_matches: MatchList,
     api_matches: MatchList,
     gedcom_data: Any,
-    reference_person_id_raw: Optional[str],
-    reference_person_name: Optional[str],
+    reference_person_id_raw: str | None,
+    reference_person_name: str | None,
     session_manager: SessionManager,
 ) -> None:
     """Display detailed information for top match."""
@@ -550,7 +550,7 @@ def _display_detailed_match_info(
     _display_api_details(gedcom_matches, api_matches, session_manager, supplementary_handler)
 
 
-def _collect_comparison_inputs() -> Optional[tuple[ComparisonConfig, dict[str, Any]]]:
+def _collect_comparison_inputs() -> tuple[ComparisonConfig, dict[str, Any]] | None:
     """Load search criteria plus configuration needed for comparison mode."""
 
     try:
@@ -680,7 +680,7 @@ def run_gedcom_then_api_fallback(session_manager: SessionManager, *_: Any) -> bo
 # Import centralized string validation utility
 
 
-def sanitize_input(value: str) -> Optional[str]:
+def sanitize_input(value: str) -> str | None:
     """
     Sanitize user input for safe processing in genealogical searches.
 
@@ -697,7 +697,7 @@ def sanitize_input(value: str) -> Optional[str]:
 from testing.test_utilities import is_valid_year as _is_valid_year
 
 
-def _try_simple_year_parsing(value: str) -> Optional[int]:
+def _try_simple_year_parsing(value: str) -> int | None:
     """Try to parse value as a simple 4-digit year."""
     if value.isdigit():
         year = int(value)
@@ -705,7 +705,7 @@ def _try_simple_year_parsing(value: str) -> Optional[int]:
     return None
 
 
-def _try_dateparser_parsing(value: str) -> Optional[int]:
+def _try_dateparser_parsing(value: str) -> int | None:
     """Try to parse value using dateparser library."""
     try:
         import dateparser
@@ -721,7 +721,7 @@ def _try_dateparser_parsing(value: str) -> Optional[int]:
     return None
 
 
-def _try_regex_year_extraction(value: str) -> Optional[int]:
+def _try_regex_year_extraction(value: str) -> int | None:
     """Try to extract year using regex as fallback."""
     year_match = re.search(r'\b(1[0-9]{3}|20[0-9]{2})\b', value)
     if year_match:
@@ -730,7 +730,7 @@ def _try_regex_year_extraction(value: str) -> Optional[int]:
     return None
 
 
-def get_validated_year_input(prompt: str, default: Optional[int] = None) -> Optional[int]:
+def get_validated_year_input(prompt: str, default: int | None = None) -> int | None:
     """Get and validate a year input with optional default."""
     display_default = f" [{default}]" if default else " [YYYY]"
     value = input(f"{prompt}{display_default}: ").strip()
@@ -772,7 +772,7 @@ def _validate_gedcom_file_path() -> Path:
     return gedcom_file_path_config
 
 
-def _get_reference_person_info() -> tuple[Optional[str], str]:
+def _get_reference_person_info() -> tuple[str | None, str]:
     """Get reference person ID and name from config."""
     reference_person_id_raw = config_schema.reference_person_id if config_schema else None
     reference_person_name = config_schema.reference_person_name if config_schema else "Reference Person"
@@ -802,7 +802,7 @@ def _get_scoring_config() -> tuple[dict[str, Any], dict[str, Any], int]:
     return date_flex, scoring_weights, max_display_results
 
 
-def _log_configuration(gedcom_file_path: Path, reference_person_id: Optional[str], reference_person_name: str) -> None:
+def _log_configuration(gedcom_file_path: Path, reference_person_id: str | None, reference_person_name: str) -> None:
     """Log configuration details."""
     logger.debug(f"Configured TREE_OWNER_NAME: {config_schema.user_name if config_schema else 'Not Set'}")
     logger.debug(f"Configured REFERENCE_PERSON_ID: {reference_person_id}")
@@ -811,9 +811,9 @@ def _log_configuration(gedcom_file_path: Path, reference_person_id: Optional[str
 
 
 def validate_config() -> tuple[
-    Optional[Path],
-    Optional[str],
-    Optional[str],
+    Path | None,
+    str | None,
+    str | None,
     dict[str, Any],
     dict[str, Any],
     int,
@@ -835,7 +835,7 @@ def validate_config() -> tuple[
     )
 
 
-def _check_memory_cache(gedcom_path: Path) -> Optional[GedcomData]:
+def _check_memory_cache(gedcom_path: Path) -> GedcomData | None:
     """Check if GEDCOM is in module-level memory cache."""
     if _GedcomCacheState.cache is not None:
         cached_path = getattr(_GedcomCacheState.cache, 'path', None)
@@ -927,7 +927,7 @@ def load_gedcom_data(gedcom_path: Path) -> GedcomData:
         raise MissingConfigError(f"Failed to load GEDCOM file {gedcom_path.name}: {e}") from e
 
 
-def _create_input_getter(args: Optional[argparse.Namespace]) -> Callable[[str], str]:
+def _create_input_getter(args: argparse.Namespace | None) -> Callable[[str], str]:
     """Create input getter function that handles automated inputs."""
     auto_inputs = getattr(args, "auto_input", None) if args else None
     auto_index = 0
@@ -972,18 +972,18 @@ def _collect_basic_criteria(get_input: Callable[[str], str]) -> dict[str, Any]:
 
 def _create_date_objects(criteria: dict[str, Any]) -> dict[str, Any]:
     """Create date objects from year criteria."""
-    birth_date_obj_crit: Optional[datetime] = None
+    birth_date_obj_crit: datetime | None = None
     if criteria["birth_year"]:
         try:
-            birth_date_obj_crit = datetime(criteria["birth_year"], 1, 1, tzinfo=timezone.utc)
+            birth_date_obj_crit = datetime(criteria["birth_year"], 1, 1, tzinfo=UTC)
         except ValueError:
             logger.warning(f"Cannot create date object for birth year {criteria['birth_year']}.")
             criteria["birth_year"] = None
 
-    death_date_obj_crit: Optional[datetime] = None
+    death_date_obj_crit: datetime | None = None
     if criteria["death_year"]:
         try:
-            death_date_obj_crit = datetime(criteria["death_year"], 1, 1, tzinfo=timezone.utc)
+            death_date_obj_crit = datetime(criteria["death_year"], 1, 1, tzinfo=UTC)
         except ValueError:
             logger.warning(f"Cannot create date object for death year {criteria['death_year']}.")
             criteria["death_year"] = None
@@ -1051,7 +1051,7 @@ def matches_criterion(criterion_name: str, filter_criteria: dict[str, Any], cand
 def matches_year_criterion(
     criterion_name: str,
     filter_criteria: dict[str, Any],
-    candidate_value: Optional[int],
+    candidate_value: int | None,
     year_range: int,
 ) -> bool:
     """Check if a candidate year matches a year criterion within range."""
@@ -1064,7 +1064,7 @@ def calculate_match_score_cached(
     candidate_data: dict[str, Any],
     scoring_weights: Mapping[str, int | float],
     date_flex: dict[str, Any],
-    cache: Optional[dict[CacheKey, MatchScoreResult]] = None,
+    cache: dict[CacheKey, MatchScoreResult] | None = None,
 ) -> MatchScoreResult:
     """Calculate match score with caching for performance."""
     if cache is None:
@@ -1180,7 +1180,7 @@ def _process_individual(
     date_flex: dict[str, Any],
     year_range: int,
     score_cache: dict[CacheKey, MatchScoreResult],
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Process a single individual for filtering and scoring."""
     try:
         extracted_data = _extract_individual_data(indi_data)
@@ -1416,7 +1416,7 @@ def _display_results_table(table_data: list[list[str]], headers: list[str]) -> N
             print(" | ".join(row))
 
 
-def display_top_matches(scored_matches: list[dict[str, Any]], max_results: int) -> Optional[dict[str, Any]]:
+def display_top_matches(scored_matches: list[dict[str, Any]], max_results: int) -> dict[str, Any] | None:
     """Display top matching results and return the top match."""
     print(f"\n=== Top {max_results} Matches Found ===")
 
@@ -1475,7 +1475,7 @@ def display_relatives(gedcom_data: GedcomData, individual: Any) -> None:
     display_family_members(family_data)
 
 
-def _extract_year_from_pattern(years_part: str, pattern: str) -> Optional[int]:
+def _extract_year_from_pattern(years_part: str, pattern: str) -> int | None:
     """Extract year from a specific regex pattern."""
     import re
 
@@ -1488,7 +1488,7 @@ def _extract_year_from_pattern(years_part: str, pattern: str) -> Optional[int]:
     return None
 
 
-def _extract_years_from_range(years_part: str) -> tuple[Optional[int], Optional[int]]:
+def _extract_years_from_range(years_part: str) -> tuple[int | None, int | None]:
     """Extract birth and death years from simple range format (1900-1950)."""
     if "-" not in years_part:
         return None, None
@@ -1508,7 +1508,7 @@ def _extract_years_from_range(years_part: str) -> tuple[Optional[int], Optional[
     return birth_year, death_year
 
 
-def _extract_years_from_name(name: str) -> tuple[str, Optional[int], Optional[int]]:
+def _extract_years_from_name(name: str) -> tuple[str, int | None, int | None]:
     """Extract birth and death years from formatted name string."""
     if "(" not in name or ")" not in name:
         return name, None, None
@@ -1559,8 +1559,8 @@ def _convert_gedcom_relatives_to_standard_format(relatives: list[Any]) -> list[d
 
 
 def _extract_years_from_name_if_missing(
-    display_name: str, birth_year: Optional[int], death_year: Optional[int]
-) -> tuple[str, Optional[int], Optional[int]]:
+    display_name: str, birth_year: int | None, death_year: int | None
+) -> tuple[str, int | None, int | None]:
     """Extract years from name if both birth and death years are missing."""
     if birth_year is None and death_year is None:
         clean_name, by, dy = _extract_years_from_name(display_name)
@@ -1570,10 +1570,10 @@ def _extract_years_from_name_if_missing(
 
 def _supplement_years_from_gedcom(
     gedcom_data: GedcomData,
-    top_match_norm_id: Optional[str],
-    birth_year: Optional[int],
-    death_year: Optional[int],
-) -> tuple[Optional[int], Optional[int]]:
+    top_match_norm_id: str | None,
+    birth_year: int | None,
+    death_year: int | None,
+) -> tuple[int | None, int | None]:
     """Supplement missing years from GEDCOM processed data."""
     if (birth_year is None or death_year is None) and isinstance(top_match_norm_id, str):
         try:
@@ -1591,8 +1591,8 @@ def _supplement_years_from_gedcom(
 def _derive_display_fields(
     gedcom_data: GedcomData,
     top_match: dict[str, Any],
-    top_match_norm_id: Optional[str],
-) -> tuple[str, Optional[int], Optional[int]]:
+    top_match_norm_id: str | None,
+) -> tuple[str, int | None, int | None]:
     """Return (display_name, birth_year, death_year) using layered fallbacks."""
     display_name = top_match.get("full_name_disp", "Unknown")
     birth_year = top_match.get("raw_data", {}).get("birth_year")
@@ -1620,9 +1620,9 @@ def _build_family_data_dict(gedcom_data: GedcomData, indi: Any) -> dict[str, lis
 
 def _compute_unified_path_if_possible(
     gedcom_data: GedcomData,
-    top_match_norm_id: Optional[str],
-    reference_person_id_norm: Optional[str],
-) -> Optional[list[dict[str, Any]]]:
+    top_match_norm_id: str | None,
+    reference_person_id_norm: str | None,
+) -> list[dict[str, Any]] | None:
     if isinstance(top_match_norm_id, str) and isinstance(reference_person_id_norm, str):
         path_ids = fast_bidirectional_bfs(
             top_match_norm_id,
@@ -1646,7 +1646,7 @@ def _compute_unified_path_if_possible(
 def analyze_top_match(
     gedcom_data: GedcomData,
     top_match: dict[str, Any],
-    reference_person_id_norm: Optional[str],
+    reference_person_id_norm: str | None,
     reference_person_name: str,
 ) -> None:
     """Analyze top match and present results with minimal branching."""
@@ -1689,7 +1689,7 @@ def _initialize_analysis() -> tuple[argparse.Namespace, tuple[Any, ...]]:
     return args, config_data
 
 
-def _load_and_validate_gedcom(gedcom_file_path: str) -> Optional[Any]:
+def _load_and_validate_gedcom(gedcom_file_path: str) -> Any | None:
     """Load and validate GEDCOM data."""
     if not gedcom_file_path:
         return None
@@ -1788,7 +1788,7 @@ def main() -> bool:
         return False
 
 
-def _setup_test_environment() -> tuple[Optional[str], Any]:
+def _setup_test_environment() -> tuple[str | None, Any]:
     """Setup test environment and return original GEDCOM path and test suite."""
     import os
     from pathlib import Path
@@ -1810,7 +1810,7 @@ def _setup_test_environment() -> tuple[Optional[str], Any]:
     return original_gedcom, suite
 
 
-def _teardown_test_environment(original_gedcom: Optional[str]) -> None:
+def _teardown_test_environment(original_gedcom: str | None) -> None:
     """Restore original test environment."""
     import os
 
@@ -2945,7 +2945,7 @@ def _test_display_detailed_match_info_invokes_analysis_helpers() -> None:
     analyze_calls: list[tuple[Any, Any, Any, Any]] = []
     supplementary_calls: list[Any] = []
 
-    def normalize(value: Optional[str]) -> str:
+    def normalize(value: str | None) -> str:
         normalize_calls.append(value or "")
         return f"norm-{value}"
 
@@ -2973,7 +2973,7 @@ def _test_display_detailed_match_info_invokes_analysis_helpers() -> None:
 def _test_display_detailed_match_info_invokes_supplementary_when_needed() -> None:
     calls: list[str] = []
 
-    def normalize(value: Optional[str]) -> Optional[str]:
+    def normalize(value: str | None) -> str | None:
         return value
 
     def analyze(*_args: Any, **_kwargs: Any) -> None:

@@ -13,15 +13,15 @@ Sprint 1, Task 2: Implement Context Builder
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Optional, cast
+from datetime import UTC, datetime, timezone
+from typing import Any, cast
 
 from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
 
-def _nonempty_str(value: Any) -> Optional[str]:
+def _nonempty_str(value: Any) -> str | None:
     if isinstance(value, str) and value:
         return value
     return None
@@ -464,7 +464,7 @@ class ContextBuilder:
     - Extracted facts from previous conversations
     """
 
-    def __init__(self, db_session: Session, tree_service: Optional[Any] = None):
+    def __init__(self, db_session: Session, tree_service: Any | None = None):
         """
         Initialize the ContextBuilder.
 
@@ -500,7 +500,7 @@ class ContextBuilder:
             MatchContext with all available information
         """
         context = MatchContext(
-            context_generated_at=datetime.now(timezone.utc).isoformat(),
+            context_generated_at=datetime.now(UTC).isoformat(),
         )
 
         try:
@@ -527,7 +527,7 @@ class ContextBuilder:
         return context
 
     @staticmethod
-    def _resolve_owner_profile_id() -> Optional[str]:
+    def _resolve_owner_profile_id() -> str | None:
         """Best-effort owner profile ID resolution (session manager > config)."""
         try:
             from core.session_utils import get_session_manager
@@ -623,7 +623,7 @@ class ContextBuilder:
         except Exception as exc:
             logger.debug(f"DNA-GEDCOM cross-reference enrichment skipped: {exc}")
 
-    def _build_triangulation_hypothesis(self, person: Any) -> Optional[dict[str, Any]]:
+    def _build_triangulation_hypothesis(self, person: Any) -> dict[str, Any] | None:
         """
         Generate triangulation hypothesis for a DNA match.
 
@@ -678,7 +678,7 @@ class ContextBuilder:
             "notes": hypothesis.notes[:3] if hypothesis.notes else [],  # Limit notes for context size
         }
 
-    def _build_predictive_gaps(self, person: Any) -> Optional[dict[str, Any]]:
+    def _build_predictive_gaps(self, person: Any) -> dict[str, Any] | None:
         """
         Identify research gaps for a DNA match using PredictiveGapDetector.
 
@@ -731,7 +731,7 @@ class ContextBuilder:
             "total_gaps_found": len(gaps),
         }
 
-    def _build_gedcom_intelligence(self, _person: Any) -> Optional[dict[str, Any]]:
+    def _build_gedcom_intelligence(self, _person: Any) -> dict[str, Any] | None:
         """
         Analyze GEDCOM data for gaps, conflicts, and research opportunities.
 
@@ -800,7 +800,7 @@ class ContextBuilder:
 
         return result if len(result) > 1 else None  # Only return if we have findings
 
-    def _build_dna_gedcom_crossref(self, person: Any) -> Optional[dict[str, Any]]:
+    def _build_dna_gedcom_crossref(self, person: Any) -> dict[str, Any] | None:
         """
         Cross-reference DNA match with GEDCOM tree data.
 
@@ -816,7 +816,7 @@ class ContextBuilder:
 
         return self._summarize_crossref_analysis(analysis)
 
-    def _get_crossref_analysis(self, person: Any) -> Optional[dict[str, Any]]:
+    def _get_crossref_analysis(self, person: Any) -> dict[str, Any] | None:
         tree_service = self._ensure_tree_service()
         if not tree_service:
             return None
@@ -846,7 +846,7 @@ class ContextBuilder:
         )
 
     @staticmethod
-    def _summarize_crossref_analysis(analysis: dict[str, Any]) -> Optional[dict[str, Any]]:
+    def _summarize_crossref_analysis(analysis: dict[str, Any]) -> dict[str, Any] | None:
         crossref_matches = analysis.get("cross_reference_matches", [])
         conflicts = analysis.get("conflicts_identified", [])
         verification_opps = analysis.get("verification_opportunities", [])
@@ -1102,7 +1102,7 @@ class ContextBuilder:
                 genealogy["ancestry_tree_relationship_path_truncated"] = True
 
     @staticmethod
-    def _resolve_search_name(person: Any, family_tree: Any) -> Optional[str]:
+    def _resolve_search_name(person: Any, family_tree: Any) -> str | None:
         if family_tree:
             candidate = _nonempty_str(getattr(family_tree, "person_name_in_tree", None))
             if candidate is not None:
@@ -1115,7 +1115,7 @@ class ContextBuilder:
         person: Any,
         family_tree: Any,
         genealogy: dict[str, Any],
-    ) -> Optional[str]:
+    ) -> str | None:
         # IMPORTANT: `Person.uuid` is the Ancestry DNA sample GUID, not a GEDCOM person id.
         # We must resolve a GEDCOM person id (best-effort) before asking TreeQueryService for relationships.
         search_name = self._resolve_search_name(person, family_tree)
@@ -1174,7 +1174,94 @@ from testing.test_utilities import create_standard_test_runner
 
 def _test_module_integrity() -> bool:
     "Test that module can be imported and definitions are valid."
-    return True
+    from unittest.mock import MagicMock
+
+    from testing.test_framework import TestSuite
+
+    suite = TestSuite("Context Builder", "ai/context_builder.py")
+    suite.start_suite()
+
+    def test_match_context_instantiation():
+        ctx = MatchContext()
+        assert ctx.identity == {}
+        assert ctx.genetics == {}
+        assert ctx.genealogy == {}
+        assert ctx.history == {}
+        assert ctx.extracted_facts == {}
+        assert ctx.research == {}
+        assert ctx.context_version == "1.0"
+        return True
+
+    suite.run_test("MatchContext default instantiation", test_match_context_instantiation)
+
+    def test_match_context_to_dict():
+        ctx = MatchContext(identity={"name": "Test"}, genetics={"shared_cm": 100})
+        d = ctx.to_dict()
+        assert isinstance(d, dict)
+        assert d["identity"]["name"] == "Test"
+        assert d["genetics"]["shared_cm"] == 100
+        assert "context_version" in d
+        return True
+
+    suite.run_test("MatchContext.to_dict returns correct dict", test_match_context_to_dict)
+
+    def test_match_context_to_json():
+        ctx = MatchContext(identity={"name": "Test"})
+        j = ctx.to_json()
+        assert isinstance(j, str)
+        assert '"name": "Test"' in j
+        return True
+
+    suite.run_test("MatchContext.to_json returns valid JSON string", test_match_context_to_json)
+
+    def test_match_context_confidence_empty():
+        ctx = MatchContext()
+        assert ctx.calculate_confidence() == 0
+        return True
+
+    suite.run_test("MatchContext.calculate_confidence returns 0 for empty", test_match_context_confidence_empty)
+
+    def test_match_context_confidence_with_data():
+        ctx = MatchContext(
+            identity={"name": "John"},
+            genetics={"shared_cm": 250},
+        )
+        score = ctx.calculate_confidence()
+        assert score == 35, f"Expected 35, got {score}"
+        return True
+
+    suite.run_test("MatchContext.calculate_confidence scores identity+genetics", test_match_context_confidence_with_data)
+
+    def test_context_builder_instantiation():
+        mock_db = MagicMock()
+        cb = ContextBuilder(db_session=mock_db)
+        assert cb._session is mock_db
+        assert cb._tree_service is None
+        assert cb._tree_service_initialized is False
+        return True
+
+    suite.run_test("ContextBuilder instantiates with mock db_session", test_context_builder_instantiation)
+
+    def test_context_builder_with_tree_service():
+        mock_db = MagicMock()
+        mock_tree = MagicMock()
+        cb = ContextBuilder(db_session=mock_db, tree_service=mock_tree)
+        assert cb._tree_service is mock_tree
+        assert cb._tree_service_initialized is True
+        return True
+
+    suite.run_test("ContextBuilder stores provided tree_service", test_context_builder_with_tree_service)
+
+    def test_context_builder_methods_exist():
+        assert hasattr(ContextBuilder, 'build_context')
+        assert hasattr(ContextBuilder, '_ensure_tree_service')
+        assert hasattr(ContextBuilder, '_build_genealogy')
+        assert callable(ContextBuilder.build_context)
+        return True
+
+    suite.run_test("ContextBuilder key methods exist", test_context_builder_methods_exist)
+
+    return suite.finish_suite()
 
 
 def _test_to_prompt_string() -> bool:
@@ -1244,22 +1331,22 @@ def _test_build_genealogy_resolves_gedcom_person_id() -> bool:
 
     class _StubTreeService:
         def __init__(self) -> None:
-            self.find_person_calls: list[tuple[str, Optional[int]]] = []
+            self.find_person_calls: list[tuple[str, int | None]] = []
             self.explain_relationship_calls: list[str] = []
             self.get_common_ancestors_calls: list[str] = []
 
         def find_person(
             self,
             name: str,
-            approx_birth_year: Optional[int] = None,
-            location: Optional[str] = None,
+            approx_birth_year: int | None = None,
+            location: str | None = None,
             max_results: int = 5,
         ) -> Any:
             _ = (location, max_results)
             self.find_person_calls.append((name, approx_birth_year))
             return _StubSearchResult()
 
-        def explain_relationship(self, person_a_id: str, person_b_id: Optional[str] = None) -> Any:
+        def explain_relationship(self, person_a_id: str, person_b_id: str | None = None) -> Any:
             _ = person_b_id
             self.explain_relationship_calls.append(person_a_id)
             return _StubRelResult()
@@ -1300,14 +1387,14 @@ def _test_build_genealogy_skips_when_no_name() -> bool:
         def find_person(
             self,
             name: str,
-            approx_birth_year: Optional[int] = None,
-            location: Optional[str] = None,
+            approx_birth_year: int | None = None,
+            location: str | None = None,
             max_results: int = 5,
         ) -> Any:  # pragma: no cover
             _ = (self, name, approx_birth_year, location, max_results)
             raise AssertionError("find_person should not be called")
 
-        def explain_relationship(self, person_a_id: str, person_b_id: Optional[str] = None) -> Any:  # pragma: no cover
+        def explain_relationship(self, person_a_id: str, person_b_id: str | None = None) -> Any:  # pragma: no cover
             _ = person_b_id
             self.explain_relationship_calls.append(person_a_id)
             raise AssertionError("explain_relationship should not be called")
@@ -1337,14 +1424,14 @@ def _test_build_genealogy_includes_ancestry_tree_fields() -> bool:
         def find_person(
             self,
             name: str,
-            approx_birth_year: Optional[int] = None,
-            location: Optional[str] = None,
+            approx_birth_year: int | None = None,
+            location: str | None = None,
             max_results: int = 5,
         ) -> Any:  # pragma: no cover
             _ = (self, name, approx_birth_year, location, max_results)
             raise AssertionError("find_person should not be called")
 
-        def explain_relationship(self, person_a_id: str, person_b_id: Optional[str] = None) -> Any:  # pragma: no cover
+        def explain_relationship(self, person_a_id: str, person_b_id: str | None = None) -> Any:  # pragma: no cover
             _ = (self, person_a_id, person_b_id)
             raise AssertionError("explain_relationship should not be called")
 

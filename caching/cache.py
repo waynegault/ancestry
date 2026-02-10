@@ -65,10 +65,10 @@ import hashlib
 import shutil
 import time
 from collections import deque
-from collections.abc import Iterable, Sized
+from collections.abc import Callable, Iterable, Sized
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Optional, ParamSpec, TypeVar, cast
+from typing import Any, ParamSpec, TypeVar, cast
 
 # Type variables for decorators
 P = ParamSpec('P')
@@ -121,7 +121,7 @@ except Exception as e:
 
 # Step 3: Initialize the DiskCache instance with aggressive settings
 # This instance is shared across modules that import 'cache from cache'.
-cache: Optional[Cache] = None  # Initialize as None
+cache: Cache | None = None  # Initialize as None
 try:
     # Aggressive cache settings for better performance
     # 2GB size limit for large GEDCOM files and API responses
@@ -180,16 +180,16 @@ class BaseCacheModule(CacheInterface):
     def __init__(self) -> None:
         self._module_name = "base_cache"
         self.module_name = self._module_name  # Legacy attribute for consumers expecting `module_name`
-        self._last_stats: Optional[dict[str, Any]] = None
-        self._last_warm_timestamp: Optional[float] = None
-        self._last_clear_timestamp: Optional[float] = None
-        self._last_access_time: Optional[float] = None
-        self._last_write_time: Optional[float] = None
+        self._last_stats: dict[str, Any] | None = None
+        self._last_warm_timestamp: float | None = None
+        self._last_clear_timestamp: float | None = None
+        self._last_access_time: float | None = None
+        self._last_write_time: float | None = None
         self._error_count: int = 0
 
     # === CacheBackend Protocol Methods ===
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """Retrieve a value from the cache (CacheBackend protocol)."""
         if cache is None:
             return None
@@ -205,7 +205,7 @@ class BaseCacheModule(CacheInterface):
             self._error_count += 1
             return None
 
-    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+    def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
         """Store a value in the cache (CacheBackend protocol)."""
         if cache is None:
             return False
@@ -363,10 +363,10 @@ class DiskCacheBackendAdapter(CacheBackend):
     def __init__(self, module: BaseCacheModule) -> None:
         self._module = module
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         return self._module.get(key)
 
-    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> bool:
+    def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
         return self._module.set(key, value, ttl)
 
     def delete(self, key: str) -> bool:
@@ -394,7 +394,7 @@ CacheFactory.register_backend("disk_cache", DiskCacheBackendAdapter(base_cache_m
 
 def _generate_cache_key(
     cache_key_prefix: str, func: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any], ignore_args: bool
-) -> Optional[str]:
+) -> str | None:
     """Generate cache key for function call."""
     if ignore_args:
         logger.debug(f"Using ignore_args=True, cache key: '{cache_key_prefix}'")
@@ -429,7 +429,7 @@ def _try_get_cached_value(cache_key: str) -> tuple[bool, Any]:
         return False, None
 
 
-def _try_cache_result(cache_key: str, result: Any, expire: Optional[int]) -> None:
+def _try_cache_result(cache_key: str, result: Any, expire: int | None) -> None:
     """Try to cache the result."""
     if cache is None:
         logger.warning("Cache not initialized - skipping cache write")
@@ -452,7 +452,7 @@ def _try_cache_result(cache_key: str, result: Any, expire: Optional[int]) -> Non
 
 def cache_result(
     cache_key_prefix: str,
-    expire: Optional[int] = None,  # Time in seconds, overrides Cache default if set
+    expire: int | None = None,  # Time in seconds, overrides Cache default if set
     ignore_args: bool = False,  # Use only prefix as key if True
 ) -> Callable[..., Any]:
     """
@@ -537,7 +537,7 @@ def _try_clear_via_api() -> bool:
 
 def _reinitialize_cache() -> bool:
     """Reinitialize the cache object after manual directory removal."""
-    global cache  # pylint: disable=global-statement  # noqa: PLW0603
+    global cache  # pylint: disable=global-statement
     try:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
         logger.debug(f"Recreated empty cache directory: {CACHE_DIR}")
@@ -658,7 +658,7 @@ def get_unified_cache_key(module: str, operation: str, *args: Any, **kwargs: Any
     return key_string
 
 
-def invalidate_related_caches(pattern: str, exclude_modules: Optional[list[str]] = None) -> dict[str, int]:
+def invalidate_related_caches(pattern: str, exclude_modules: list[str] | None = None) -> dict[str, int]:
     """
     Invalidate caches across multiple modules based on pattern.
 
@@ -1040,7 +1040,7 @@ def get_cache_stats() -> dict[str, Any]:
 def cache_file_based_on_mtime(
     cache_key_prefix: str,
     file_path: str,
-    expire: Optional[int] = None,
+    expire: int | None = None,
 ) -> Callable[..., Any]:
     """
     Enhanced decorator that caches based on file modification time.
@@ -1104,7 +1104,7 @@ def cache_file_based_on_mtime(
 # End of cache_file_based_on_mtime
 
 
-def warm_cache_with_data(cache_key: str, data: Any, expire: Optional[int] = None) -> bool:
+def warm_cache_with_data(cache_key: str, data: Any, expire: int | None = None) -> bool:
     """
     Preloads cache with data (cache warming).
 
@@ -1146,7 +1146,7 @@ class IntelligentCacheWarmer:
         self.predictive_cache_keys: set[str] = set()
         self.dependency_graph: dict[str, list[str]] = {}
 
-    def record_cache_access(self, cache_key: str, hit: bool, access_time: Optional[float] = None):
+    def record_cache_access(self, cache_key: str, hit: bool, access_time: float | None = None):
         """Record cache access patterns for learning."""
         if access_time is None:
             access_time = time.time()
@@ -1206,7 +1206,7 @@ class IntelligentCacheWarmer:
         candidates.sort(key=lambda x: x[1], reverse=True)
         return [key for key, score in candidates[:max_candidates] if score > 10]
 
-    def warm_predictive_cache(self, session_manager: Optional[Any] = None) -> int:
+    def warm_predictive_cache(self, session_manager: Any | None = None) -> int:
         """Warm cache with predictively useful data."""
         warmed_count = 0
         candidates = self.get_warming_candidates()
@@ -1241,7 +1241,7 @@ class IntelligentCacheWarmer:
         pattern = self.usage_patterns.get(cache_key, {})
         return pattern.get("access_frequency", 0) > 1.0  # More than 1 access per hour
 
-    def _regenerate_cache_data(self, cache_key: str, session_manager: Optional[Any] = None) -> bool:
+    def _regenerate_cache_data(self, cache_key: str, session_manager: Any | None = None) -> bool:
         """Regenerate cache data for a specific key."""
         try:
             # For genealogical data keys, try to regenerate
@@ -1280,7 +1280,7 @@ class IntelligentCacheWarmer:
         return False
 
     @staticmethod
-    def _warm_api_data(cache_key: str, session_manager: Optional[Any] = None) -> bool:
+    def _warm_api_data(cache_key: str, session_manager: Any | None = None) -> bool:
         """Warm API-related cache data."""
         try:
             # Warm with API configuration data

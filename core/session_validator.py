@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from __future__ import annotations
 
 """
 Session Validator - Handles session validation and readiness checks.
@@ -7,6 +6,8 @@ Session Validator - Handles session validation and readiness checks.
 This module extracts session validation functionality from the monolithic
 SessionManager class to provide a clean separation of concerns.
 """
+
+from __future__ import annotations
 
 # === CORE INFRASTRUCTURE ===
 import sys
@@ -24,8 +25,9 @@ logger = logging.getLogger(__name__)
 
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 # === STANDARD LIBRARY IMPORTS ===
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from collections.abc import Callable
+from datetime import UTC, datetime, timezone
+from typing import TYPE_CHECKING, Any
 
 # === THIRD-PARTY IMPORTS ===
 from selenium.common.exceptions import WebDriverException
@@ -56,7 +58,7 @@ class SessionValidator:
 
     def __init__(self) -> None:
         """Initialize the SessionValidator."""
-        self.last_js_error_check: datetime = datetime.now(timezone.utc)
+        self.last_js_error_check: datetime = datetime.now(UTC)
         logger.debug("SessionValidator initialized")
 
     def _perform_all_checks(
@@ -64,7 +66,7 @@ class SessionValidator:
         browser_manager: Any,
         api_manager: Any,
         session_manager: Any,
-        action_name: Optional[str],
+        action_name: str | None,
         skip_csrf: bool,
         attempt: int,
     ) -> tuple[bool, str]:
@@ -101,7 +103,7 @@ class SessionValidator:
         browser_manager: Any,
         api_manager: Any,
         session_manager: Any,
-        action_name: Optional[str],
+        action_name: str | None,
     ) -> tuple[bool, str]:
         """Validate browser cookies and synchronize them to API sessions."""
         cookies_success, cookies_error = self._check_essential_cookies(browser_manager, action_name)
@@ -161,7 +163,7 @@ class SessionValidator:
         browser_manager: Any,
         api_manager: Any,
         session_manager: Any,
-        action_name: Optional[str] = None,
+        action_name: str | None = None,
         max_attempts: int = 3,
         skip_csrf: bool = False,
     ) -> bool:
@@ -215,7 +217,7 @@ class SessionValidator:
 
     def _check_login_and_attempt_relogin(
         self, browser_manager: Any, session_manager: Any, attempt: int
-    ) -> tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """
         Check login status and attempt relogin if needed.
 
@@ -295,7 +297,7 @@ class SessionValidator:
 
     def _process_login_result(
         self, login_result: Any, browser_manager: Any, session_manager: Any
-    ) -> tuple[bool, Optional[str]]:
+    ) -> tuple[bool, str | None]:
         """Interpret login_status result and perform relogin if necessary."""
         if login_result is True:
             logger.debug("Login status check: User is logged in.")
@@ -397,7 +399,7 @@ class SessionValidator:
             return False
 
     @staticmethod
-    def _should_skip_cookie_check(action_name: Optional[str]) -> tuple[bool, Optional[str]]:
+    def _should_skip_cookie_check(action_name: str | None) -> tuple[bool, str | None]:
         """Determine if cookie check should be skipped for this action."""
         if not action_name:
             return False, None
@@ -440,8 +442,8 @@ class SessionValidator:
     def _check_essential_cookies(
         self,
         browser_manager: Any,
-        action_name: Optional[str] = None,
-    ) -> tuple[bool, Optional[str]]:
+        action_name: str | None = None,
+    ) -> tuple[bool, str | None]:
         """
         Check for essential cookies.
 
@@ -491,8 +493,8 @@ class SessionValidator:
     def _sync_cookies_to_requests(
         browser_manager: Any,
         api_manager: Any,
-        session_manager: Optional[Any] = None,
-    ) -> tuple[bool, Optional[str]]:
+        session_manager: Any | None = None,
+    ) -> tuple[bool, str | None]:
         """
         Sync cookies from browser to API requests session.
 
@@ -521,7 +523,7 @@ class SessionValidator:
             return False, error_msg
 
     @staticmethod
-    def _check_csrf_token(api_manager: Any) -> tuple[bool, Optional[str]]:
+    def _check_csrf_token(api_manager: Any) -> tuple[bool, str | None]:
         """
         Check and retrieve CSRF token if needed.
         Uses smart caching to avoid repeated fetches.
@@ -577,7 +579,7 @@ class SessionValidator:
     @staticmethod
     def verify_login_status(
         api_manager: Any,
-        session_manager: Optional[Any] = None,
+        session_manager: Any | None = None,
     ) -> bool:
         """
         Verify login status using multiple methods.

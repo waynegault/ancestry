@@ -32,7 +32,18 @@ from testing.test_utilities import create_standard_test_runner
 
 
 def _test_module_integrity() -> bool:
-    "Test that module can be imported and definitions are valid."
+    "Test that all caching submodules are importable."
+    missing: list[str] = []
+    pkg = __package__ or __name__
+    for name in _SUBMODULES:
+        try:
+            import importlib
+            importlib.import_module(f"{pkg}.{name}")
+        except ImportError as exc:
+            missing.append(f"{name}: {exc}")
+    if missing:
+        print(f"  FAIL  {pkg}: {', '.join(missing)}")
+        return False
     return True
 
 

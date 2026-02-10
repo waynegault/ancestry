@@ -26,9 +26,9 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.orm import Session
 
@@ -101,8 +101,8 @@ class TreeUpdateRequest:
     operation: TreeOperationType
     tree_id: str
     person_id: str
-    fact_type: Optional[FactTypeEnum] = None
-    suggested_fact_id: Optional[int] = None
+    fact_type: FactTypeEnum | None = None
+    suggested_fact_id: int | None = None
     data: dict[str, Any] = field(default_factory=dict)
 
 
@@ -114,9 +114,9 @@ class TreeUpdateResponse:
     operation: TreeOperationType
     person_id: str
     message: str
-    api_response: Optional[dict[str, Any]] = None
-    error_details: Optional[str] = None
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    api_response: dict[str, Any] | None = None
+    error_details: str | None = None
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 # =============================================================================
@@ -146,8 +146,8 @@ class TreeUpdateService:
             session_manager: Active SessionManager with authenticated session
         """
         self.session_manager = session_manager
-        self._user_id: Optional[str] = None
-        self._default_tree_id: Optional[str] = None
+        self._user_id: str | None = None
+        self._default_tree_id: str | None = None
 
     @property
     def user_id(self) -> str:
@@ -205,9 +205,9 @@ class TreeUpdateService:
         self,
         url: str,
         method: str = "POST",
-        data: Optional[dict[str, Any]] = None,
+        data: dict[str, Any] | None = None,
         content_type: str = "application/json",
-    ) -> tuple[bool, Optional[dict[str, Any]], Optional[str]]:
+    ) -> tuple[bool, dict[str, Any] | None, str | None]:
         """
         Make an authenticated API request.
 
@@ -374,7 +374,7 @@ class TreeUpdateService:
         source_person_id: str,
         relationship_type: str,
         new_person_data: dict[str, str],
-        parent_set: Optional[dict[str, str]] = None,
+        parent_set: dict[str, str] | None = None,
         source_gender: str = "Unknown",
     ) -> TreeUpdateResponse:
         """
@@ -449,7 +449,7 @@ class TreeUpdateService:
         target_person_id: str,
         relationship_type: str,
         target_person_info: dict[str, str],
-        parent_set: Optional[dict[str, Any]] = None,
+        parent_set: dict[str, Any] | None = None,
     ) -> TreeUpdateResponse:
         """
         Link an existing person in the tree as a relationship.
@@ -870,6 +870,491 @@ def _test_tree_update_response_creation() -> None:
     assert resp.person_id == "12345"
 
 
+def _test_update_person_builds_correct_payload() -> None:
+    """Test update_person constructs the correct API payload."""
+    from unittest.mock import MagicMock, patch
+
+    mock_sm = MagicMock()
+    mock_sm.my_profile_id = "USER_123"
+    mock_sm.my_uuid = "UUID_123"
+    service = TreeUpdateService(mock_sm)
+
+    # Capture what _make_api_request receives
+    with patch.object(service, "_make_api_request", return_value=(True, {"ok": True}, None)) as mock_req:
+        result = service.update_person(
+            tree_id="TREE_1",
+            person_id="PERSON_2",
+            updates={"bdate": "1900-01-01", "bplace": "London"},
+            gender="Male",
+        )
+
+    assert result.result == TreeUpdateResult.SUCCESS, f"Expected SUCCESS, got {result.result}"
+    assert result.operation == TreeOperationType.UPDATE_PERSON
+    assert result.person_id == "PERSON_2"
+
+    # Verify the API was called with correct payload structure
+    mock_req.assert_called_once()
+    call_args = mock_req.call_args
+    url = call_args[0][0]
+    payload = call_args[0][2]
+
+    assert "updatePerson" in url, f"URL should contain 'updatePerson', got {url}"
+    assert "TREE_1" in url, "URL should contain tree_id"
+    assert "PERSON_2" in url, "URL should contain person_id"
+    assert payload["person"]["personId"] == "PERSON_2"
+    assert payload["person"]["treeId"] == "TREE_1"
+    assert payload["person"]["gender"] == "Male"
+    assert payload["values"]["bdate"] == "1900-01-01"
+    assert payload["values"]["bplace"] == "London"
+
+
+def _test_add_fact_builds_correct_payload() -> None:
+    """Test add_fact constructs the correct API payload."""
+    from unittest.mock import MagicMock, patch
+
+    mock_sm = MagicMock()
+    mock_sm.my_profile_id = "USER_123"
+    service = TreeUpdateService(mock_sm)
+
+    with patch.object(service, "_make_api_request", return_value=(True, {"ok": True}, None)) as mock_req:
+        result = service.add_fact(
+            tree_id="TREE_1",
+            person_id="PERSON_2",
+            event_type="death",
+            date="1975-03-15",
+            location="Manchester, England",
+            description="Died peacefully",
+        )
+
+    assert result.result == TreeUpdateResult.SUCCESS
+    assert result.operation == TreeOperationType.ADD_FACT
+    assert "death" in result.message.lower()
+
+    mock_req.assert_called_once()
+    call_args = mock_req.call_args
+    url = call_args[0][0]
+    payload = call_args[0][2]
+
+    assert "factedit" in url, f"URL should contain 'factedit', got {url}"
+    assert payload["eventType"] == "death"
+    assert payload["date"] == "1975-03-15"
+    assert payload["location"] == "Manchester, England"
+    assert payload["description"] == "Died peacefully"
+    assert payload["assertionId"] == "0", "New fact should use assertionId=0"
+
+
+def _test_update_person_handles_api_failure() -> None:
+    """Test update_person returns API_ERROR on failure."""
+    from unittest.mock import MagicMock, patch
+
+    mock_sm = MagicMock()
+    mock_sm.my_profile_id = "USER_123"
+    service = TreeUpdateService(mock_sm)
+
+    with patch.object(service, "_make_api_request", return_value=(False, None, "Server error 500")):
+        result = service.update_person(
+            tree_id="TREE_1",
+            person_id="PERSON_2",
+            updates={"bdate": "1900"},
+        )
+
+    assert result.result == TreeUpdateResult.API_ERROR, f"Expected API_ERROR, got {result.result}"
+    assert result.error_details == "Server error 500"
+    assert result.person_id == "PERSON_2"
+
+
+def _test_apply_suggested_fact_rejects_non_approved() -> None:
+    """Test apply_suggested_fact validates status is APPROVED."""
+    from unittest.mock import MagicMock
+
+    mock_sm = MagicMock()
+    mock_sm.my_profile_id = "USER_123"
+    service = TreeUpdateService(mock_sm)
+
+    mock_db_session = MagicMock()
+    mock_fact = MagicMock()
+    mock_fact.status = FactStatusEnum.PENDING
+    mock_fact.people_id = 42
+
+    result = service.apply_suggested_fact(mock_db_session, mock_fact, "TREE_1")
+
+    assert result.result == TreeUpdateResult.VALIDATION_ERROR
+    assert "APPROVED" in result.message
+
+
+def _test_build_url_includes_user() -> None:
+    """Test _build_url constructs correct URLs with and without user ID."""
+    from unittest.mock import MagicMock
+
+    mock_sm = MagicMock()
+    mock_sm.my_profile_id = "USER_42"
+    service = TreeUpdateService(mock_sm)
+
+    url_with_user = service._build_url("updatePerson", "TREE_1", "PERSON_2", include_user=True)
+    assert "USER_42" in url_with_user, "URL should include user ID"
+    assert "TREE_1" in url_with_user
+    assert "PERSON_2" in url_with_user
+    assert "updatePerson" in url_with_user
+
+    url_without_user = service._build_url("factedit", "TREE_1", "PERSON_2", include_user=False)
+    assert "USER_42" not in url_without_user, "URL should not include user ID"
+    assert "TREE_1" in url_without_user
+
+
+def _test_service_instantiation() -> None:
+    """Test TreeUpdateService can be instantiated with a mock SessionManager."""
+    from unittest.mock import MagicMock
+
+    mock_sm = MagicMock()
+    mock_sm.my_profile_id = "USER_99"
+    mock_sm.my_uuid = "UUID_99"
+    service = TreeUpdateService(mock_sm)
+
+    assert service.session_manager is mock_sm, "session_manager should be stored"
+    assert service._user_id is None, "_user_id should start as None (lazy)"
+    assert service._default_tree_id is None, "_default_tree_id should start as None"
+    # Verify lazy user_id resolution
+    assert service.user_id == "USER_99", "user_id property should resolve from my_profile_id"
+
+
+def _test_service_method_signatures() -> None:
+    """Test TreeUpdateService has expected methods with correct signatures."""
+    import inspect
+    from unittest.mock import MagicMock
+
+    mock_sm = MagicMock()
+    service = TreeUpdateService(mock_sm)
+
+    # Verify key public methods exist
+    expected_methods = [
+        "update_person",
+        "add_fact",
+        "add_person_with_relationship",
+        "link_existing_person",
+        "remove_relationship",
+        "change_relationship_type",
+        "apply_suggested_fact",
+    ]
+    for method_name in expected_methods:
+        assert hasattr(service, method_name), f"Missing method: {method_name}"
+        assert callable(getattr(service, method_name)), f"{method_name} should be callable"
+
+    # Verify update_person signature
+    sig = inspect.signature(service.update_person)
+    params = list(sig.parameters.keys())
+    assert "tree_id" in params, "update_person should accept tree_id"
+    assert "person_id" in params, "update_person should accept person_id"
+    assert "updates" in params, "update_person should accept updates"
+
+    # Verify add_fact signature
+    sig = inspect.signature(service.add_fact)
+    params = list(sig.parameters.keys())
+    assert "event_type" in params, "add_fact should accept event_type"
+    assert "date" in params, "add_fact should accept date"
+    assert "location" in params, "add_fact should accept location"
+
+    # Verify add_person_with_relationship signature
+    sig = inspect.signature(service.add_person_with_relationship)
+    params = list(sig.parameters.keys())
+    assert "relationship_type" in params, "add_person_with_relationship should accept relationship_type"
+    assert "new_person_data" in params, "add_person_with_relationship should accept new_person_data"
+
+
+def _test_add_person_with_relationship_spouse_payload() -> None:
+    """Test add_person_with_relationship builds correct payload for Spouse."""
+    from unittest.mock import MagicMock, patch
+
+    mock_sm = MagicMock()
+    mock_sm.my_profile_id = "USER_123"
+    service = TreeUpdateService(mock_sm)
+
+    new_person = {
+        "fname": "Jane",
+        "lname": "Doe",
+        "genderRadio": "Female",
+        "statusRadio": "Deceased",
+        "bdate": "1850-06-15",
+        "bplace": "Liverpool",
+    }
+
+    with patch.object(service, "_make_api_request", return_value=(True, {"personId": "NEW_99"}, None)) as mock_req:
+        result = service.add_person_with_relationship(
+            tree_id="TREE_1",
+            source_person_id="PERSON_2",
+            relationship_type="Spouse",
+            new_person_data=new_person,
+            source_gender="Male",
+        )
+
+    assert result.result == TreeUpdateResult.SUCCESS
+    assert result.operation == TreeOperationType.ADD_PERSON
+    assert result.person_id == "NEW_99", "Should use personId from API response"
+    assert "Jane" in result.message
+
+    mock_req.assert_called_once()
+    call_args = mock_req.call_args
+    url = call_args[0][0]
+    payload = call_args[0][2]
+
+    assert "addperson" in url, f"URL should contain 'addperson', got {url}"
+    assert payload["type"] == "Spouse"
+    assert payload["person"]["personId"] == "PERSON_2"
+    assert payload["person"]["gender"] == "Male"
+    assert payload["values"]["fname"] == "Jane"
+    assert payload["values"]["lname"] == "Doe"
+    assert payload["values"]["genderRadio"] == "Female"
+    assert payload["values"]["statusRadio"] == "Deceased"
+    assert payload["values"]["bdate"] == "1850-06-15"
+    assert payload["values"]["spousalRelationship"] == "Spouse"
+
+
+def _test_add_person_with_relationship_child_payload() -> None:
+    """Test add_person_with_relationship builds correct payload for Child with parentSet."""
+    from unittest.mock import MagicMock, patch
+
+    mock_sm = MagicMock()
+    mock_sm.my_profile_id = "USER_123"
+    service = TreeUpdateService(mock_sm)
+
+    new_person = {"fname": "Tommy", "lname": "Smith"}
+    parent_set = {"fatherId": "P_FATHER", "motherId": "P_MOTHER"}
+
+    with patch.object(service, "_make_api_request", return_value=(True, {"personId": "CHILD_1"}, None)) as mock_req:
+        result = service.add_person_with_relationship(
+            tree_id="TREE_1",
+            source_person_id="PERSON_2",
+            relationship_type="Child",
+            new_person_data=new_person,
+            parent_set=parent_set,
+        )
+
+    assert result.result == TreeUpdateResult.SUCCESS
+    mock_req.assert_called_once()
+    payload = mock_req.call_args[0][2]
+
+    assert payload["type"] == "Child"
+    assert payload["values"]["parentSet"] == parent_set
+    assert payload["values"]["fname"] == "Tommy"
+    # Spouse-specific fields should NOT be present
+    assert "spousalRelationship" not in payload["values"]
+
+
+def _test_add_person_with_relationship_api_failure() -> None:
+    """Test add_person_with_relationship returns API_ERROR on failure."""
+    from unittest.mock import MagicMock, patch
+
+    mock_sm = MagicMock()
+    mock_sm.my_profile_id = "USER_123"
+    service = TreeUpdateService(mock_sm)
+
+    with patch.object(service, "_make_api_request", return_value=(False, None, "Timeout")):
+        result = service.add_person_with_relationship(
+            tree_id="TREE_1",
+            source_person_id="PERSON_2",
+            relationship_type="Father",
+            new_person_data={"fname": "John"},
+        )
+
+    assert result.result == TreeUpdateResult.API_ERROR
+    assert result.person_id == "PERSON_2", "On failure, should return source_person_id"
+    assert result.error_details == "Timeout"
+
+
+def _test_link_existing_person_payload() -> None:
+    """Test link_existing_person constructs correct API payload."""
+    from unittest.mock import MagicMock, patch
+
+    mock_sm = MagicMock()
+    mock_sm.my_profile_id = "USER_123"
+    service = TreeUpdateService(mock_sm)
+
+    target_info = {
+        "name": "Mary Jones",
+        "birth": "1820",
+        "death": "1890",
+        "gender": "Female",
+    }
+
+    with patch.object(service, "_make_api_request", return_value=(True, {"ok": True}, None)) as mock_req:
+        result = service.link_existing_person(
+            tree_id="TREE_1",
+            source_person_id="PERSON_2",
+            target_person_id="12345",
+            relationship_type="Mother",
+            target_person_info=target_info,
+        )
+
+    assert result.result == TreeUpdateResult.SUCCESS
+    assert result.operation == TreeOperationType.LINK_PERSON
+    assert result.person_id == "12345"
+    assert "Mary Jones" in result.message
+
+    mock_req.assert_called_once()
+    payload = mock_req.call_args[0][2]
+
+    assert payload["type"] == "Mother"
+    apm = payload["values"]["apmFindExistingPerson"]
+    assert apm["name"] == "Mary Jones"
+    assert apm["birth"] == "1820"
+    assert apm["death"] == "1890"
+    assert apm["PID"] == 12345, "PID should be converted to int"
+    assert apm["genderIconType"] == "Female"
+
+
+def _test_remove_relationship_payload() -> None:
+    """Test remove_relationship constructs correct URL and payload."""
+    from unittest.mock import MagicMock, patch
+
+    mock_sm = MagicMock()
+    mock_sm.my_profile_id = "USER_123"
+    service = TreeUpdateService(mock_sm)
+
+    with patch.object(service, "_make_api_request", return_value=(True, {"ok": True}, None)) as mock_req:
+        result = service.remove_relationship(
+            tree_id="TREE_1",
+            source_person_id="PERSON_2",
+            related_person_id="PERSON_5",
+            relationship_type="C",
+            parent_type="M",
+        )
+
+    assert result.result == TreeUpdateResult.SUCCESS
+    assert result.operation == TreeOperationType.REMOVE_RELATIONSHIP
+    assert "PERSON_5" in result.message
+
+    mock_req.assert_called_once()
+    url = mock_req.call_args[0][0]
+    payload = mock_req.call_args[0][2]
+
+    assert "relationship" in url
+    assert "PERSON_5" in url
+    assert "removerelationship" in url
+    assert payload["type"] == "C"
+    assert payload["parentType"] == "M"
+
+
+def _test_change_relationship_type_payload() -> None:
+    """Test change_relationship_type constructs correct URL and payload."""
+    from unittest.mock import MagicMock, patch
+
+    mock_sm = MagicMock()
+    mock_sm.my_profile_id = "USER_123"
+    service = TreeUpdateService(mock_sm)
+
+    with patch.object(service, "_make_api_request", return_value=(True, {"ok": True}, None)) as mock_req:
+        result = service.change_relationship_type(
+            tree_id="TREE_1",
+            source_person_id="PERSON_2",
+            related_person_id="PERSON_7",
+            new_modifier="spu",
+            original_modifier="sps",
+            relationship_type="W",
+        )
+
+    assert result.result == TreeUpdateResult.SUCCESS
+    assert result.operation == TreeOperationType.CHANGE_RELATIONSHIP
+    assert "sps" in result.message and "spu" in result.message
+
+    mock_req.assert_called_once()
+    url = mock_req.call_args[0][0]
+    payload = mock_req.call_args[0][2]
+
+    assert "changerelationship" in url
+    assert "PERSON_7" in url
+    assert payload["modifier"] == "spu"
+    assert payload["originalModifier"] == "sps"
+    assert payload["type"] == "W"
+    assert payload["pty"] == -1
+
+
+def _test_apply_vital_fact_routes_birth() -> None:
+    """Test _apply_vital_fact correctly routes birth facts to update_person."""
+    from unittest.mock import MagicMock, patch
+
+    mock_sm = MagicMock()
+    mock_sm.my_profile_id = "USER_123"
+    service = TreeUpdateService(mock_sm)
+
+    with patch.object(service, "update_person") as mock_update:
+        mock_update.return_value = TreeUpdateResponse(
+            result=TreeUpdateResult.SUCCESS,
+            operation=TreeOperationType.UPDATE_PERSON,
+            person_id="P1",
+            message="ok",
+        )
+        service._apply_vital_fact("P1", "TREE_1", FactTypeEnum.BIRTH, "1850-03-20|London")
+
+    mock_update.assert_called_once()
+    call_args = mock_update.call_args
+    assert call_args[0][0] == "TREE_1"
+    assert call_args[0][1] == "P1"
+    updates = call_args[0][2]
+    assert updates["bdate"] == "1850-03-20"
+    assert updates["bplace"] == "London"
+
+
+def _test_apply_vital_fact_routes_death() -> None:
+    """Test _apply_vital_fact correctly routes death facts with ddate/dplace keys."""
+    from unittest.mock import MagicMock, patch
+
+    mock_sm = MagicMock()
+    mock_sm.my_profile_id = "USER_123"
+    service = TreeUpdateService(mock_sm)
+
+    with patch.object(service, "update_person") as mock_update:
+        mock_update.return_value = TreeUpdateResponse(
+            result=TreeUpdateResult.SUCCESS,
+            operation=TreeOperationType.UPDATE_PERSON,
+            person_id="P1",
+            message="ok",
+        )
+        service._apply_vital_fact("P1", "TREE_1", FactTypeEnum.DEATH, "1920-11-05|Manchester")
+
+    updates = mock_update.call_args[0][2]
+    assert "ddate" in updates, "Death fact should use ddate key"
+    assert "dplace" in updates, "Death fact should use dplace key"
+    assert updates["ddate"] == "1920-11-05"
+    assert updates["dplace"] == "Manchester"
+
+
+def _test_apply_vital_fact_empty_value() -> None:
+    """Test _apply_vital_fact returns VALIDATION_ERROR for empty value."""
+    from unittest.mock import MagicMock
+
+    mock_sm = MagicMock()
+    mock_sm.my_profile_id = "USER_123"
+    service = TreeUpdateService(mock_sm)
+
+    result = service._apply_vital_fact("P1", "TREE_1", FactTypeEnum.BIRTH, "|")
+    assert result.result == TreeUpdateResult.VALIDATION_ERROR
+    assert "No valid" in result.message
+
+
+def _test_apply_general_fact_parses_value() -> None:
+    """Test _apply_general_fact parses pipe-separated value and calls add_fact."""
+    from unittest.mock import MagicMock, patch
+
+    mock_sm = MagicMock()
+    mock_sm.my_profile_id = "USER_123"
+    service = TreeUpdateService(mock_sm)
+
+    with patch.object(service, "add_fact") as mock_add:
+        mock_add.return_value = TreeUpdateResponse(
+            result=TreeUpdateResult.SUCCESS,
+            operation=TreeOperationType.ADD_FACT,
+            person_id="P1",
+            message="ok",
+        )
+        service._apply_general_fact("P1", "TREE_1", "residence", "1900|London|Census record")
+
+    mock_add.assert_called_once_with(
+        "TREE_1", "P1", "residence",
+        date="1900",
+        location="London",
+        description="Census record",
+    )
+
+
 def module_tests() -> bool:
     """Module-specific tests for TreeUpdateService."""
     suite = TestSuite("TreeUpdateService", "api/tree_update.py")
@@ -899,6 +1384,91 @@ def module_tests() -> bool:
         "TreeUpdateResponse creation",
         _test_tree_update_response_creation,
         "Verifies TreeUpdateResponse dataclass instantiation",
+    )
+    suite.run_test(
+        "update_person builds correct payload",
+        _test_update_person_builds_correct_payload,
+        "Verifies update_person constructs correct API URL and payload",
+    )
+    suite.run_test(
+        "add_fact builds correct payload",
+        _test_add_fact_builds_correct_payload,
+        "Verifies add_fact constructs correct API URL and payload",
+    )
+    suite.run_test(
+        "update_person handles API failure",
+        _test_update_person_handles_api_failure,
+        "Verifies update_person returns API_ERROR on failure",
+    )
+    suite.run_test(
+        "apply_suggested_fact rejects non-APPROVED",
+        _test_apply_suggested_fact_rejects_non_approved,
+        "Verifies apply_suggested_fact validates APPROVED status",
+    )
+    suite.run_test(
+        "build_url constructs correct URLs",
+        _test_build_url_includes_user,
+        "Verifies _build_url includes/excludes user ID correctly",
+    )
+    suite.run_test(
+        "Service instantiation with mock",
+        _test_service_instantiation,
+        "Verifies TreeUpdateService stores session_manager and resolves user_id",
+    )
+    suite.run_test(
+        "Service method signatures",
+        _test_service_method_signatures,
+        "Verifies key methods exist with expected parameter names",
+    )
+    suite.run_test(
+        "add_person_with_relationship Spouse payload",
+        _test_add_person_with_relationship_spouse_payload,
+        "Verifies Spouse payload structure including spousalRelationship",
+    )
+    suite.run_test(
+        "add_person_with_relationship Child payload",
+        _test_add_person_with_relationship_child_payload,
+        "Verifies Child payload includes parentSet and omits spousal fields",
+    )
+    suite.run_test(
+        "add_person_with_relationship API failure",
+        _test_add_person_with_relationship_api_failure,
+        "Verifies API_ERROR result and source_person_id on failure",
+    )
+    suite.run_test(
+        "link_existing_person payload",
+        _test_link_existing_person_payload,
+        "Verifies apmFindExistingPerson structure with PID as int",
+    )
+    suite.run_test(
+        "remove_relationship payload",
+        _test_remove_relationship_payload,
+        "Verifies URL contains removerelationship and payload has type/parentType",
+    )
+    suite.run_test(
+        "change_relationship_type payload",
+        _test_change_relationship_type_payload,
+        "Verifies changerelationship URL and modifier fields in payload",
+    )
+    suite.run_test(
+        "_apply_vital_fact routes birth",
+        _test_apply_vital_fact_routes_birth,
+        "Verifies birth value parsed to bdate/bplace and routed to update_person",
+    )
+    suite.run_test(
+        "_apply_vital_fact routes death",
+        _test_apply_vital_fact_routes_death,
+        "Verifies death value parsed to ddate/dplace keys",
+    )
+    suite.run_test(
+        "_apply_vital_fact empty value",
+        _test_apply_vital_fact_empty_value,
+        "Verifies VALIDATION_ERROR for empty pipe-separated value",
+    )
+    suite.run_test(
+        "_apply_general_fact parses value",
+        _test_apply_general_fact_parses_value,
+        "Verifies pipe-separated value parsed and passed to add_fact",
     )
 
     return suite.finish_suite()

@@ -21,11 +21,11 @@ if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
 import logging
+from collections.abc import Callable
 from contextlib import contextmanager
 from functools import wraps
 from typing import (
     Any,
-    Callable,
     Optional,
     ParamSpec,
     TypeVar,
@@ -108,7 +108,7 @@ class SessionCacheConfig:
 CACHE_CONFIG = SessionCacheConfig()
 
 
-def _load_config_schema_snapshot() -> Optional[Any]:
+def _load_config_schema_snapshot() -> Any | None:
     """Safely instantiate ConfigManager and return its schema."""
     try:
         from config.config_manager import get_config_manager
@@ -220,7 +220,7 @@ class SessionComponentCache(_TypedBaseCacheModule):
 
         return self._get_config_hash()
 
-    def get_cached_component(self, component_type: str) -> Optional[Any]:
+    def get_cached_component(self, component_type: str) -> Any | None:
         """Get cached component if available and valid"""
         if cache is None:
             return None
@@ -454,7 +454,7 @@ class OptimizedSessionState:
     """
 
     @staticmethod
-    def get_cached_session_state(session_id: str) -> Optional[dict[str, Any]]:
+    def get_cached_session_state(session_id: str) -> dict[str, Any] | None:
         """Get cached session state if valid"""
         if cache is None:
             return None

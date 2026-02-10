@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 import json
 import logging
@@ -6,7 +5,7 @@ import time
 from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from config import config_schema
 from testing.test_framework import TestSuite, create_standard_test_runner
@@ -40,7 +39,7 @@ class GatherCheckpointPlan:
 class GatherCheckpointService:
     """Checkpoint helper that mirrors the legacy helpers for incremental refactors."""
 
-    def __init__(self, plan: Optional[GatherCheckpointPlan] = None) -> None:
+    def __init__(self, plan: GatherCheckpointPlan | None = None) -> None:
         self._plan = plan or checkpoint_settings()
         self._plans_created = 0
 
@@ -54,7 +53,7 @@ class GatherCheckpointService:
 
         return self._plans_created
 
-    def build_plan(self, enabled: bool, max_age_hours: int, path: Optional[Path | str] = None) -> GatherCheckpointPlan:
+    def build_plan(self, enabled: bool, max_age_hours: int, path: Path | str | None = None) -> GatherCheckpointPlan:
         if max_age_hours <= 0:
             raise ValueError("max_age_hours must be positive")
         resolved_path = _coerce_checkpoint_path(path) if path is not None else self._plan.path
@@ -83,7 +82,7 @@ class GatherCheckpointService:
     def clear(self) -> None:
         clear_checkpoint(self._plan)
 
-    def load(self, now: Optional[float] = None) -> Optional[dict[str, Any]]:
+    def load(self, now: float | None = None) -> dict[str, Any] | None:
         return load_checkpoint(self._plan, now=now)
 
     def persist(
@@ -93,8 +92,8 @@ class GatherCheckpointService:
         total_pages_in_run: int,
         state: MutableMapping[str, Any],
         *,
-        now: Optional[float] = None,
-    ) -> Optional[dict[str, Any]]:
+        now: float | None = None,
+    ) -> dict[str, Any] | None:
         return persist_checkpoint(
             next_page=next_page,
             last_page_to_process=last_page_to_process,
@@ -137,12 +136,12 @@ def checkpoint_settings() -> GatherCheckpointPlan:
     )
 
 
-def checkpoint_enabled(plan: Optional[GatherCheckpointPlan] = None) -> bool:
+def checkpoint_enabled(plan: GatherCheckpointPlan | None = None) -> bool:
     plan_to_use = plan or checkpoint_settings()
     return plan_to_use.enabled
 
 
-def clear_checkpoint(plan: Optional[GatherCheckpointPlan] = None) -> None:
+def clear_checkpoint(plan: GatherCheckpointPlan | None = None) -> None:
     plan_to_use = plan or checkpoint_settings()
     if not plan_to_use.enabled:
         return
@@ -156,8 +155,8 @@ def clear_checkpoint(plan: Optional[GatherCheckpointPlan] = None) -> None:
 
 
 def load_checkpoint(
-    plan: Optional[GatherCheckpointPlan] = None, *, now: Optional[float] = None
-) -> Optional[dict[str, Any]]:
+    plan: GatherCheckpointPlan | None = None, *, now: float | None = None
+) -> dict[str, Any] | None:
     plan_to_use = plan or checkpoint_settings()
     if not plan_to_use.enabled:
         return None
@@ -208,9 +207,9 @@ def write_checkpoint_state(
     total_pages_in_run: int,
     state: Mapping[str, Any],
     *,
-    plan: Optional[GatherCheckpointPlan] = None,
-    now: Optional[float] = None,
-) -> Optional[dict[str, Any]]:
+    plan: GatherCheckpointPlan | None = None,
+    now: float | None = None,
+) -> dict[str, Any] | None:
     """Persist checkpoint information for later resume and return the payload."""
 
     plan_to_use = plan or checkpoint_settings()
@@ -257,9 +256,9 @@ def persist_checkpoint(
     last_page_to_process: int,
     total_pages_in_run: int,
     state: MutableMapping[str, Any],
-    plan: Optional[GatherCheckpointPlan] = None,
-    now: Optional[float] = None,
-) -> Optional[dict[str, Any]]:
+    plan: GatherCheckpointPlan | None = None,
+    now: float | None = None,
+) -> dict[str, Any] | None:
     """Update checkpoint state after finishing or attempting a page."""
 
     plan_to_use = plan or checkpoint_settings()
@@ -283,7 +282,7 @@ def persist_checkpoint(
     return payload
 
 
-def finalize_checkpoint_after_run(state: Mapping[str, Any], plan: Optional[GatherCheckpointPlan] = None) -> None:
+def finalize_checkpoint_after_run(state: Mapping[str, Any], plan: GatherCheckpointPlan | None = None) -> None:
     """Clear checkpoint file after a successful run."""
 
     plan_to_use = plan or checkpoint_settings()

@@ -112,7 +112,51 @@ from testing.test_utilities import create_standard_test_runner
 
 def _test_module_integrity() -> bool:
     "Test that module can be imported and definitions are valid."
-    return True
+    from testing.test_framework import TestSuite
+
+    suite = TestSuite("messaging __init__", "messaging/__init__.py")
+
+    def test_inbound_orchestrator():
+        assert isinstance(InboundOrchestrator, type), "InboundOrchestrator should be a class"
+
+    def test_message_send_orchestrator():
+        assert isinstance(MessageSendOrchestrator, type), "MessageSendOrchestrator should be a class"
+
+    def test_person_eligibility_checker():
+        assert isinstance(PersonEligibilityChecker, type), "PersonEligibilityChecker should be a class"
+
+    def test_template_selector():
+        assert isinstance(TemplateSelector, type), "TemplateSelector should be a class"
+
+    def test_message_types():
+        assert isinstance(MESSAGE_TYPES, dict), "MESSAGE_TYPES should be a dict"
+        assert len(MESSAGE_TYPES) > 0, "MESSAGE_TYPES should not be empty"
+
+    def test_determine_next_message_type():
+        assert callable(determine_next_message_type), "determine_next_message_type should be callable"
+
+    def test_workflow_helpers():
+        assert callable(calculate_adaptive_interval), "calculate_adaptive_interval should be callable"
+        assert callable(calculate_days_since_login), "calculate_days_since_login should be callable"
+        assert callable(determine_engagement_tier), "determine_engagement_tier should be callable"
+
+    def test_all_exports():
+        import messaging
+        assert isinstance(__all__, list), "__all__ should be a list"
+        assert len(__all__) > 0, "__all__ should not be empty"
+        for name in __all__[:5]:
+            assert hasattr(messaging, name), f"{name} should be importable from messaging"
+
+    suite.run_test("InboundOrchestrator is a class", test_inbound_orchestrator)
+    suite.run_test("MessageSendOrchestrator is a class", test_message_send_orchestrator)
+    suite.run_test("PersonEligibilityChecker is a class", test_person_eligibility_checker)
+    suite.run_test("TemplateSelector is a class", test_template_selector)
+    suite.run_test("MESSAGE_TYPES is a non-empty dict", test_message_types)
+    suite.run_test("determine_next_message_type is callable", test_determine_next_message_type)
+    suite.run_test("Workflow helper functions are callable", test_workflow_helpers)
+    suite.run_test("__all__ exports match available names", test_all_exports)
+
+    return suite.finish_suite()
 
 
 run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)

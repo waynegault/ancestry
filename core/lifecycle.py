@@ -8,12 +8,10 @@ Handles application startup, initialization, and shutdown procedures.
 
 import os
 import sys
-import tempfile
+from collections.abc import Callable
 from importlib import import_module
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any, Callable, Optional, cast
-from unittest import mock
+from typing import Any, cast
 
 # Ensure project root is on sys.path when running as a script
 parent_dir = str(Path(__file__).resolve().parent.parent)
@@ -39,7 +37,7 @@ logger = logging.getLogger(__name__)
 auto_register_module(globals(), __name__)
 
 
-def get_windows_console_handles() -> tuple[Optional[Any], Optional[Any]]:
+def get_windows_console_handles() -> tuple[Any | None, Any | None]:
     """Return kernel32/user32 handles when available on Windows."""
 
     if os.name != "nt":
@@ -290,7 +288,7 @@ def _validate_local_llm_config(config_schema: Any) -> bool:
         client = OpenAI(api_key=api_key, base_url=base_url, max_retries=0)
         ai_module = import_module("ai_interface")
         validate_llm_loaded = cast(
-            Callable[[Any, str], tuple[Optional[str], Optional[str]]],
+            Callable[[Any, str], tuple[str | None, str | None]],
             ai_module._validate_local_llm_model_loaded,
         )
         actual_model_name, error_msg = validate_llm_loaded(client, model_name)
@@ -531,6 +529,9 @@ def _run_startup_health_checks(session_manager: "SessionManager") -> None:
 
 
 def _test_clear_startup_log_file_truncates_existing_log() -> bool:
+    import tempfile
+    from unittest import mock
+
     with tempfile.TemporaryDirectory() as tmpdir:
         log_dir = Path(tmpdir)
         log_path = log_dir / "startup.log"
@@ -543,6 +544,9 @@ def _test_clear_startup_log_file_truncates_existing_log() -> bool:
 
 
 def _test_check_grafana_status_logs_branches() -> bool:
+    from types import SimpleNamespace
+    from unittest import mock
+
     ready_status = {
         "ready": True,
         "installed": True,
@@ -573,6 +577,8 @@ def _test_check_grafana_status_logs_branches() -> bool:
 
 
 def _test_log_sleep_prevention_status_reports_correctly() -> bool:
+    from unittest import mock
+
     active_state = object()
     with mock.patch.object(logger, "info") as info_log:
         _log_sleep_prevention_status(active_state)
@@ -584,6 +590,8 @@ def _test_log_sleep_prevention_status_reports_correctly() -> bool:
 
 
 def _test_pre_authenticate_session_respects_skip_env() -> bool:
+    from unittest import mock
+
     with (
         mock.patch.dict(os.environ, {"SKIP_STARTUP_PREAUTH": "1"}, clear=False),
         mock.patch.object(logger, "info") as info_log,
@@ -594,6 +602,8 @@ def _test_pre_authenticate_session_respects_skip_env() -> bool:
 
 
 def _test_pre_authenticate_ms_graph_respects_skip_env() -> bool:
+    from unittest import mock
+
     with (
         mock.patch.dict(os.environ, {"SKIP_STARTUP_PREAUTH": "1"}, clear=False),
         mock.patch.object(logger, "info") as info_log,
@@ -689,7 +699,7 @@ def pre_authenticate_ms_graph() -> None:
         logger.debug(f"MS Graph authentication failed at startup: {e}")
 
 
-def cleanup_session_manager(session_manager: Optional[Any]) -> None:
+def cleanup_session_manager(session_manager: Any | None) -> None:
     """Clean up session manager on shutdown with proper resource ordering.
 
     Args:

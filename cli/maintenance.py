@@ -15,18 +15,15 @@ import logging
 import os
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import webbrowser
-from collections.abc import Mapping
-from datetime import datetime
+from collections.abc import Callable, Mapping
+from datetime import UTC, datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from logging import StreamHandler
 from pathlib import Path
-from types import SimpleNamespace
-from typing import TYPE_CHECKING, Any, Callable, ClassVar, Optional, Protocol, TextIO, cast
-from unittest import mock
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, TextIO, cast
 from urllib import request as urllib_request
 
 if __package__ in {None, ""}:
@@ -60,12 +57,12 @@ class LogMaintenanceMixin:
 
     _logger: logging.Logger
 
-    def clear_log_file(self) -> tuple[bool, Optional[str]]:
+    def clear_log_file(self) -> tuple[bool, str | None]:
         """Clear the active log file by flushing/closing the handler."""
 
         cleared = False
-        log_file_handler: Optional[logging.FileHandler] = None
-        log_file_path: Optional[str] = None
+        log_file_handler: logging.FileHandler | None = None
+        log_file_path: str | None = None
 
         # Check instance logger first
         handlers = self._logger.handlers
@@ -106,7 +103,7 @@ class LogMaintenanceMixin:
             handlers = target_logger.handlers
 
         if handlers:
-            console_handler: Optional[StreamHandler[TextIO]] = None
+            console_handler: StreamHandler[TextIO] | None = None
             for handler in handlers:
                 if isinstance(handler, logging.StreamHandler):
                     handler_typed = cast(logging.StreamHandler[TextIO], handler)
@@ -225,12 +222,12 @@ class AnalyticsMixin:
     """Mixin for visualization and analytics operations."""
 
     _logger: logging.Logger
-    _grafana_checker: Optional[GrafanaCheckerProtocol]
+    _grafana_checker: GrafanaCheckerProtocol | None
 
     def open_graph_visualization(self) -> None:
         """Launch the local graph visualization web server."""
 
-        server: Optional[ThreadingHTTPServer] = None
+        server: ThreadingHTTPServer | None = None
         try:
             docs_dir = Path(__file__).resolve().parents[1] / "docs"
             graph_json = docs_dir / "code_graph.json"
@@ -576,7 +573,7 @@ class ReviewQueueMixin:
 
     _logger: logging.Logger
 
-    def show_review_queue(self, session_manager: Optional[SessionManager] = None) -> None:
+    def show_review_queue(self, session_manager: SessionManager | None = None) -> None:
         """Display pending drafts for human review."""
         try:
             from core.approval_queue import ApprovalQueueService
@@ -765,7 +762,7 @@ class ReviewQueueMixin:
             from datetime import datetime, timezone
 
             draft.content = new_reply
-            draft.created_at = datetime.now(timezone.utc)  # Reset creation time
+            draft.created_at = datetime.now(UTC)  # Reset creation time
             db_session.commit()
 
             print("\n" + "=" * 70)
@@ -785,7 +782,7 @@ class ReviewQueueMixin:
 
     def _prepare_rewrite_context(
         self, draft_id: int, feedback: str
-    ) -> Optional[tuple[Any, Any, Any, str, str, str, str]]:
+    ) -> tuple[Any, Any, Any, str, str, str, str] | None:
         import json
 
         from core.database import ConversationLog, DraftReply, Person
@@ -1038,7 +1035,7 @@ class ReviewQueueMixin:
                 return False
 
             fact.status = FactStatusEnum.APPROVED
-            fact.updated_at = datetime.now(timezone.utc)
+            fact.updated_at = datetime.now(UTC)
             db_session.commit()
             print(f"✅ SuggestedFact {fact_id} approved")
             return True
@@ -1070,7 +1067,7 @@ class ReviewQueueMixin:
                 return False
 
             fact.status = FactStatusEnum.REJECTED
-            fact.updated_at = datetime.now(timezone.utc)
+            fact.updated_at = datetime.now(UTC)
             db_session.commit()
             if reason:
                 print(f"❌ SuggestedFact {fact_id} rejected: {reason}")
@@ -1082,7 +1079,7 @@ class ReviewQueueMixin:
             print(f"Error rejecting fact: {exc}")
             return False
 
-    def approve_draft(self, draft_id: int, edited_content: Optional[str] = None) -> bool:
+    def approve_draft(self, draft_id: int, edited_content: str | None = None) -> bool:
         """Approve a draft for sending."""
         try:
             from core.approval_queue import ApprovalQueueService
@@ -1181,7 +1178,7 @@ class ReviewQueueMixin:
         except Exception as exc:
             self._logger.debug("Could not record validation metrics: %s", exc)
 
-    def launch_review_web_ui(self, _session_manager: Optional[SessionManager] = None) -> None:
+    def launch_review_web_ui(self, _session_manager: SessionManager | None = None) -> None:
         """Launch the browser-based review queue interface."""
         try:
             from ui.review_server import run_server
@@ -1570,7 +1567,7 @@ class ConfigMaintenanceMixin:
         print("SCHEMA MIGRATIONS")
         print("=" * 70)
 
-        db_manager: Optional[Any] = None
+        db_manager: Any | None = None
         try:
             from core import schema_migrator
             from core.database_manager import DatabaseManager
@@ -1656,7 +1653,7 @@ class MainCLIHelpers(
         self,
         *,
         logger: logging.Logger,
-        grafana_checker: Optional[GrafanaCheckerProtocol] = None,
+        grafana_checker: GrafanaCheckerProtocol | None = None,
     ) -> None:
         self._logger = logger
         self._grafana_checker = grafana_checker
@@ -1669,7 +1666,7 @@ class MainCLIHelpers(
 
 def _create_helper_for_tests(
     *,
-    log_path: Optional[Path] = None,
+    log_path: Path | None = None,
     include_stream: bool = False,
 ) -> tuple[MainCLIHelpers, logging.Logger]:
     logger = logging.getLogger(f"cli-maint-tests-{time.time_ns()}")
@@ -1772,6 +1769,8 @@ def _test_print_cache_component_output() -> bool:
 
 
 def _test_clear_log_file_behavior() -> bool:
+    import tempfile
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         log_path = Path(tmp_dir) / "cli.log"
         log_path.write_text("existing line\n", encoding="utf-8")
@@ -1787,13 +1786,15 @@ def _test_clear_log_file_behavior() -> bool:
 
 
 def _test_toggle_log_level_switches_levels() -> bool:
+    from unittest import mock
+
     helper, logger = _create_helper_for_tests(include_stream=True)
     try:
         stream_handler = next(
             handler
             for handler in logger.handlers
             if isinstance(handler, logging.StreamHandler)
-            and cast(Optional[TextIO], getattr(handler, "stream", None)) is sys.stderr
+            and cast(TextIO | None, getattr(handler, "stream", None)) is sys.stderr
         )
         stream_handler.setLevel(logging.INFO)
 
@@ -1825,6 +1826,9 @@ def _test_toggle_log_level_switches_levels() -> bool:
 
 
 def _test_review_queue_renderers() -> bool:
+    from types import SimpleNamespace
+    from unittest import mock
+
     helper, logger = _create_helper_for_tests()
     try:
         drafts = [

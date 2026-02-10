@@ -18,8 +18,8 @@ Key Features:
 import enum
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime, timedelta, timezone
+from typing import Any
 
 from sqlalchemy import and_, func
 from sqlalchemy.exc import SQLAlchemyError
@@ -70,9 +70,9 @@ class QueuedDraft:
     priority: ReviewPriority
     status: ApprovalStatus
     created_at: datetime
-    ai_reasoning: Optional[str] = None
-    context_summary: Optional[str] = None
-    expires_at: Optional[datetime] = None
+    ai_reasoning: str | None = None
+    context_summary: str | None = None
+    expires_at: datetime | None = None
 
 
 @dataclass
@@ -83,7 +83,7 @@ class ReviewDecision:
     draft_id: int
     action: str  # "approve", "reject", "edit"
     message: str
-    edited_content: Optional[str] = None
+    edited_content: str | None = None
 
 
 @dataclass()
@@ -129,13 +129,13 @@ class ApprovalQueueService:
     AUTO_APPROVE_THRESHOLD = 70  # Minimum context confidence for auto-approval
     HIGH_PRIORITY_THRESHOLD = 70  # Below this triggers HIGH priority for review
 
-    def __init__(self, db_session: DbSession, auto_approve_enabled: Optional[bool] = None) -> None:
+    def __init__(self, db_session: DbSession, auto_approve_enabled: bool | None = None) -> None:
         """Initialize the approval queue service."""
         self.db_session = db_session
         self._auto_approve_enabled = self._resolve_auto_approve_flag(auto_approve_enabled)
 
     @staticmethod
-    def _resolve_auto_approve_flag(override: Optional[bool]) -> bool:
+    def _resolve_auto_approve_flag(override: bool | None) -> bool:
         """Resolve auto-approve toggle from override or configuration."""
         if override is not None:
             return override
@@ -175,7 +175,7 @@ class ApprovalQueueService:
             return False, f"Error checking readiness: {e}"
 
     @staticmethod
-    def _get_owner_profile_id() -> Optional[str]:
+    def _get_owner_profile_id() -> str | None:
         """Get the tree owner's profile ID for self-message prevention."""
         import os
 
@@ -213,12 +213,12 @@ class ApprovalQueueService:
         conversation_id: str,
         content: str,
         ai_confidence: int,
-        _ai_reasoning: Optional[str] = None,
-        _context_summary: Optional[str] = None,
-        _research_suggestions: Optional[str] = None,
-        _research_metadata: Optional[dict[str, Any]] = None,
+        _ai_reasoning: str | None = None,
+        _context_summary: str | None = None,
+        _research_suggestions: str | None = None,
+        _research_metadata: dict[str, Any] | None = None,
         expiry_hours: int = 72,
-    ) -> Optional[int]:
+    ) -> int | None:
         """
         Queue a draft message for human review.
 
@@ -320,7 +320,7 @@ class ApprovalQueueService:
             self.db_session.rollback()
             return None
 
-    def _validate_person_for_queue(self, person_id: int) -> Optional[Any]:
+    def _validate_person_for_queue(self, person_id: int) -> Any | None:
         from core.database import Person
 
         person = self.db_session.query(Person).filter(Person.id == person_id).first()
@@ -354,7 +354,7 @@ class ApprovalQueueService:
             return True
         return False
 
-    def _find_existing_pending(self, draft_model: Any, person_id: int, conversation_id: str) -> Optional[Any]:
+    def _find_existing_pending(self, draft_model: Any, person_id: int, conversation_id: str) -> Any | None:
         return (
             self.db_session.query(draft_model)
             .filter(
@@ -367,7 +367,7 @@ class ApprovalQueueService:
 
     def _update_existing_pending(
         self, existing_pending: Any, content_with_metadata: str, ai_confidence: int, priority: ReviewPriority
-    ) -> Optional[int]:
+    ) -> int | None:
         needs_update = False
         if existing_pending.content != content_with_metadata:
             existing_pending.content = content_with_metadata
@@ -401,8 +401,8 @@ class ApprovalQueueService:
         priority: ReviewPriority,
         expiry_hours: int,
         ai_confidence: int,
-    ) -> Optional[int]:
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=expiry_hours)
+    ) -> int | None:
+        expires_at = datetime.now(UTC) + timedelta(hours=expiry_hours)
 
         draft = draft_model(
             people_id=person_id,
@@ -447,8 +447,8 @@ class ApprovalQueueService:
     def _run_ai_moderation(
         content: str,
         person_name: str,
-        context_summary: Optional[str] = None,
-    ) -> Optional[Any]:
+        context_summary: str | None = None,
+    ) -> Any | None:
         """
         Run AI moderation on draft before human review.
 
@@ -575,7 +575,7 @@ class ApprovalQueueService:
                 # Never messaged or no state - cooldown doesn't apply
                 return True
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             days_since = (now - conv_state.last_outbound_at).days
             return days_since >= cooldown_days
         except Exception:
@@ -601,7 +601,7 @@ class ApprovalQueueService:
                 # No state record - allow (will be first message)
                 return True
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Check if messages_sent_date is today
             if conv_state.messages_sent_date is not None:
@@ -638,7 +638,7 @@ class ApprovalQueueService:
 
     def _create_auto_approved_draft(
         self, person_id: int, conversation_id: str, content: str, confidence: int
-    ) -> Optional[int]:
+    ) -> int | None:
         """Create an auto-approved draft."""
         try:
             from core.database import DraftReply
@@ -660,7 +660,7 @@ class ApprovalQueueService:
             self.db_session.rollback()
             return None
 
-    def get_pending_queue(self, limit: int = 50, _priority_filter: Optional[str] = None) -> list[QueuedDraft]:
+    def get_pending_queue(self, limit: int = 50, _priority_filter: str | None = None) -> list[QueuedDraft]:
         """
         Get pending drafts for review, ordered by priority and age.
 
@@ -719,7 +719,7 @@ class ApprovalQueueService:
             return ApprovalStatus.PENDING
 
     def approve(
-        self, draft_id: int, reviewer: str = "operator", edited_content: Optional[str] = None
+        self, draft_id: int, reviewer: str = "operator", edited_content: str | None = None
     ) -> ReviewDecision:
         """
         Approve a draft for sending.
@@ -813,7 +813,7 @@ class ApprovalQueueService:
 
             draft.status = "REJECTED"
 
-            conversation_phase: Optional[str] = None
+            conversation_phase: str | None = None
             conv_state = (
                 self.db_session.query(ConversationState).filter(ConversationState.people_id == draft.people_id).first()
             )
@@ -883,7 +883,7 @@ class ApprovalQueueService:
         def _count_today_by_status(statuses: list[str]) -> int:
             from core.database import DraftReply
 
-            today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0)
+            today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0)
             return (
                 self.db_session.query(func.count(DraftReply.id))
                 .filter(and_(DraftReply.status.in_(statuses), DraftReply.created_at >= today_start))
@@ -946,7 +946,7 @@ class ApprovalQueueService:
 
             from core.database import DraftReply
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             fallback_cutoff = now - timedelta(hours=hours)
 
             # Expire drafts where:
@@ -1000,7 +1000,7 @@ class ApprovalQueueService:
         return await loop.run_in_executor(None, self.get_queue_stats)
 
     async def async_get_pending_queue(
-        self, limit: int = 50, priority_filter: Optional[str] = None
+        self, limit: int = 50, priority_filter: str | None = None
     ) -> list[QueuedDraft]:
         """
         Get pending drafts asynchronously.
@@ -1095,7 +1095,7 @@ def module_tests() -> bool:
             ai_confidence=85,
             priority=ReviewPriority.NORMAL,
             status=ApprovalStatus.PENDING,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         assert draft.draft_id == 1, "draft_id should be 1"
         assert draft.ai_confidence == 85, "ai_confidence should be 85"
@@ -1254,7 +1254,7 @@ def module_tests() -> bool:
             session.add(person)
             session.commit()
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             # Draft 1: expires_at in the past (should be expired)
             draft_expired = DraftReply(

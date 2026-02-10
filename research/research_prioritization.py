@@ -15,7 +15,6 @@ Created: August 6, 2025
 Phase: 12.3 - Intelligent Research Prioritization
 """
 
-from __future__ import annotations
 
 # === PATH SETUP FOR PACKAGE IMPORTS ===
 import sys
@@ -30,7 +29,7 @@ import logging
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -540,7 +539,7 @@ class IntelligentResearchPrioritizer:
         ]
 
     @staticmethod
-    def _extract_location_context(gap: dict[str, Any]) -> Optional[str]:
+    def _extract_location_context(gap: dict[str, Any]) -> str | None:
         """Extract location context from a gap."""
         # This would analyze the gap description for location clues
         description = gap.get("description", "")
@@ -554,7 +553,7 @@ class IntelligentResearchPrioritizer:
         return None
 
     @staticmethod
-    def _extract_opportunity_location(opportunity: dict[str, Any]) -> Optional[str]:
+    def _extract_opportunity_location(opportunity: dict[str, Any]) -> str | None:
         """Extract location from research opportunity."""
         description = opportunity.get("description", "")
         # Simple implementation

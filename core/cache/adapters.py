@@ -11,7 +11,6 @@ Provides ready-to-use cache implementations that conform to the Cache protocol:
 All adapters provide consistent statistics and health reporting.
 """
 
-from __future__ import annotations
 
 import sys
 import threading
@@ -19,7 +18,7 @@ import time
 from collections import OrderedDict
 from fnmatch import fnmatch
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 # Add parent directory for imports when running as script
 parent_dir = str(Path(__file__).resolve().parent.parent.parent)
@@ -61,7 +60,7 @@ class MemoryCache:
     - Comprehensive statistics
     """
 
-    def __init__(self, config: Optional[CacheConfig] = None) -> None:
+    def __init__(self, config: CacheConfig | None = None) -> None:
         """Initialize memory cache.
 
         Args:
@@ -119,7 +118,7 @@ class MemoryCache:
             if excess > 0:
                 self._evict_lru(excess)
 
-    def get(self, key: CacheKey) -> Optional[Any]:
+    def get(self, key: CacheKey) -> Any | None:
         """Retrieve a value from the cache."""
         full_key = self._make_key(key)
         with self._lock:
@@ -141,7 +140,7 @@ class MemoryCache:
             self._hits += 1
             return entry.value
 
-    def set(self, key: CacheKey, value: Any, ttl: Optional[CacheTTL] = None) -> bool:
+    def set(self, key: CacheKey, value: Any, ttl: CacheTTL | None = None) -> bool:
         """Store a value in the cache."""
         full_key = self._make_key(key)
         effective_ttl = ttl if ttl is not None else self._config.default_ttl
@@ -274,7 +273,7 @@ class MemoryCache:
                     result.append(key)
             return result
 
-    def get_entry(self, key: CacheKey) -> Optional[CacheEntry]:
+    def get_entry(self, key: CacheKey) -> CacheEntry | None:
         """Get cache entry with metadata."""
         full_key = self._make_key(key)
         with self._lock:
@@ -296,7 +295,7 @@ class TTLCache(MemoryCache):
     Better for caches where TTL accuracy is important.
     """
 
-    def __init__(self, config: Optional[CacheConfig] = None, cleanup_interval: float = 60.0) -> None:
+    def __init__(self, config: CacheConfig | None = None, cleanup_interval: float = 60.0) -> None:
         """Initialize TTL cache.
 
         Args:
@@ -314,12 +313,12 @@ class TTLCache(MemoryCache):
             self._evict_expired()
             self._last_cleanup = now
 
-    def get(self, key: CacheKey) -> Optional[Any]:
+    def get(self, key: CacheKey) -> Any | None:
         """Retrieve value, running cleanup if needed."""
         self._maybe_cleanup()
         return super().get(key)
 
-    def set(self, key: CacheKey, value: Any, ttl: Optional[CacheTTL] = None) -> bool:
+    def set(self, key: CacheKey, value: Any, ttl: CacheTTL | None = None) -> bool:
         """Store value, running cleanup if needed."""
         self._maybe_cleanup()
         return super().set(key, value, ttl)
@@ -339,8 +338,8 @@ class DiskCacheAdapter:
 
     def __init__(
         self,
-        config: Optional[CacheConfig] = None,
-        cache_dir: Optional[Path] = None,
+        config: CacheConfig | None = None,
+        cache_dir: Path | None = None,
     ) -> None:
         """Initialize disk cache adapter.
 
@@ -358,7 +357,7 @@ class DiskCacheAdapter:
         try:
             from diskcache import Cache as DiskCache
 
-            self._cache: Optional[DiskCache] = DiskCache(
+            self._cache: DiskCache | None = DiskCache(
                 str(self._cache_dir),
                 size_limit=self._config.max_size_bytes if self._config.max_size_bytes > 0 else int(2e9),
                 eviction_policy="least-recently-used",
@@ -386,7 +385,7 @@ class DiskCacheAdapter:
         parts.append(key)
         return ":".join(parts)
 
-    def get(self, key: CacheKey) -> Optional[Any]:
+    def get(self, key: CacheKey) -> Any | None:
         """Retrieve a value from the cache."""
         if self._cache is None:
             self._misses += 1
@@ -408,7 +407,7 @@ class DiskCacheAdapter:
             self._misses += 1
             return None
 
-    def set(self, key: CacheKey, value: Any, ttl: Optional[CacheTTL] = None) -> bool:
+    def set(self, key: CacheKey, value: Any, ttl: CacheTTL | None = None) -> bool:
         """Store a value in the cache."""
         if self._cache is None:
             return False
@@ -566,7 +565,7 @@ class DiskCacheAdapter:
             pass
         return result
 
-    def get_entry(self, key: CacheKey) -> Optional[CacheEntry]:
+    def get_entry(self, key: CacheKey) -> CacheEntry | None:
         """Get cache entry with metadata."""
         value = self.get(key)
         if value is None:
@@ -602,7 +601,7 @@ class NullCache:
     - Placeholder when cache system unavailable
     """
 
-    def __init__(self, config: Optional[CacheConfig] = None) -> None:
+    def __init__(self, config: CacheConfig | None = None) -> None:
         """Initialize null cache."""
         self._config = config or CacheConfig(name="null_cache")
         self._calls = 0
@@ -612,12 +611,12 @@ class NullCache:
         """Get cache configuration."""
         return self._config
 
-    def get(self, key: CacheKey) -> Optional[Any]:  # noqa: ARG002
+    def get(self, key: CacheKey) -> Any | None:  # noqa: ARG002
         """Always returns None."""
         self._calls += 1
         return None
 
-    def set(self, key: CacheKey, value: Any, ttl: Optional[CacheTTL] = None) -> bool:  # noqa: ARG002
+    def set(self, key: CacheKey, value: Any, ttl: CacheTTL | None = None) -> bool:  # noqa: ARG002
         """Always succeeds but stores nothing."""
         self._calls += 1
         return True
@@ -664,11 +663,13 @@ class NullCache:
             is_available=True,
         )
 
-    def keys(self, pattern: str = "*") -> list[CacheKey]:  # noqa: ARG002, PLR6301
+    @staticmethod
+    def keys(pattern: str = "*") -> list[CacheKey]:  # noqa: ARG004
         """Always returns empty list."""
         return []
 
-    def get_entry(self, key: CacheKey) -> Optional[CacheEntry]:  # noqa: ARG002, PLR6301
+    @staticmethod
+    def get_entry(key: CacheKey) -> CacheEntry | None:  # noqa: ARG004
         """Always returns None."""
         return None
 

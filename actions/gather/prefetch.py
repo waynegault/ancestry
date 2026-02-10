@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any
 
 if __package__ in {None, ""}:
     REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -45,10 +46,10 @@ class PrefetchConfig:
 class PrefetchHooks:
     """Callables required by the prefetch pipeline during the migration."""
 
-    fetch_combined_details: Callable[[SessionManager, str], Optional[dict[str, Any]]]
-    fetch_badge_details: Callable[[SessionManager, str], Optional[dict[str, Any]]]
-    fetch_ladder_details: Callable[[SessionManager, str, str, Optional[str]], Optional[dict[str, Any]]]
-    fetch_ethnicity_batch: Callable[[SessionManager, str], Optional[dict[str, Optional[int]]]]
+    fetch_combined_details: Callable[[SessionManager, str], dict[str, Any] | None]
+    fetch_badge_details: Callable[[SessionManager, str], dict[str, Any] | None]
+    fetch_ladder_details: Callable[[SessionManager, str, str, str | None], dict[str, Any] | None]
+    fetch_ethnicity_batch: Callable[[SessionManager, str], dict[str, int | None] | None]
 
 
 @dataclass(frozen=True)
@@ -80,7 +81,7 @@ class _PrefetchPlan:
     high_priority_uuids: set[str]
     ethnicity_candidates: set[str]
     num_candidates: int
-    my_tree_id: Optional[str]
+    my_tree_id: str | None
 
 
 @dataclass
@@ -392,7 +393,7 @@ def _prefetch_combined_details(
     endpoint_durations: dict[str, float],
     endpoint_counts: dict[str, int],
     config: PrefetchConfig,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Fetch combined details and record timing metadata."""
 
     combined_start = time.time()
@@ -405,10 +406,10 @@ def _prefetch_combined_details(
 def _prefetch_relationship_probability(
     uuid_val: str,
     plan: _PrefetchPlan,
-    batch_relationship_prob_data: dict[str, Optional[str]],
+    batch_relationship_prob_data: dict[str, str | None],
     endpoint_durations: dict[str, float],
     endpoint_counts: dict[str, int],
-    batch_combined_details: dict[str, Optional[dict[str, Any]]],
+    batch_combined_details: dict[str, dict[str, Any] | None],
 ) -> None:
     """Fetch relationship probability for priority matches."""
 
@@ -431,7 +432,7 @@ def _prefetch_badge_metadata(
     uuid_val: str,
     plan: _PrefetchPlan,
     hooks: PrefetchHooks,
-    temp_badge_results: dict[str, Optional[dict[str, Any]]],
+    temp_badge_results: dict[str, dict[str, Any] | None],
     endpoint_durations: dict[str, float],
     endpoint_counts: dict[str, int],
 ) -> None:
@@ -458,7 +459,7 @@ def _prefetch_ethnicity_data(
     plan: _PrefetchPlan,
     hooks: PrefetchHooks,
     config: PrefetchConfig,
-    batch_ethnicity_data: dict[str, Optional[dict[str, Optional[int]]]],
+    batch_ethnicity_data: dict[str, dict[str, int | None] | None],
     endpoint_durations: dict[str, float],
     endpoint_counts: dict[str, int],
 ) -> None:
@@ -575,7 +576,7 @@ def _handle_combined_details_fetch(
     hooks: PrefetchHooks,
     stats: _PrefetchStats,
     config: PrefetchConfig,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     """Fetch mandatory combined details for a match and update counters."""
 
     try:
@@ -595,8 +596,8 @@ def _handle_combined_details_fetch(
 def _fetch_optional_relationship_data(
     uuid_val: str,
     priority_uuids: set[str],
-    batch_relationship_prob_data: dict[str, Optional[str]],
-    batch_combined_details: dict[str, Optional[dict[str, Any]]],
+    batch_relationship_prob_data: dict[str, str | None],
+    batch_combined_details: dict[str, dict[str, Any] | None],
 ) -> None:
     """Fetch relationship probability when priority thresholds demand it."""
 
@@ -616,7 +617,7 @@ def _fetch_optional_badge_data(
     session_manager: SessionManager,
     uuid_val: str,
     badge_candidates: set[str],
-    temp_badge_results: dict[str, Optional[dict[str, Any]]],
+    temp_badge_results: dict[str, dict[str, Any] | None],
     hooks: PrefetchHooks,
 ) -> None:
     """Fetch badge metadata for tree members."""
@@ -635,7 +636,7 @@ def _process_ethnicity_candidate(
     session_manager: SessionManager,
     uuid_val: str,
     ethnicity_candidates: set[str],
-    batch_ethnicity_data: dict[str, Optional[dict[str, Optional[int]]]],
+    batch_ethnicity_data: dict[str, dict[str, int | None] | None],
     stats: _PrefetchStats,
     hooks: PrefetchHooks,
 ) -> None:
@@ -655,7 +656,7 @@ def _process_ethnicity_candidate(
         batch_ethnicity_data[uuid_val] = None
 
 
-def _build_cfpid_mapping(temp_badge_results: dict[str, Optional[dict[str, Any]]]) -> tuple[list[str], dict[str, str]]:
+def _build_cfpid_mapping(temp_badge_results: dict[str, dict[str, Any] | None]) -> tuple[list[str], dict[str, str]]:
     """Translate badge data into CFPID lookup structures."""
 
     cfpid_to_uuid_map: dict[str, str] = {}
@@ -679,7 +680,7 @@ def _merge_badge_and_ladder_data(
     uuid_val: str,
     my_tree_id: str,
     badge_data: dict[str, Any],
-    enriched_tree_data: dict[str, Optional[dict[str, Any]]],
+    enriched_tree_data: dict[str, dict[str, Any] | None],
 ) -> None:
     """Fetch ladder details and merge them with existing badge data."""
 
@@ -713,10 +714,10 @@ def _merge_badge_and_ladder_data(
 
 def _fetch_ladder_details_for_badges(
     session_manager: SessionManager,
-    my_tree_id: Optional[str],
-    temp_badge_results: dict[str, Optional[dict[str, Any]]],
+    my_tree_id: str | None,
+    temp_badge_results: dict[str, dict[str, Any] | None],
     hooks: PrefetchHooks,
-) -> tuple[dict[str, Optional[dict[str, Any]]], int]:
+) -> tuple[dict[str, dict[str, Any] | None], int]:
     """Combine badge data with ladder enrichment where available."""
 
     if not my_tree_id or not temp_badge_results:
@@ -788,10 +789,10 @@ def perform_api_prefetches(
 ) -> PrefetchResult:
     """Sequentially fetch supporting API data for Action 6 matches."""
 
-    batch_combined_details: dict[str, Optional[dict[str, Any]]] = {}
-    batch_tree_data: dict[str, Optional[dict[str, Any]]] = {}
-    batch_relationship_prob_data: dict[str, Optional[str]] = {}
-    batch_ethnicity_data: dict[str, Optional[dict[str, Optional[int]]]] = {}
+    batch_combined_details: dict[str, dict[str, Any] | None] = {}
+    batch_tree_data: dict[str, dict[str, Any] | None] = {}
+    batch_relationship_prob_data: dict[str, str | None] = {}
+    batch_ethnicity_data: dict[str, dict[str, int | None] | None] = {}
 
     endpoint_durations: dict[str, float] = {
         "combined_details": 0.0,
@@ -831,7 +832,7 @@ def perform_api_prefetches(
     fetch_start_time = time.time()
     logger.debug("--- Starting SEQUENTIAL API Pre-fetch (%d candidates) ---", plan.num_candidates)
 
-    temp_badge_results: dict[str, Optional[dict[str, Any]]] = {}
+    temp_badge_results: dict[str, dict[str, Any] | None] = {}
     for processed_count, uuid_val in enumerate(fetch_candidates_uuid, start=1):
         _enforce_session_health_for_prefetch(
             session_manager,
@@ -913,10 +914,10 @@ def get_prefetched_data_for_match(
     uuid_val: str,
     prefetched_data: dict[str, dict[str, Any]],
 ) -> tuple[
-    Optional[dict[str, Any]],
-    Optional[dict[str, Any]],
-    Optional[str],
-    Optional[dict[str, Optional[int]]],
+    dict[str, Any] | None,
+    dict[str, Any] | None,
+    str | None,
+    dict[str, int | None] | None,
 ]:
     """Return prefetched payloads for an individual match.
 
@@ -964,7 +965,7 @@ def _test_prefetch_hooks_contract() -> bool:
     return True
 
 
-def _make_test_hooks(ladder_callable: Callable[..., Optional[dict[str, Any]]]) -> PrefetchHooks:
+def _make_test_hooks(ladder_callable: Callable[..., dict[str, Any] | None]) -> PrefetchHooks:
     def _noop(*_args: Any, **_kwargs: Any) -> None:
         return None
 
@@ -983,7 +984,7 @@ def _test_merge_badge_and_ladder_success() -> bool:
     ladder_payload = {"relationship": "3rd cousin", "confidence": 0.92}
     captured_args: dict[str, Any] = {}
 
-    def _fake_fetch(sess: SessionManager, cfpid: str, tree_id: str, display_name: Optional[str]) -> dict[str, Any]:
+    def _fake_fetch(sess: SessionManager, cfpid: str, tree_id: str, display_name: str | None) -> dict[str, Any]:
         captured_args["sess"] = sess
         captured_args["cfpid"] = cfpid
         captured_args["tree_id"] = tree_id
@@ -991,7 +992,7 @@ def _test_merge_badge_and_ladder_success() -> bool:
         return ladder_payload
 
     hooks = _make_test_hooks(_fake_fetch)
-    enriched: dict[str, Optional[dict[str, Any]]] = {}
+    enriched: dict[str, dict[str, Any] | None] = {}
     badge_data = {"their_firstname": "Ada", "existing": "value"}
 
     _merge_badge_and_ladder_data(
@@ -1026,7 +1027,7 @@ def _test_merge_badge_and_ladder_handles_errors() -> bool:
         raise RuntimeError("boom")
 
     hooks = _make_test_hooks(_failing_fetch)
-    enriched: dict[str, Optional[dict[str, Any]]] = {}
+    enriched: dict[str, dict[str, Any] | None] = {}
 
     _merge_badge_and_ladder_data(
         session_manager,

@@ -6,7 +6,6 @@ The modules defined here currently delegate to the legacy
 into independently testable components.
 """
 
-from __future__ import annotations
 
 from .checkpoint import GatherCheckpointPlan, GatherCheckpointService
 from .metrics import (
@@ -76,7 +75,21 @@ from testing.test_utilities import create_standard_test_runner
 
 
 def _test_module_integrity() -> bool:
-    "Test that module can be imported and definitions are valid."
+    "Test that every symbol in __all__ is importable and not None."
+    import importlib
+
+    pkg = importlib.import_module(__name__)
+    missing: list[str] = []
+    for name in __all__:
+        try:
+            val = getattr(pkg, name)
+            if val is None:
+                missing.append(f"{name} is None")
+        except AttributeError:
+            missing.append(f"{name} not found")
+    if missing:
+        print(f"  FAIL  {__name__}: {', '.join(missing)}")
+        return False
     return True
 
 

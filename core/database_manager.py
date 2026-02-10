@@ -31,13 +31,11 @@ import asyncio
 import contextlib
 import shutil
 import sqlite3
-import tempfile
 import time
 
 # Note: sys and Path already imported at top of file
-from collections.abc import AsyncGenerator, Generator
-from typing import Any, Callable, Optional, TypedDict, cast
-from unittest.mock import MagicMock, patch
+from collections.abc import AsyncGenerator, Callable, Generator
+from typing import Any, TypedDict, cast
 
 # === THIRD-PARTY IMPORTS ===
 from sqlalchemy import create_engine, event, inspect, pool as sqlalchemy_pool, text
@@ -103,7 +101,7 @@ class DatabaseManager:
     - Connection leak detection and prevention
     """
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         """
         Initialize the Enhanced DatabaseManager.
 
@@ -123,7 +121,7 @@ class DatabaseManager:
 
         # SQLAlchemy components
         self.engine = None
-        self.Session: Optional[sessionmaker[Session]] = None
+        self.Session: sessionmaker[Session] | None = None
         self._db_init_attempted: bool = False
         self._db_ready: bool = False
 
@@ -279,7 +277,7 @@ class DatabaseManager:
             if session:
                 self.return_session(session)
 
-    def execute_query_with_timing(self, session: Session, query: Any, params: Optional[dict[str, Any]] = None) -> Any:
+    def execute_query_with_timing(self, session: Session, query: Any, params: dict[str, Any] | None = None) -> Any:
         """
         Execute a query with performance timing.
 
@@ -363,7 +361,7 @@ class DatabaseManager:
             if session:
                 await loop.run_in_executor(None, self.return_session, session)
 
-    def _record_db_query_metrics(self, query: Any, duration: float, rowcount: Optional[int]) -> None:
+    def _record_db_query_metrics(self, query: Any, duration: float, rowcount: int | None) -> None:
         """Emit Prometheus metrics for database operations."""
 
         try:
@@ -387,8 +385,8 @@ class DatabaseManager:
 
     @staticmethod
     async def async_execute_query(
-        session: Session, query: str, params: Optional[dict[str, Any]] = None, fetch_results: bool = True
-    ) -> Optional[list[dict[str, Any]]]:
+        session: Session, query: str, params: dict[str, Any] | None = None, fetch_results: bool = True
+    ) -> list[dict[str, Any]] | None:
         """
         Execute a database query asynchronously.
 
@@ -422,7 +420,7 @@ class DatabaseManager:
                     rows = result.fetchall()
                     if rows:
                         columns = result.keys()
-                        return [dict(zip(columns, row)) for row in rows]
+                        return [dict(zip(columns, row, strict=False)) for row in rows]
                     return []
                 return None
 
@@ -710,7 +708,7 @@ class DatabaseManager:
         table_name: str,
         column_name: str,
         column_type: str,
-        default_value: Optional[str] = None,
+        default_value: str | None = None,
     ) -> None:
         """Add a column to an existing table, optionally backfilling a default value."""
         if not self.engine:
@@ -745,7 +743,7 @@ class DatabaseManager:
                 upgrade_err,
             )
 
-    def get_session(self) -> Optional[Session]:
+    def get_session(self) -> Session | None:
         """
         Get a database session from the pool with performance tracking.
 
@@ -800,7 +798,7 @@ class DatabaseManager:
             self._db_init_attempted = False
             return None
 
-    def return_session(self, session: Optional[Session]):
+    def return_session(self, session: Session | None):
         """
         Return a session to the pool (close it) with performance tracking.
 
@@ -835,7 +833,7 @@ class DatabaseManager:
             logger.warning(f"DB Context Manager: Session {session_id} inactive after yield, skipping commit.")
 
     @staticmethod
-    def _rollback_session_if_active(session: Optional[Session], session_id: str) -> None:
+    def _rollback_session_if_active(session: Session | None, session_id: str) -> None:
         """Rollback session if active."""
         if session and session.is_active:
             try:
@@ -845,14 +843,14 @@ class DatabaseManager:
                 logger.error(f"DB Context Manager: Error during rollback for session {session_id}: {rb_err}")
 
     @contextlib.contextmanager
-    def get_session_context(self) -> Generator[Optional[Session], None, None]:
+    def get_session_context(self) -> Generator[Session | None, None, None]:
         """
         Context manager for database sessions with automatic transaction handling.
 
         Yields:
             Session or None if session creation failed
         """
-        session: Optional[Session] = None
+        session: Session | None = None
         session_id_for_log = "N/A"
 
         try:
@@ -1012,8 +1010,10 @@ def module_tests() -> bool:
 
 
 # Test functions for comprehensive testing
-def _build_stubbed_db_manager() -> tuple[DatabaseManager, MagicMock, MagicMock, list[MagicMock], Callable[[], None]]:
+def _build_stubbed_db_manager() -> tuple[DatabaseManager, Any, Any, list[Any], Callable[[], None]]:
     """Create a DatabaseManager with stubbed engine and session factory for tests."""
+    from unittest.mock import MagicMock
+
     db_manager = DatabaseManager(db_path=":memory:")
     engine_mock = MagicMock(name="engine")
     created_sessions: list[MagicMock] = []
@@ -1049,6 +1049,8 @@ def test_database_manager_initialization() -> None:
 
 def test_engine_session_creation() -> None:
     """Test SQLAlchemy engine and session factory creation."""
+    from unittest.mock import patch
+
     db_manager, engine_mock, session_factory, _sessions, stub_initializer = _build_stubbed_db_manager()
 
     with patch.object(db_manager, "_initialize_engine_and_session", side_effect=stub_initializer):
@@ -1062,6 +1064,8 @@ def test_engine_session_creation() -> None:
 
 def test_session_context_management() -> None:
     """Test session context manager for automatic transaction handling."""
+    from unittest.mock import MagicMock, patch
+
     db_manager, _engine_mock, _factory, sessions, stub_initializer = _build_stubbed_db_manager()
 
     with patch.object(db_manager, "_initialize_engine_and_session", side_effect=stub_initializer):
@@ -1079,6 +1083,8 @@ def test_session_context_management() -> None:
 
 def test_connection_pooling() -> None:
     """Test database connection pooling and resource management."""
+    from unittest.mock import MagicMock, patch
+
     db_manager, _engine_mock, _factory, sessions, stub_initializer = _build_stubbed_db_manager()
 
     with patch.object(db_manager, "_initialize_engine_and_session", side_effect=stub_initializer):
@@ -1099,6 +1105,8 @@ def test_connection_pooling() -> None:
 
 def test_database_readiness() -> None:
     """Test database readiness checks and initialization status."""
+    from unittest.mock import patch
+
     db_manager, _engine_mock, _factory, _sessions, stub_initializer = _build_stubbed_db_manager()
     assert db_manager.is_ready is False
 
@@ -1111,6 +1119,8 @@ def test_database_readiness() -> None:
 
 def test_error_handling_recovery() -> None:
     """Test error handling during database operations."""
+    from unittest.mock import patch
+
     db_manager = DatabaseManager(db_path=":memory:")
 
     with patch.object(db_manager, "_initialize_engine_and_session", side_effect=RuntimeError("init failure")):
@@ -1124,6 +1134,8 @@ def test_error_handling_recovery() -> None:
 
 def test_session_lifecycle() -> None:
     """Test complete session lifecycle from creation to cleanup."""
+    from unittest.mock import MagicMock, patch
+
     db_manager, _engine_mock, _factory, sessions, stub_initializer = _build_stubbed_db_manager()
 
     with patch.object(db_manager, "_initialize_engine_and_session", side_effect=stub_initializer):
@@ -1139,6 +1151,8 @@ def test_session_lifecycle() -> None:
 
 def test_transaction_isolation() -> None:
     """Test transaction isolation and concurrent session handling."""
+    from unittest.mock import MagicMock, patch
+
     db_manager, _engine_mock, _factory, _sessions, stub_initializer = _build_stubbed_db_manager()
 
     with patch.object(db_manager, "_initialize_engine_and_session", side_effect=stub_initializer):
@@ -1184,6 +1198,8 @@ def _create_legacy_conversation_log_table(db_file: Path) -> None:
 
 def test_schema_upgrade_adds_conversation_log_columns() -> None:
     """Ensure schema upgrades add new conversation_log columns for Action 7."""
+    import tempfile
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         db_file = Path(tmp_dir) / "legacy_inbox.db"
         _create_legacy_conversation_log_table(db_file)

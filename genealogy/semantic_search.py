@@ -13,23 +13,22 @@ Note: This initial implementation is intentionally conservative and avoids
 introducing new external dependencies or vector stores.
 """
 
-from __future__ import annotations
 
 import json
 import logging
 import re
 import time
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, StrEnum
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 from genealogy.tree_query_service import PersonSearchResult, TreeQueryService
 
 logger = logging.getLogger(__name__)
 
 
-class SemanticSearchIntent(str, Enum):
+class SemanticSearchIntent(StrEnum):
     PERSON_LOOKUP = "PERSON_LOOKUP"
     RELATIONSHIP_EXPLANATION = "RELATIONSHIP_EXPLANATION"
     RECORD_SUGGESTION = "RECORD_SUGGESTION"
@@ -40,8 +39,8 @@ class SemanticSearchIntent(str, Enum):
 @dataclass(slots=True)
 class SemanticPersonEntity:
     name: str
-    approx_birth_year: Optional[int] = None
-    location: Optional[str] = None
+    approx_birth_year: int | None = None
+    location: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -54,7 +53,7 @@ class SemanticPersonEntity:
 @dataclass(slots=True)
 class EvidenceBlock:
     source_type: str
-    source_id: Optional[str]
+    source_id: str | None
     summary: str
     confidence: int = 0
 
@@ -69,14 +68,14 @@ class EvidenceBlock:
 
 @dataclass(slots=True)
 class CandidatePerson:
-    person_id: Optional[str]
+    person_id: str | None
     name: str
-    birth_year: Optional[int] = None
-    birth_place: Optional[str] = None
-    death_year: Optional[int] = None
-    death_place: Optional[str] = None
-    match_score: Optional[int] = None
-    confidence: Optional[str] = None
+    birth_year: int | None = None
+    birth_place: str | None = None
+    death_year: int | None = None
+    death_place: str | None = None
+    match_score: int | None = None
+    confidence: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -205,8 +204,8 @@ class SemanticSearchService:
         self,
         query: str,
         *,
-        extracted_entities: Optional[dict[str, Any]] = None,
-        tree_query_service: Optional[TreeQueryService] = None,
+        extracted_entities: dict[str, Any] | None = None,
+        tree_query_service: TreeQueryService | None = None,
         max_candidates: int = 3,
     ) -> SemanticSearchResult:
         intent = self._infer_intent(query)
@@ -250,7 +249,7 @@ class SemanticSearchService:
     def persist_jsonl(
         *,
         payload: dict[str, Any],
-        person_id: Optional[int],
+        person_id: int | None,
         sender_id: str,
         conversation_id: str,
     ) -> None:
@@ -325,7 +324,7 @@ class SemanticSearchService:
         return SemanticSearchIntent.GENERAL_GENEALOGY_QA
 
     @staticmethod
-    def _extract_people(query: str, extracted_entities: Optional[dict[str, Any]]) -> list[SemanticPersonEntity]:
+    def _extract_people(query: str, extracted_entities: dict[str, Any] | None) -> list[SemanticPersonEntity]:
         # Prefer upstream extracted entities (LLM-based) when available.
         if extracted_entities:
             extracted = SemanticSearchService._extract_people_from_entities(extracted_entities)
@@ -347,7 +346,7 @@ class SemanticSearchService:
         return [SemanticPersonEntity(name=n, approx_birth_year=approx_year) for n in unique[:3]]
 
     @staticmethod
-    def _confidence_to_score(confidence: Optional[str]) -> int:
+    def _confidence_to_score(confidence: str | None) -> int:
         if confidence == "high":
             return 80
         if confidence == "medium":
@@ -355,7 +354,7 @@ class SemanticSearchService:
         return 40
 
     @staticmethod
-    def _parse_optional_int(value: Any) -> Optional[int]:
+    def _parse_optional_int(value: Any) -> int | None:
         if value is None:
             return None
         try:
@@ -602,8 +601,8 @@ def module_tests() -> bool:
             def find_person(
                 name: str,
                 *,
-                approx_birth_year: Optional[int] = None,
-                location: Optional[str] = None,
+                approx_birth_year: int | None = None,
+                location: str | None = None,
                 max_results: int = 5,
             ) -> PersonSearchResult:
                 _ = (name, approx_birth_year, location, max_results)
@@ -655,8 +654,8 @@ def module_tests() -> bool:
             def find_person(
                 name: str,
                 *,
-                approx_birth_year: Optional[int] = None,
-                location: Optional[str] = None,
+                approx_birth_year: int | None = None,
+                location: str | None = None,
                 max_results: int = 5,
             ) -> PersonSearchResult:
                 _ = (name, approx_birth_year, location, max_results)

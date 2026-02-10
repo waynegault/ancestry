@@ -9,9 +9,9 @@ Phase 5 Implementation - Centralize Action Metadata (Opportunity #1)
 """
 
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -48,16 +48,16 @@ class ActionMetadata:
     description: str
     category: ActionCategory
     browser_requirement: ActionRequirement
-    function: Optional[Callable[..., object]] = None
+    function: Callable[..., object] | None = None
     requires_confirmation: bool = False
-    confirmation_message: Optional[str] = None
+    confirmation_message: str | None = None
     close_session_after: bool = False
     enable_caching: bool = False
     max_args: int = 0
     menu_order: int = 999  # Lower numbers appear first in menu
     is_test_action: bool = False
     is_meta_action: bool = False
-    input_hint: Optional[str] = None
+    input_hint: str | None = None
     inject_config: bool = False
     skip_csrf_check: bool = False
 
@@ -104,7 +104,7 @@ class ActionRegistry:
             return
         action.function = function
 
-    def get_action(self, action_id: str) -> Optional[ActionMetadata]:
+    def get_action(self, action_id: str) -> ActionMetadata | None:
         """Get action metadata by ID."""
         return self._actions.get(action_id)
 
@@ -137,7 +137,7 @@ class ActionRegistry:
         action = self.get_action(action_id)
         return action.requires_confirmation if action else False
 
-    def get_confirmation_message(self, action_id: str) -> Optional[str]:
+    def get_confirmation_message(self, action_id: str) -> str | None:
         """Get confirmation message for action."""
         action = self.get_action(action_id)
         return action.confirmation_message if action else None
@@ -650,7 +650,7 @@ class ActionRegistry:
 
 
 # Global registry instance
-_action_registry: Optional[ActionRegistry] = None
+_action_registry: ActionRegistry | None = None
 
 
 def get_action_registry() -> ActionRegistry:
@@ -669,7 +669,7 @@ def register_action(action: ActionMetadata) -> None:
     registry.register(action)
 
 
-def get_action(action_id: str) -> Optional[ActionMetadata]:
+def get_action(action_id: str) -> ActionMetadata | None:
     """Get action metadata by ID from global registry."""
     registry = get_action_registry()
     return registry.get_action(action_id)

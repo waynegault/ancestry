@@ -14,6 +14,8 @@ Delivers personalized, contextually-aware messages to DNA matches through:
 In dry_run mode: Messages are created and saved to DB but NOT sent to Ancestry.
 """
 
+from __future__ import annotations
+
 # === CORE INFRASTRUCTURE ===
 import logging
 
@@ -71,18 +73,19 @@ import re
 import sys
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Literal, Optional, TypedDict, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Literal, Optional, TypedDict, TypeVar, cast
 
 T = TypeVar("T")
 
 
 class AncestorInfo(TypedDict, total=False):
     name: str
-    birth_year: Optional[int]
-    birth_place: Optional[str]
+    birth_year: int | None
+    birth_place: str | None
 
 
 if TYPE_CHECKING:
@@ -206,18 +209,18 @@ MIN_MESSAGE_INTERVAL: timedelta = MESSAGE_INTERVALS.get(
 )
 
 
-def _calculate_days_since_login(last_logged_in: Optional[datetime], log_prefix: str) -> Optional[int]:
+def _calculate_days_since_login(last_logged_in: datetime | None, log_prefix: str) -> int | None:
     """Calculate days since last login with timezone handling."""
     if not last_logged_in:
         return None
 
     try:
-        now_utc = datetime.now(timezone.utc)
+        now_utc = datetime.now(UTC)
         # Ensure timezone aware
         if last_logged_in.tzinfo is None:
-            last_logged_in = last_logged_in.replace(tzinfo=timezone.utc)
-        elif last_logged_in.tzinfo != timezone.utc:
-            last_logged_in = last_logged_in.astimezone(timezone.utc)
+            last_logged_in = last_logged_in.replace(tzinfo=UTC)
+        elif last_logged_in.tzinfo != UTC:
+            last_logged_in = last_logged_in.astimezone(UTC)
 
         return (now_utc - last_logged_in).days
     except Exception as e:
@@ -226,7 +229,7 @@ def _calculate_days_since_login(last_logged_in: Optional[datetime], log_prefix: 
 
 
 def _determine_engagement_tier(
-    engagement_score: int, days_since_login: Optional[int], thresholds: dict[str, int], intervals: dict[str, int]
+    engagement_score: int, days_since_login: int | None, thresholds: dict[str, int], intervals: dict[str, int]
 ) -> tuple[timedelta, str]:
     """Determine engagement tier and return interval."""
     high_threshold = thresholds['high']
@@ -248,7 +251,7 @@ def _determine_engagement_tier(
 
 def calculate_adaptive_interval(
     engagement_score: int,
-    last_logged_in: Optional[datetime],
+    last_logged_in: datetime | None,
     log_prefix: str = "",
 ) -> timedelta:
     """
@@ -314,13 +317,13 @@ def calculate_adaptive_interval(
 
 def _is_tree_creation_recent(created_at: datetime, person: Person) -> bool:
     """Check if FamilyTree creation is recent (within threshold)."""
-    now_utc = datetime.now(timezone.utc)
+    now_utc = datetime.now(UTC)
 
     # Ensure timezone aware
     if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=timezone.utc)
-    elif created_at.tzinfo != timezone.utc:
-        created_at = created_at.astimezone(timezone.utc)
+        created_at = created_at.replace(tzinfo=UTC)
+    elif created_at.tzinfo != UTC:
+        created_at = created_at.astimezone(UTC)
 
     days_since_creation = (now_utc - created_at).days
     recent_threshold_days = getattr(config_schema, 'status_change_recent_days', 7)
@@ -344,9 +347,9 @@ def _has_message_after_tree_creation(person: Person, created_at: datetime) -> bo
         if log.direction == MessageDirectionEnum.OUT and log.latest_timestamp:
             log_timestamp = log.latest_timestamp
             if log_timestamp.tzinfo is None:
-                log_timestamp = log_timestamp.replace(tzinfo=timezone.utc)
-            elif log_timestamp.tzinfo != timezone.utc:
-                log_timestamp = log_timestamp.astimezone(timezone.utc)
+                log_timestamp = log_timestamp.replace(tzinfo=UTC)
+            elif log_timestamp.tzinfo != UTC:
+                log_timestamp = log_timestamp.astimezone(UTC)
 
             if log_timestamp > created_at:
                 logger.debug(
@@ -595,13 +598,13 @@ from typing import Any as _Any
 
 
 class _MPState:
-    personalizer: Optional[_Any] = None
+    personalizer: _Any | None = None
 
 
 _MESSAGE_STATE = _MPState()
 
 
-def ensure_message_personalizer() -> Optional[_Any]:
+def ensure_message_personalizer() -> _Any | None:
     """Lazily initialize and return the MessagePersonalizer when session is ready."""
     if _MESSAGE_STATE.personalizer is None and MESSAGE_PERSONALIZATION_AVAILABLE and callable(MessagePersonalizer):
         try:
@@ -624,13 +627,13 @@ MESSAGE_PERSONALIZER = None
 
 # === SENTIMENT ADAPTER STATE ===
 class _SentimentState:
-    adapter: Optional[_Any] = None
+    adapter: _Any | None = None
 
 
 _SENTIMENT_STATE = _SentimentState()
 
 
-def ensure_sentiment_adapter() -> Optional[_Any]:
+def ensure_sentiment_adapter() -> _Any | None:
     """Lazily initialize and return the SentimentAdapter."""
     if _SENTIMENT_STATE.adapter is None and SENTIMENT_ADAPTATION_AVAILABLE and callable(SentimentAdapter):
         try:
@@ -646,7 +649,7 @@ def analyze_conversation_sentiment(
     db_session: Session,
     person_id: int,
     limit: int = 10,
-) -> Optional[_Any]:
+) -> _Any | None:
     """
     Analyze conversation history and recommend message tone.
 
@@ -750,7 +753,7 @@ def adapt_message_with_sentiment(
 # ------------------------------------------------------------------------------
 
 
-def get_safe_relationship_text(family_tree: Optional[FamilyTree], predicted_rel: str) -> str:
+def get_safe_relationship_text(family_tree: FamilyTree | None, predicted_rel: str) -> str:
     """
     Get a natural-sounding relationship description with proper fallbacks.
 
@@ -772,7 +775,7 @@ def get_safe_relationship_text(family_tree: Optional[FamilyTree], predicted_rel:
     return "a family connection"
 
 
-def get_safe_relationship_path(family_tree: Optional[FamilyTree]) -> str:
+def get_safe_relationship_path(family_tree: FamilyTree | None) -> str:
     """
     Get a natural-sounding relationship path with proper fallbacks.
 
@@ -808,7 +811,7 @@ def _is_distant_relationship(actual_rel: str) -> bool:
     return any(distant in actual_rel.lower() for distant in distant_markers)
 
 
-def _calculate_family_tree_confidence(family_tree: Optional[FamilyTree], is_distant_relationship: bool) -> int:
+def _calculate_family_tree_confidence(family_tree: FamilyTree | None, is_distant_relationship: bool) -> int:
     """Calculate confidence score from family tree data."""
     confidence_score = 0
 
@@ -827,23 +830,23 @@ def _calculate_family_tree_confidence(family_tree: Optional[FamilyTree], is_dist
 # === HELPER FUNCTIONS FOR CODE DEDUPLICATION ===
 
 
-def _get_short_template_if_exists(base_template_key: str) -> Optional[str]:
+def _get_short_template_if_exists(base_template_key: str) -> str | None:
     """Return short template key if it exists, else None."""
     short_key = f"{base_template_key}_Short"
     return short_key if short_key in MESSAGE_TEMPLATES else None
 
 
-def _ensure_timezone_aware(dt: Optional[datetime]) -> Optional[datetime]:
+def _ensure_timezone_aware(dt: datetime | None) -> datetime | None:
     """Ensure datetime has timezone info (UTC if none)."""
     if dt and dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
+        return dt.replace(tzinfo=UTC)
     return dt
 
 
 # === TEMPLATE SELECTION HELPERS ===
 
 
-def _calculate_dna_match_confidence(dna_match: Optional[DnaMatch], is_distant_relationship: bool) -> int:
+def _calculate_dna_match_confidence(dna_match: DnaMatch | None, is_distant_relationship: bool) -> int:
     """Calculate confidence score from DNA match data."""
     if dna_match and not is_distant_relationship:
         predicted_rel = safe_column_value(dna_match, "predicted_relationship", None)
@@ -877,7 +880,7 @@ def _get_template_by_confidence_score(base_template_key: str, confidence_score: 
 
 
 def select_template_by_confidence(
-    base_template_key: str, family_tree: Optional[FamilyTree], dna_match: Optional[DnaMatch]
+    base_template_key: str, family_tree: FamilyTree | None, dna_match: DnaMatch | None
 ) -> str:
     """Select template variant based on relationship confidence."""
     # Check for distant relationships first
@@ -931,7 +934,7 @@ def track_template_selection(template_key: str, person_id: int, selection_reason
 # ------------------------------------------------------------------------------
 
 
-def _get_session_manager(session_manager: Optional[SessionManager]) -> Optional[SessionManager]:
+def _get_session_manager(session_manager: SessionManager | None) -> SessionManager | None:
     """Return provided session manager or the globally registered one (no local creation)."""
     if session_manager:
         return session_manager
@@ -967,7 +970,7 @@ def _get_template_selections(session: Session, cutoff_date: datetime) -> list[Co
     )
 
 
-def _extract_template_name(script_message_status: str) -> Optional[str]:
+def _extract_template_name(script_message_status: str) -> str | None:
     """Extract template name from script message status."""
     status_parts = script_message_status.split(":")
     if len(status_parts) >= 2:
@@ -984,7 +987,7 @@ def _find_response_for_template(
     session: Session,
     person_id: int,
     sent_time: datetime,
-) -> Optional[ConversationLog]:
+) -> ConversationLog | None:
     """Find response for a specific template sent to a person."""
     return (
         session.query(ConversationLog)
@@ -1044,7 +1047,7 @@ def _process_template_selections(
 
 
 def analyze_template_effectiveness(
-    session_manager: Optional[SessionManager] = None,
+    session_manager: SessionManager | None = None,
     days_back: int = 30,
 ) -> dict[str, Any]:
     """
@@ -1068,7 +1071,7 @@ def analyze_template_effectiveness(
                 return {"error": "Could not get database session"}
 
             # Get cutoff date
-            cutoff_date = datetime.now(timezone.utc) - timedelta(days=days_back)
+            cutoff_date = datetime.now(UTC) - timedelta(days=days_back)
 
             # Query for template selections and responses
             template_stats = {}
@@ -1081,7 +1084,7 @@ def analyze_template_effectiveness(
                 "analysis_period_days": days_back,
                 "total_templates_analyzed": len(template_stats),
                 "template_stats": template_stats,
-                "generated_at": datetime.now(timezone.utc).isoformat(),
+                "generated_at": datetime.now(UTC).isoformat(),
             }
 
     except Exception as e:
@@ -1185,8 +1188,8 @@ def _update_messaging_performance(session_manager: SessionManager, duration: flo
 
 def _get_simple_messaging_data(
     db_session: Session,
-    session_manager: Optional[SessionManager] = None,
-) -> tuple[Optional[dict[str, int]], Optional[list[Person]]]:
+    session_manager: SessionManager | None = None,
+) -> tuple[dict[str, int] | None, list[Person] | None]:
     """
     Simplified data fetching for messaging process.
     - Fetches MessageTemplate key-to-ID mapping.
@@ -1276,7 +1279,7 @@ def _get_simple_messaging_data(
 
 def _get_person_message_history(
     db_session: Session, person_id: int
-) -> tuple[Optional[ConversationLog], Optional[ConversationLog], Optional[str]]:
+) -> tuple[ConversationLog | None, ConversationLog | None, str | None]:
     """
     Get the latest IN and OUT message history for a specific person.
 
@@ -1327,7 +1330,7 @@ def _get_person_message_history(
         return None, None, None
 
 
-def _validate_system_health(session_manager: Optional[SessionManager]) -> bool:
+def _validate_system_health(session_manager: SessionManager | None) -> bool:
     """
     Comprehensive system health validation before starting messaging operations.
 
@@ -1563,7 +1566,7 @@ class ErrorCategorizer:
     def trigger_monitoring_alert(self, alert_type: str, message: str, severity: str = 'warning') -> None:
         """Trigger monitoring alerts through registered hooks."""
         alert_data = {
-            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'timestamp': datetime.now(UTC).isoformat(),
             'alert_type': alert_type,
             'message': message,
             'severity': severity,
@@ -1821,7 +1824,7 @@ class ProactiveApiManager:
                 )
 
 
-def _with_operation_timeout(operation_func: Callable[[], T], timeout_seconds: int, operation_name: str) -> T:
+def _with_operation_timeout[T](operation_func: Callable[[], T], timeout_seconds: int, operation_name: str) -> T:
     """
     Execute operation with proper timeout handling (cross-platform).
 
@@ -1836,7 +1839,7 @@ def _with_operation_timeout(operation_func: Callable[[], T], timeout_seconds: in
     import threading
 
     result: list[Any] = [None]
-    exception: list[Optional[Exception]] = [None]
+    exception: list[Exception | None] = [None]
     completed = [False]
 
     def target() -> None:
@@ -1924,12 +1927,12 @@ def _safe_api_call_with_validation(
 # === PHASE 5 RESEARCH ASSISTANT FEATURES ===
 
 
-def _validate_family_tree_for_sources(family_tree: Optional[FamilyTree]) -> bool:
+def _validate_family_tree_for_sources(family_tree: FamilyTree | None) -> bool:
     """Validate family tree has required attributes for source extraction."""
     return family_tree is not None and hasattr(family_tree, 'gedcom_id')
 
 
-def _load_and_validate_gedcom() -> Optional[Any]:
+def _load_and_validate_gedcom() -> Any | None:
     """Load and validate GEDCOM data file using aggressive caching for performance."""
     try:
         from pathlib import Path
@@ -1972,7 +1975,7 @@ def _extract_and_format_sources(gedcom_data: Any, gedcom_id: str) -> str:
 
 
 def enhance_message_with_sources(
-    person: Person, family_tree: Optional[FamilyTree], format_data: dict[str, Any]
+    person: Person, family_tree: FamilyTree | None, format_data: dict[str, Any]
 ) -> None:
     """
     Enhance message format data with source citations from GEDCOM.
@@ -2004,7 +2007,7 @@ def enhance_message_with_sources(
 
 
 def enhance_message_with_relationship_diagram(
-    person: Person, family_tree: Optional[FamilyTree], format_data: dict[str, Any]
+    person: Person, family_tree: FamilyTree | None, format_data: dict[str, Any]
 ) -> None:
     """
     Enhance message format data with relationship diagram.
@@ -2051,7 +2054,7 @@ def enhance_message_with_relationship_diagram(
 
 
 def _extract_research_context(
-    person: Person, family_tree: Optional[FamilyTree]
+    person: Person, family_tree: FamilyTree | None
 ) -> tuple[list[str], list[str], list[AncestorInfo]]:
     """Extract location, time period, and common ancestor information."""
     locations: list[str] = []
@@ -2091,7 +2094,7 @@ def _format_research_suggestions_text(collections: list[Any]) -> str:
 
 
 def enhance_message_with_research_suggestions(
-    person: Person, family_tree: Optional[FamilyTree], format_data: dict[str, Any]
+    person: Person, family_tree: FamilyTree | None, format_data: dict[str, Any]
 ) -> None:
     """
     Enhance message format data with research suggestions.
@@ -2132,7 +2135,7 @@ def enhance_message_with_research_suggestions(
 
 def enhance_message_format_data_phase5(
     person: Person,
-    family_tree: Optional[FamilyTree],
+    family_tree: FamilyTree | None,
     format_data: dict[str, Any],
     enable_sources: bool = True,
     enable_diagrams: bool = True,
@@ -2211,11 +2214,11 @@ def _record_messaging_counter(metric_name: str, *, labels: dict[str, str]) -> No
 
 
 def _should_skip_for_opt_out(
-    db_session: Optional[Session],
+    db_session: Session | None,
     person: Person,
-    latest_in_log: Optional[ConversationLog],
+    latest_in_log: ConversationLog | None,
     log_prefix: str,
-) -> Optional[str]:
+) -> str | None:
     """Return skip reason when opt-out signals are detected."""
     if not getattr(config_schema, "enable_opt_out_guard", True):
         return None
@@ -2238,7 +2241,7 @@ def _should_skip_for_opt_out(
     return _opt_out_inbound_reason(detector, latest_in_log, log_prefix)
 
 
-def _opt_out_status_reason(detector: OptOutDetector, person_id: Optional[int], log_prefix: str) -> Optional[str]:
+def _opt_out_status_reason(detector: OptOutDetector, person_id: int | None, log_prefix: str) -> str | None:
     if not person_id:
         return None
     try:
@@ -2257,9 +2260,9 @@ def _opt_out_status_reason(detector: OptOutDetector, person_id: Optional[int], l
 
 def _opt_out_inbound_reason(
     detector: OptOutDetector,
-    latest_in_log: Optional[ConversationLog],
+    latest_in_log: ConversationLog | None,
     log_prefix: str,
-) -> Optional[str]:
+) -> str | None:
     inbound_text = safe_column_value(latest_in_log, "latest_message_content", "") or ""
     if not inbound_text:
         return None
@@ -2282,8 +2285,8 @@ def _opt_out_inbound_reason(
 
 
 def _handle_desist_status(
-    log_prefix: str, latest_out_log: Optional[ConversationLog], message_type_map: dict[str, int]
-) -> tuple[Optional[str], str]:
+    log_prefix: str, latest_out_log: ConversationLog | None, message_type_map: dict[str, int]
+) -> tuple[str | None, str]:
     """Handle DESIST status and return message key and reason if ACK needed."""
     logger.debug(f"{log_prefix}: Status is DESIST. Checking if Desist ACK needed.")
 
@@ -2302,10 +2305,10 @@ def _handle_desist_status(
 
 
 def _check_reply_received(
-    latest_in_log: Optional[ConversationLog], latest_out_log: Optional[ConversationLog], log_prefix: str
+    latest_in_log: ConversationLog | None, latest_out_log: ConversationLog | None, log_prefix: str
 ) -> None:
     """Check if reply was received since last script message."""
-    min_aware_dt = datetime.min.replace(tzinfo=timezone.utc)
+    min_aware_dt = datetime.min.replace(tzinfo=UTC)
 
     last_out_ts_utc = min_aware_dt
     if latest_out_log:
@@ -2330,7 +2333,7 @@ def _check_reply_received(
         raise StopIteration("skipped (custom_reply_sent)")
 
 
-def _normalize_out_timestamp(latest_out_log: Optional[ConversationLog]) -> Optional[datetime]:
+def _normalize_out_timestamp(latest_out_log: ConversationLog | None) -> datetime | None:
     """Return the last outbound script timestamp as UTC, if available."""
     if not latest_out_log:
         return None
@@ -2343,8 +2346,8 @@ def _normalize_out_timestamp(latest_out_log: Optional[ConversationLog]) -> Optio
     if not normalized_timestamp:
         return None
 
-    if normalized_timestamp.tzinfo != timezone.utc:
-        normalized_timestamp = normalized_timestamp.astimezone(timezone.utc)
+    if normalized_timestamp.tzinfo != UTC:
+        normalized_timestamp = normalized_timestamp.astimezone(UTC)
     return normalized_timestamp
 
 
@@ -2392,7 +2395,7 @@ def _enforce_adaptive_interval_requirement(
     )
 
 
-def _check_message_interval(latest_out_log: Optional[ConversationLog], person: Person, log_prefix: str) -> None:
+def _check_message_interval(latest_out_log: ConversationLog | None, person: Person, log_prefix: str) -> None:
     """
     Check if adaptive message interval has passed since last script message.
 
@@ -2406,7 +2409,7 @@ def _check_message_interval(latest_out_log: Optional[ConversationLog], person: P
         if not out_timestamp:
             return
 
-        time_since_last = datetime.now(timezone.utc) - out_timestamp
+        time_since_last = datetime.now(UTC) - out_timestamp
         extra_backoff_seconds = getattr(config_schema, "per_recipient_backoff_seconds", 0)
 
         _enforce_base_intervals(time_since_last, extra_backoff_seconds, log_prefix)
@@ -2431,8 +2434,8 @@ def _check_message_interval(latest_out_log: Optional[ConversationLog], person: P
 
 
 def _get_last_script_message_details(
-    latest_out_log: Optional[ConversationLog], latest_out_template_key: Optional[str], log_prefix: str
-) -> Optional[tuple[Optional[str], datetime, str]]:
+    latest_out_log: ConversationLog | None, latest_out_template_key: str | None, log_prefix: str
+) -> tuple[str | None, datetime, str] | None:
     """Extract details from the last script message."""
     if not latest_out_log:
         return None
@@ -2444,12 +2447,12 @@ def _get_last_script_message_details(
     try:
         out_timestamp = _ensure_timezone_aware(out_timestamp)
         if not out_timestamp:
-            out_timestamp = datetime.now(timezone.utc)
-        elif out_timestamp.tzinfo != timezone.utc:
-            out_timestamp = out_timestamp.astimezone(timezone.utc)
+            out_timestamp = datetime.now(UTC)
+        elif out_timestamp.tzinfo != UTC:
+            out_timestamp = out_timestamp.astimezone(UTC)
     except Exception as tz_error:
         logger.warning(f"Timezone conversion error for {log_prefix}: {tz_error}")
-        out_timestamp = datetime.now(timezone.utc)
+        out_timestamp = datetime.now(UTC)
 
     last_type_name = latest_out_template_key
     if not last_type_name or last_type_name == "Unknown":
@@ -2461,7 +2464,7 @@ def _get_last_script_message_details(
 
 
 def _determine_message_to_send(
-    person: Person, latest_out_log: Optional[ConversationLog], latest_out_template_key: Optional[str], log_prefix: str
+    person: Person, latest_out_log: ConversationLog | None, latest_out_template_key: str | None, log_prefix: str
 ) -> tuple[str, str]:
     """Determine which message to send and the selection reason."""
     last_script_message_details = _get_last_script_message_details(latest_out_log, latest_out_template_key, log_prefix)
@@ -2495,7 +2498,7 @@ def _determine_message_to_send(
     return message_to_send_key, template_selection_reason
 
 
-def _get_best_name_for_person(person: Person, family_tree: Optional[FamilyTree]) -> str:
+def _get_best_name_for_person(person: Person, family_tree: FamilyTree | None) -> str:
     """Determine the best name to use for the person (Tree Name > First Name > Username)."""
     tree_name = None
     if family_tree:
@@ -2536,7 +2539,7 @@ def _format_predicted_relationship(rel_str: str) -> str:
     return rel_str
 
 
-def _get_owner_profile_id() -> Optional[str]:
+def _get_owner_profile_id() -> str | None:
     """Get tree owner's profile ID from session manager or config."""
     from core.session_utils import get_session_manager
 
@@ -2612,7 +2615,7 @@ def _add_tree_statistics_to_format_data(format_data: dict[str, Any], db_session:
 
 
 def _prepare_message_format_data(
-    person: Person, family_tree: Optional[FamilyTree], dna_match: Optional[DnaMatch], db_session: Session
+    person: Person, family_tree: FamilyTree | None, dna_match: DnaMatch | None, db_session: Session
 ) -> dict[str, Any]:
     """Prepare format data for message template with enhanced statistics."""
     name_to_use = _get_best_name_for_person(person, family_tree)
@@ -2675,7 +2678,7 @@ def _try_enhanced_template(
     person: Person,
     format_data: dict[str, Any],
     log_prefix: str,
-) -> Optional[str]:
+) -> str | None:
     """Try to format message using enhanced personalized template."""
     mpr = ensure_message_personalizer()
     if not mpr or not hasattr(person, 'extracted_genealogical_data'):
@@ -2748,7 +2751,7 @@ def _format_message_text(
     person: Person,
     format_data: dict[str, Any],
     log_prefix: str,
-    db_session: Optional[Session] = None,
+    db_session: Session | None = None,
 ) -> str:
     """
     Format message text using enhanced or standard template.
@@ -2772,7 +2775,7 @@ def _format_message_text(
     return message_text
 
 
-def _select_contextual_prompt_variant(person_id: Optional[int]) -> tuple[str, Optional[str], Optional[str]]:
+def _select_contextual_prompt_variant(person_id: int | None) -> tuple[str, str | None, str | None]:
     """Pick prompt key/variant for contextual replies using A/B config."""
 
     experiment_id = os.getenv("CONTEXTUAL_REPLY_EXPERIMENT_ID", "contextual_reply_ab_test")
@@ -2935,10 +2938,10 @@ def _build_shared_match_cluster_suggestion(
 
 def _record_contextual_experiment_result(
     experiment_id: str,
-    experiment_variant: Optional[str],
+    experiment_variant: str | None,
     quality_score: int,
     response_time_ms: float,
-    person_id: Optional[int],
+    person_id: int | None,
     metadata: dict[str, Any],
 ) -> None:
     """Send contextual reply metrics to the A/B experiment store."""
@@ -2958,13 +2961,13 @@ def _record_contextual_experiment_result(
         logger.debug(f"Experiment result logging skipped: {exc}")
 
 
-def _load_existing_contextual_draft(person_uuid: str) -> Optional[dict[str, Any]]:
+def _load_existing_contextual_draft(person_uuid: str) -> dict[str, Any] | None:
     """Load the most recent contextual draft for a person from the log."""
     draft_path = Path("Logs") / "contextual_drafts.jsonl"
     if not draft_path.exists():
         return None
 
-    latest_entry: Optional[dict[str, Any]] = None
+    latest_entry: dict[str, Any] | None = None
     try:
         with draft_path.open("r", encoding="utf-8") as handle:
             for line in handle:
@@ -2983,7 +2986,7 @@ def _load_existing_contextual_draft(person_uuid: str) -> Optional[dict[str, Any]
     return latest_entry
 
 
-def _score_draft_quality(draft_text: str, context_json: Optional[str]) -> tuple[int, str]:
+def _score_draft_quality(draft_text: str, context_json: str | None) -> tuple[int, str]:
     """Heuristic quality score for contextual drafts (0-100)."""
     text = (draft_text or "").strip()
     if not text:
@@ -3025,7 +3028,7 @@ def _validate_and_correct_draft(
     context_summary: str,
     session_manager: SessionManager,
     log_prefix: str,
-) -> tuple[Optional[str], bool]:
+) -> tuple[str | None, bool]:
     """
     Validate draft quality and attempt correction if needed.
 
@@ -3118,7 +3121,7 @@ def _validate_and_correct_draft(
 def _queue_contextual_draft_for_review(
     db_session: Session,
     person: Person,
-    conversation_id: Optional[str],
+    conversation_id: str | None,
     draft_payload: dict[str, Any],
     log_prefix: str,
 ) -> None:
@@ -3151,12 +3154,12 @@ def _queue_contextual_draft_for_review(
 
 
 def _generate_draft_text_with_timing(
-    context: "MatchContext",
+    context: MatchContext,
     last_message: str,
     context_json: str,
     session_manager: SessionManager,
-    prompt_selection: tuple[str, Optional[str], Optional[str]],
-) -> tuple[Optional[str], float]:
+    prompt_selection: tuple[str, str | None, str | None],
+) -> tuple[str | None, float]:
     start_time = time.time()
 
     # Phase 2.3: Use structured reply generation
@@ -3195,13 +3198,13 @@ def _generate_contextual_draft_payload(  # noqa: PLR0914
     db_session: Session,
     session_manager: SessionManager,
     person: Person,
-    latest_in_log: Optional[ConversationLog],
+    latest_in_log: ConversationLog | None,
     log_prefix: str,
-    conversation_id: Optional[str],
-    prompt_selection: tuple[str, Optional[str], Optional[str]],
+    conversation_id: str | None,
+    prompt_selection: tuple[str, str | None, str | None],
     engagement_score: Any,
     match_uuid: str,
-) -> Optional[dict[str, Any]]:
+) -> dict[str, Any] | None:
     try:
         last_message = safe_column_value(latest_in_log, "latest_message_content", "") or ""
         context = ContextBuilder(db_session=db_session).build_context(match_uuid)
@@ -3297,13 +3300,13 @@ def _generate_contextual_draft_payload(  # noqa: PLR0914
 
 
 def _build_contextual_reply_draft(
-    db_session: Optional[Session],
+    db_session: Session | None,
     session_manager: SessionManager,
     person: Person,
-    latest_in_log: Optional[ConversationLog],
+    latest_in_log: ConversationLog | None,
     log_prefix: str,
-    conversation_id: Optional[str],
-) -> Optional[dict[str, Any]]:
+    conversation_id: str | None,
+) -> dict[str, Any] | None:
     """Generate a context-rich reply draft using ContextBuilder and AI.
 
     Returns a dictionary with draft text and serialized context when enabled.
@@ -3325,7 +3328,7 @@ def _build_contextual_reply_draft(
     prompt_selection = _select_contextual_prompt_variant(safe_column_value(person, "id", None))
     engagement_score = getattr(person, "current_engagement_score", None)
 
-    payload: Optional[dict[str, Any]] = _load_existing_contextual_draft(match_uuid)
+    payload: dict[str, Any] | None = _load_existing_contextual_draft(match_uuid)
     if payload:
         if not payload.get("confidence"):
             confidence_reason = _score_draft_quality(payload.get("draft_text", ""), payload.get("context_json"))
@@ -3354,7 +3357,7 @@ def _persist_contextual_draft(draft_payload: dict[str, Any], person: Person, log
         draft_path = Path("Logs") / "contextual_drafts.jsonl"
         draft_path.parent.mkdir(exist_ok=True, parents=True)
         record = {
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "person_id": safe_column_value(person, "id", None),
             "person_uuid": safe_column_value(person, "uuid", None),
             "log_prefix": log_prefix,
@@ -3377,8 +3380,8 @@ def _check_mode_filtering(person: Person, log_prefix: str) -> tuple[bool, str]:
 
 
 def _get_existing_conversation_id(
-    latest_out_log: Optional[ConversationLog], latest_in_log: Optional[ConversationLog]
-) -> Optional[str]:
+    latest_out_log: ConversationLog | None, latest_in_log: ConversationLog | None
+) -> str | None:
     """Get existing conversation ID from logs (prefer OUT, fallback IN)."""
     existing_conversation_id = None
     if latest_out_log:
@@ -3393,10 +3396,10 @@ def _get_existing_conversation_id(
 @dataclass(slots=True)
 class _MessageSendResult:
     status: str
-    conversation_id: Optional[str]
+    conversation_id: str | None
 
 
-def _create_message_flags(person: Person, log_prefix: str) -> "MessageFlags":
+def _create_message_flags(person: Person, log_prefix: str) -> MessageFlags:
     from core.common_params import MessageFlags
 
     send_message_flag, skip_log_reason = _check_mode_filtering(person, log_prefix)
@@ -3420,9 +3423,9 @@ def _build_message_context(
     message_key: str,
     template_reason: str,
     log_prefix: str,
-    latest_out_log: Optional[ConversationLog],
-    latest_in_log: Optional[ConversationLog],
-) -> tuple["MessageContext", "ConversationState"]:
+    latest_out_log: ConversationLog | None,
+    latest_in_log: ConversationLog | None,
+) -> tuple[MessageContext, ConversationState]:
     from core.common_params import ConversationState, MessageContext
 
     existing_conversation_id = _get_existing_conversation_id(latest_out_log, latest_in_log)
@@ -3445,7 +3448,7 @@ def _message_was_successful(status: str) -> bool:
     return status in {"delivered OK", "typed (dry_run)"} or status.startswith("skipped (")
 
 
-def _update_conv_state(conv_state: "ConversationState", result: _MessageSendResult) -> None:
+def _update_conv_state(conv_state: ConversationState, result: _MessageSendResult) -> None:
     conv_state.effective_conv_id = result.conversation_id
 
 
@@ -3456,8 +3459,8 @@ def _update_conv_state(conv_state: "ConversationState", result: _MessageSendResu
 
 def _run_shadow_mode_comparison(
     session_manager: SessionManager,
-    msg_ctx: "MessageContext",
-    msg_flags: "MessageFlags",
+    msg_ctx: MessageContext,
+    msg_flags: MessageFlags,
 ) -> None:
     """
     Run shadow mode comparison between legacy and orchestrator decisions.
@@ -3511,10 +3514,10 @@ def _run_shadow_mode_comparison(
 
 def _send_via_orchestrator(
     session_manager: SessionManager,
-    msg_ctx: "MessageContext",
-    conv_state: "ConversationState",
-    msg_flags: "MessageFlags",
-) -> Optional[_MessageSendResult]:
+    msg_ctx: MessageContext,
+    conv_state: ConversationState,
+    msg_flags: MessageFlags,
+) -> _MessageSendResult | None:
     """
     Send message via unified MessageSendOrchestrator (Phase 3 integration).
 
@@ -3595,9 +3598,9 @@ def _send_via_orchestrator(
 
 def _send_or_simulate_message(
     session_manager: SessionManager,
-    msg_ctx: 'MessageContext',
-    conv_state: 'ConversationState',
-    msg_flags: 'MessageFlags',
+    msg_ctx: MessageContext,
+    conv_state: ConversationState,
+    msg_flags: MessageFlags,
 ) -> _MessageSendResult:
     """Send or simulate message, return status and conversation ID."""
     # Try orchestrator first (Phase 3 integration)
@@ -3638,9 +3641,9 @@ def _send_or_simulate_message(
 
 
 def _prepare_conversation_log_entry(
-    msg_ctx: 'MessageContext',
-    conv_state: 'ConversationState',
-    msg_flags: 'MessageFlags',
+    msg_ctx: MessageContext,
+    conv_state: ConversationState,
+    msg_flags: MessageFlags,
     message_type_map: dict[str, int],
 ) -> ConversationLog:
     """Prepare conversation log entry for database."""
@@ -3666,7 +3669,7 @@ def _prepare_conversation_log_entry(
         direction=MessageDirectionEnum.OUT,
         people_id=msg_ctx.person.id,
         latest_message_content=log_content,
-        latest_timestamp=datetime.now(timezone.utc),
+        latest_timestamp=datetime.now(UTC),
         ai_sentiment=None,
         message_template_id=message_template_id_to_log,
         script_message_status=enhanced_status,
@@ -3675,7 +3678,7 @@ def _prepare_conversation_log_entry(
 
 def _determine_final_status(
     message_to_send_key: str, message_status: str, send_message_flag: bool, person_id: int, log_prefix: str
-) -> tuple[str, Optional[tuple[int, PersonStatusEnum]]]:
+) -> tuple[str, tuple[int, PersonStatusEnum] | None]:
     """Determine final status and person update based on message outcome."""
     person_update = None
 
@@ -3696,18 +3699,18 @@ def _determine_final_status(
 
 @dataclass(slots=True)
 class _PersonStatusDecision:
-    message_key: Optional[str]
+    message_key: str | None
     template_reason: str
-    dna_match: Optional[Any]
-    family_tree: Optional[Any]
+    dna_match: Any | None
+    family_tree: Any | None
 
 
 def _handle_person_status(
     person: Person,
     log_prefix: str,
-    latest_in_log: Optional[ConversationLog],
-    latest_out_log: Optional[ConversationLog],
-    latest_out_template_key: Optional[str],
+    latest_in_log: ConversationLog | None,
+    latest_out_log: ConversationLog | None,
+    latest_out_template_key: str | None,
     message_type_map: dict[str, int],
 ) -> _PersonStatusDecision:
     """Handle person status and determine message to send."""
@@ -3770,13 +3773,13 @@ def _handle_person_status(
 def _finalize_successful_message(
     message_key: str,
     send_result: Any,
-    msg_flags: "MessageFlags",
+    msg_flags: MessageFlags,
     person: Person,
     log_prefix: str,
-    msg_ctx: "MessageContext",
-    conv_state: "ConversationState",
+    msg_ctx: MessageContext,
+    conv_state: ConversationState,
     message_type_map: dict[str, int],
-) -> tuple[Optional[ConversationLog], Optional[tuple[int, PersonStatusEnum]], str]:
+) -> tuple[ConversationLog | None, tuple[int, PersonStatusEnum] | None, str]:
     """Finalize successful send and prepare DB/log updates."""
     _update_conv_state(conv_state, send_result)
     msg_flags.message_status = send_result.status
@@ -3795,11 +3798,11 @@ def _process_single_person(
     db_session: Session,
     session_manager: SessionManager,
     person: Person,
-    latest_in_log: Optional[ConversationLog],
-    latest_out_log: Optional[ConversationLog],
-    latest_out_template_key: Optional[str],  # Template key from latest OUT message
+    latest_in_log: ConversationLog | None,
+    latest_out_log: ConversationLog | None,
+    latest_out_template_key: str | None,  # Template key from latest OUT message
     message_type_map: dict[str, int],
-) -> tuple[Optional[ConversationLog], Optional[tuple[int, PersonStatusEnum]], str]:
+) -> tuple[ConversationLog | None, tuple[int, PersonStatusEnum] | None, str]:
     """
     Processes a single person to determine if a message should be sent,
     formats the message, sends/simulates it, and prepares database updates.
@@ -3976,7 +3979,7 @@ def _initialize_resource_management() -> _ResourceBundle:
     )
 
 
-def _validate_action8_prerequisites(session_manager: SessionManager) -> tuple[bool, Optional[str]]:
+def _validate_action8_prerequisites(session_manager: SessionManager) -> tuple[bool, str | None]:
     """Validate prerequisites for Action 8 execution."""
     if not _validate_system_health(session_manager):
         logger.critical("🚨 System health check failed - aborting messaging run.")
@@ -4000,7 +4003,7 @@ class _MessagingData:
     total_candidates: int
 
 
-def _fetch_messaging_data(db_session: Session, session_manager: SessionManager) -> Optional[_MessagingData]:
+def _fetch_messaging_data(db_session: Session, session_manager: SessionManager) -> _MessagingData | None:
     """Fetch message type map and candidate persons."""
     try:
         message_type_map, candidate_persons = _get_simple_messaging_data(db_session, session_manager)
@@ -4052,7 +4055,7 @@ def _apply_processing_result(
 
 
 def _handle_critical_db_error(
-    progress_bar: Optional[Any],
+    progress_bar: Any | None,
     total_candidates: int,
     processed_in_loop: int,
     sent_count: int,
@@ -4071,7 +4074,7 @@ def _handle_critical_db_error(
 
 
 def _check_and_handle_browser_health(
-    session_manager: SessionManager, state: 'ProcessingState', counters: 'BatchCounters', total_candidates: int
+    session_manager: SessionManager, state: ProcessingState, counters: BatchCounters, total_candidates: int
 ) -> tuple[bool, int]:
     """Check browser health and attempt recovery if needed. Returns (should_break, additional_skips)."""
 
@@ -4107,7 +4110,7 @@ def _check_message_send_limit(
     max_messages_to_send_this_run: int,
     sent_count: int,
     acked_count: int,
-    progress_bar: Optional[Any],
+    progress_bar: Any | None,
     skipped_count: int,
     error_count: int,
 ) -> bool:
@@ -4142,7 +4145,7 @@ def _log_periodic_progress(
         )
 
 
-def _convert_log_object_to_dict(new_log_object: ConversationLog) -> Optional[dict[str, Any]]:
+def _convert_log_object_to_dict(new_log_object: ConversationLog) -> dict[str, Any] | None:
     """Convert SQLAlchemy ConversationLog object to dictionary for batch commit."""
     try:
         log_dict = {
@@ -4165,7 +4168,7 @@ def _convert_log_object_to_dict(new_log_object: ConversationLog) -> Optional[dic
         # Normalize timestamp
         ts_val = log_dict["latest_timestamp"]
         log_dict["latest_timestamp"] = (
-            ts_val.astimezone(timezone.utc) if ts_val.tzinfo else ts_val.replace(tzinfo=timezone.utc)
+            ts_val.astimezone(UTC) if ts_val.tzinfo else ts_val.replace(tzinfo=UTC)
         )
 
         return log_dict
@@ -4175,8 +4178,8 @@ def _convert_log_object_to_dict(new_log_object: ConversationLog) -> Optional[dic
 
 
 def _prepare_log_dict(
-    new_log_object: Optional[ConversationLog],
-) -> tuple[Optional[dict[str, Any]], Literal["unchanged", "error"]]:
+    new_log_object: ConversationLog | None,
+) -> tuple[dict[str, Any] | None, Literal["unchanged", "error"]]:
     """Convert log object to dict."""
     if not new_log_object:
         return None, "unchanged"
@@ -4186,7 +4189,7 @@ def _prepare_log_dict(
 
 def _handle_sent_status(
     sent_count: int,
-    log_dict: Optional[dict[str, Any]],
+    log_dict: dict[str, Any] | None,
     db_logs_to_add_dicts: list[dict[str, Any]],
 ) -> int:
     """Handle sent status updates."""
@@ -4197,8 +4200,8 @@ def _handle_sent_status(
 
 def _handle_acked_status(
     acked_count: int,
-    log_dict: Optional[dict[str, Any]],
-    person_update_tuple: Optional[tuple[int, PersonStatusEnum]],
+    log_dict: dict[str, Any] | None,
+    person_update_tuple: tuple[int, PersonStatusEnum] | None,
     db_logs_to_add_dicts: list[dict[str, Any]],
     person_updates: dict[int, Any],
 ) -> int:
@@ -4213,7 +4216,7 @@ def _handle_acked_status(
 def _handle_error_or_skip_status(
     status: str,
     counters: BatchCounters,
-    log_dict: Optional[dict[str, Any]],
+    log_dict: dict[str, Any] | None,
     batch_data: MessagingBatchData,
     error_categorizer: ErrorCategorizer,
     person: Person,
@@ -4241,8 +4244,8 @@ def _handle_error_or_skip_status(
 
 def _update_counters_and_collect_data(
     status: str,
-    new_log_object: Optional[ConversationLog],
-    person_update_tuple: Optional[tuple[int, PersonStatusEnum]],
+    new_log_object: ConversationLog | None,
+    person_update_tuple: tuple[int, PersonStatusEnum] | None,
     counters: BatchCounters,
     batch_data: MessagingBatchData,
     error_categorizer: ErrorCategorizer,
@@ -4339,8 +4342,8 @@ def _perform_batch_commit(
 
 
 def _create_result_dict(
-    counters: 'BatchCounters',
-    state: 'ProcessingState',
+    counters: BatchCounters,
+    state: ProcessingState,
     critical_db_error: bool = False,
     overall_success: bool = True,
     should_continue: bool = True,
@@ -4375,11 +4378,11 @@ def _log_message_creation_debug(new_log_object: Any, db_session: Session, person
 
 def _handle_batch_commit_if_needed(
     db_session: Session,
-    batch_data: 'MessagingBatchData',
-    state: 'ProcessingState',
-    counters: 'BatchCounters',
+    batch_data: MessagingBatchData,
+    state: ProcessingState,
+    counters: BatchCounters,
     session_manager: SessionManager,
-    batch_config: 'BatchConfig',
+    batch_config: BatchConfig,
 ) -> tuple[bool, int, bool]:
     """Handle batch commit if needed. Returns (critical_error, batch_num, overall_success)."""
     current_batch_size, memory_usage_mb = _calculate_batch_memory(
@@ -4507,8 +4510,8 @@ def _process_single_candidate_iteration(
 
 def _log_final_summary(
     total_candidates: int,
-    state: 'ProcessingState',
-    counters: 'BatchCounters',
+    state: ProcessingState,
+    counters: BatchCounters,
     overall_success: bool,
     error_categorizer: ErrorCategorizer,
     start_time: float,
@@ -4662,12 +4665,12 @@ def _perform_final_commit(
 
 
 def _perform_final_cleanup(
-    db_session: Optional[Session],
+    db_session: Session | None,
     session_manager: SessionManager,
     critical_db_error_occurred: bool,
     total_candidates: int,
-    state: 'ProcessingState',
-    counters: 'BatchCounters',
+    state: ProcessingState,
+    counters: BatchCounters,
     overall_success: bool,
     error_categorizer: Any,
     start_time: float,
@@ -4949,7 +4952,7 @@ def _log_messaging_run_configuration(app_mode: str, max_messages: int, batch_siz
     )
 
 
-def _prepare_messaging_run(session_manager: SessionManager) -> Optional[tuple[str, int, int]]:
+def _prepare_messaging_run(session_manager: SessionManager) -> tuple[str, int, int] | None:
     """Build core configuration and enforce guardrails."""
     app_mode = getattr(config_schema, "app_mode", "production")
     initial_delay = session_manager.rate_limiter.initial_delay if session_manager.rate_limiter else 0.0
@@ -4963,7 +4966,7 @@ def _prepare_messaging_run(session_manager: SessionManager) -> Optional[tuple[st
     return app_mode, batch_size, max_messages
 
 
-def _prepare_db_session_and_data(session_manager: SessionManager) -> tuple[Optional[Session], Optional[Any]]:
+def _prepare_db_session_and_data(session_manager: SessionManager) -> tuple[Session | None, Any | None]:
     """Fetch DB session and messaging data, handling failure cases."""
     db_session = session_manager.db_manager.get_session()
     if not db_session:
@@ -4981,7 +4984,7 @@ def _prepare_db_session_and_data(session_manager: SessionManager) -> tuple[Optio
 def _run_candidate_processing(
     db_session: Session,
     session_manager: SessionManager,
-    messaging_data: '_MessagingData',
+    messaging_data: _MessagingData,
     state: _Action8RunState,
     resources: _ResourceBundle,
     batch_size: int,
@@ -5089,7 +5092,7 @@ def send_messages_to_matches(session_manager: SessionManager) -> bool:
     state = _initialize_action8_counters_and_config()
     resources = _initialize_resource_management()
 
-    db_session: Optional[Session] = None
+    db_session: Session | None = None
     try:
         db_session, messaging_data = _prepare_db_session_and_data(session_manager)
         if not db_session or not messaging_data:
@@ -6004,10 +6007,7 @@ def _test_adaptive_timing_all_scenarios() -> bool:
 
         for engagement_score, last_login_days, config_key, description in test_cases:
             # Calculate last_logged_in date (None if never logged in)
-            if last_login_days is None:
-                last_logged_in = None
-            else:
-                last_logged_in = datetime.now(timezone.utc) - timedelta(days=last_login_days)
+            last_logged_in = None if last_login_days is None else datetime.now(UTC) - timedelta(days=last_login_days)
 
             interval = calculate_adaptive_interval(engagement_score, last_logged_in, "test")
 
@@ -6059,7 +6059,7 @@ def _test_status_change_detection_all_scenarios() -> bool:
 
         # Setup family tree if in_tree
         if in_tree and tree_age_days is not None:
-            tree_created = datetime.now(timezone.utc) - timedelta(days=tree_age_days)
+            tree_created = datetime.now(UTC) - timedelta(days=tree_age_days)
             family_tree = Mock(spec=FamilyTree)
             family_tree.created_at = tree_created
             person.family_tree = family_tree
@@ -6106,11 +6106,11 @@ def _test_cancel_pending_messages_all_scenarios() -> bool:
         person.id = 123
         person.username = "Test User"
 
-        conv_state: Optional[ConversationState] = None
+        conv_state: ConversationState | None = None
         if has_state:
             conv_state = Mock(spec=ConversationState)
             conv_state.next_action = 'send_follow_up'
-            conv_state.next_action_date = datetime.now(timezone.utc) + timedelta(days=7)
+            conv_state.next_action_date = datetime.now(UTC) + timedelta(days=7)
             person.conversation_state = conv_state
         else:
             person.conversation_state = None
@@ -6254,7 +6254,7 @@ def _test_cancel_on_reply_all_scenarios() -> bool:
         person.id = 456
         person.username = "Test User"
 
-        conv_state: Optional[Any] = None
+        conv_state: Any | None = None
         if has_state:
             conv_state = Mock()
             if is_active:
@@ -6627,7 +6627,7 @@ def _test_enhance_message_format_data_phase5() -> None:
 
 
 def _test_calculate_days_since_login_handles_timezones() -> bool:
-    base_now = datetime.now(timezone.utc)
+    base_now = datetime.now(UTC)
     naive_login = (base_now - timedelta(days=5)).replace(tzinfo=None)
     aware_login = (base_now - timedelta(days=3)).astimezone(timezone(timedelta(hours=-5)))
 
@@ -6664,8 +6664,8 @@ def _test_is_tree_creation_recent_respects_threshold() -> bool:
     config_schema.status_change_recent_days = 10
     try:
         person = cast(Person, SimpleNamespace(username="Tester", id=1))
-        recent_creation = datetime.now(timezone.utc) - timedelta(days=5)
-        old_creation = datetime.now(timezone.utc) - timedelta(days=25)
+        recent_creation = datetime.now(UTC) - timedelta(days=5)
+        old_creation = datetime.now(UTC) - timedelta(days=25)
 
         assert _is_tree_creation_recent(recent_creation, person) is True
         assert _is_tree_creation_recent(old_creation, person) is False
@@ -6677,7 +6677,7 @@ def _test_is_tree_creation_recent_respects_threshold() -> bool:
 def _test_has_message_after_tree_creation_detects_activity() -> bool:
     from types import SimpleNamespace
 
-    created_at = datetime.now(timezone.utc) - timedelta(days=30)
+    created_at = datetime.now(UTC) - timedelta(days=30)
     log_before = SimpleNamespace(direction=MessageDirectionEnum.OUT, latest_timestamp=created_at - timedelta(days=1))
     log_after = SimpleNamespace(direction=MessageDirectionEnum.OUT, latest_timestamp=created_at + timedelta(days=2))
     person = cast(Person, SimpleNamespace(username="Tester", id=1, conversation_log_entries=[log_before, log_after]))
@@ -6719,7 +6719,7 @@ def _test_cancel_pending_messages_updates_state() -> bool:
 
     conv_state = SimpleNamespace(
         next_action='send_follow_up',
-        next_action_date=datetime.now(timezone.utc) + timedelta(days=10),
+        next_action_date=datetime.now(UTC) + timedelta(days=10),
         engagement_score=55,
     )
     person = cast(Person, SimpleNamespace(username="Tester", id=1, conversation_state=conv_state))

@@ -4,35 +4,17 @@ Exposes ancestry_api_requests_total with a non-zero sample so Prometheus smoke t
 running the full app. Intended for local/dev use only.
 """
 
-from __future__ import annotations
 
 import sys
 from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
+from core.venv_bootstrap import ensure_venv
 
-def _ensure_venv() -> None:
-    """Ensure running in venv, auto-restart if needed."""
-    in_venv = hasattr(sys, 'real_prefix') or (hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix)
-    if in_venv:
-        return
-
-    venv_python = _PROJECT_ROOT / '.venv' / 'Scripts' / 'python.exe'
-    if not venv_python.exists():
-        venv_python = _PROJECT_ROOT / '.venv' / 'bin' / 'python'
-        if not venv_python.exists():
-            print("⚠️  WARNING: Not running in virtual environment")
-            return
-
-    import os as _os
-
-    print(f"🔄 Re-running with venv Python: {venv_python}")
-    _os.chdir(_PROJECT_ROOT)
-    _os.execv(str(venv_python), [str(venv_python), __file__, *sys.argv[1:]])
-
-
-_ensure_venv()
+ensure_venv(project_root=_PROJECT_ROOT)
 
 import http.server
 import socketserver
@@ -62,7 +44,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-    def log_message(self, format: str, *args: object) -> None:  # noqa: PLR6301  # pragma: no cover - silence default logging
+    @staticmethod
+    def log_message(format: str, *args: object) -> None:  # pragma: no cover - silence default logging
         _ = (format, args)
 
 

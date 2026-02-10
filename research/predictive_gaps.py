@@ -16,7 +16,7 @@ import logging
 import sys
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar
 
 from testing.test_framework import TestSuite
 from testing.test_utilities import create_standard_test_runner
@@ -53,7 +53,7 @@ class ResearchGap:
     """Represents a single research gap in the family tree."""
 
     gap_type: GapType
-    person_id: Optional[str]
+    person_id: str | None
     person_name: str
     description: str
     priority: Priority
@@ -107,8 +107,8 @@ class PredictiveGapDetector:
 
     def __init__(
         self,
-        research_service: Optional[Any] = None,
-        db_session: Optional[Any] = None,
+        research_service: Any | None = None,
+        db_session: Any | None = None,
     ):
         """
         Initialize the gap detector.
@@ -319,7 +319,7 @@ class PredictiveGapDetector:
     def _check_vital_records(
         self,
         person_data: dict[str, Any],
-        person_id: Optional[str],
+        person_id: str | None,
         person_name: str,
     ) -> list[ResearchGap]:
         """Check for missing vital records."""
@@ -380,7 +380,7 @@ class PredictiveGapDetector:
     def _check_family_structure(
         self,
         person_data: dict[str, Any],
-        person_id: Optional[str],
+        person_id: str | None,
         person_name: str,
     ) -> list[ResearchGap]:
         """Check for incomplete family structure."""
@@ -431,7 +431,7 @@ class PredictiveGapDetector:
     @staticmethod
     def _check_location_data(
         person_data: dict[str, Any],
-        person_id: Optional[str],
+        person_id: str | None,
         person_name: str,
     ) -> list[ResearchGap]:
         """Check for incomplete location data."""
@@ -472,7 +472,7 @@ class PredictiveGapDetector:
     @staticmethod
     def _check_sources(
         person_data: dict[str, Any],
-        person_id: Optional[str],
+        person_id: str | None,
         person_name: str,
     ) -> list[ResearchGap]:
         """Check for undocumented sources."""
@@ -578,7 +578,7 @@ class PredictiveGapDetector:
     def _evaluate_match_potential(
         self,
         match: dict[str, Any],
-    ) -> Optional[ResearchGap]:
+    ) -> ResearchGap | None:
         """Evaluate a DNA match for research potential."""
         shared_cm = match.get("shared_cm", 0)
         has_tree = match.get("has_tree", False)

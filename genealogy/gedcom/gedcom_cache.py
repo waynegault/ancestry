@@ -62,7 +62,7 @@ logger = logging.getLogger(__name__)
 import hashlib
 import time
 from datetime import date, datetime
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 # --- Local application imports ---
 from caching.cache import (
@@ -328,7 +328,7 @@ def _is_memory_cache_valid(cache_key: str) -> bool:
     return (time.time() - timestamp) < _CACHE_MAX_AGE
 
 
-def _get_from_memory_cache(cache_key: str) -> Optional[Any]:
+def _get_from_memory_cache(cache_key: str) -> Any | None:
     """Get data from memory cache if valid."""
     if _is_memory_cache_valid(cache_key):
         data, _ = _MEMORY_CACHE[cache_key]
@@ -357,7 +357,7 @@ def clear_memory_cache() -> int:
 # --- Enhanced GEDCOM Caching Functions ---
 
 
-def _check_disk_cache_for_gedcom(gedcom_path: str, memory_key: str) -> tuple[Optional[Any], Optional[str]]:
+def _check_disk_cache_for_gedcom(gedcom_path: str, memory_key: str) -> tuple[Any | None, str | None]:
     """Check disk cache for GEDCOM data. Returns (cached_data, disk_cache_key)."""
     try:
         from pathlib import Path
@@ -382,7 +382,7 @@ def _check_disk_cache_for_gedcom(gedcom_path: str, memory_key: str) -> tuple[Opt
         return None, None
 
 
-def _store_gedcom_in_disk_cache(gedcom_data: Any, disk_cache_key: Optional[str]) -> None:
+def _store_gedcom_in_disk_cache(gedcom_data: Any, disk_cache_key: str | None) -> None:
     """
     Store GEDCOM data in disk cache (without reader object or indi_index).
 
@@ -423,7 +423,7 @@ def _store_gedcom_in_disk_cache(gedcom_data: Any, disk_cache_key: Optional[str])
         logger.warning(f"Error storing in disk cache: {e}")
 
 
-def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Optional[Any]:
+def load_gedcom_with_aggressive_caching(gedcom_path: str) -> Any | None:
     """
     Load GEDCOM data with aggressive multi-level caching.
 
@@ -552,7 +552,7 @@ def _serialize_processed_data_cache(processed_data_cache: dict[str, Any]) -> dic
     return serializable_processed_data
 
 
-def _clean_value_for_disk_cache(value: Any) -> Optional[Any]:
+def _clean_value_for_disk_cache(value: Any) -> Any | None:
     """Remove non-picklable objects (e.g., BinaryFileCR) before disk caching."""
     if isinstance(value, (str, int, float, bool, datetime, date, type(None))):
         return value
@@ -580,7 +580,7 @@ def _clean_value_for_disk_cache(value: Any) -> Optional[Any]:
     return None
 
 
-def _serialize_indi_index_object(value: Any) -> Optional[dict[str, Any]]:
+def _serialize_indi_index_object(value: Any) -> dict[str, Any] | None:
     """Serialize a complex object from indi_index."""
     if not hasattr(value, "__dict__"):
         return None
@@ -757,7 +757,7 @@ def get_gedcom_cache_health() -> dict[str, Any]:
     return _gedcom_cache_module.get_health_status()
 
 
-def invalidate_gedcom_cache_on_update(gedcom_path: Optional[str] = None) -> bool:
+def invalidate_gedcom_cache_on_update(gedcom_path: str | None = None) -> bool:
     """
     Invalidate GEDCOM cache when tree is updated.
 
@@ -981,11 +981,11 @@ def test_multifile_cache_management():
     test_data_list = [test_data_1, test_data_2]
 
     # Store multiple items in cache
-    for test_key, test_data in zip(test_keys, test_data_list):
+    for test_key, test_data in zip(test_keys, test_data_list, strict=False):
         _store_in_memory_cache(test_key, test_data)
 
     # Verify both were cached correctly
-    for test_key, expected_data in zip(test_keys, test_data_list):
+    for test_key, expected_data in zip(test_keys, test_data_list, strict=False):
         cached = _get_from_memory_cache(test_key)
         assert cached == expected_data, f"Cached data for {test_key} should match original"
 
@@ -1022,9 +1022,9 @@ def test_store_gedcom_in_disk_cache_skips_unpicklable():
 
     class DummyCache:
         def __init__(self) -> None:
-            self.saved: Optional[tuple[str, Any, Any, bool]] = None
+            self.saved: tuple[str, Any, Any, bool] | None = None
 
-        def set(self, key: str, value: Any, expire: Optional[float] = None, retry: bool = True) -> None:
+        def set(self, key: str, value: Any, expire: float | None = None, retry: bool = True) -> None:
             self.saved = (key, value, expire, retry)
 
     class DummyGedcom:

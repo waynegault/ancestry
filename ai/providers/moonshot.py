@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """Moonshot (Kimi) provider adapter using the OpenAI-compatible endpoint."""
 
@@ -15,88 +14,34 @@ import logging
 from typing import Any
 
 from ai.providers.base import (
-    BaseProvider,
+    OpenAICompatibleProvider,
     ProviderConfigurationError,
     ProviderRequest,
     ProviderResponse,
-    ProviderUnavailableError,
 )
 
 logger = logging.getLogger(__name__)
 
-try:  # pragma: no cover - optional dependency
-    from openai import OpenAI
-except ImportError:  # pragma: no cover - handled by is_available
-    OpenAI = None
 
-
-class MoonshotProvider(BaseProvider):
+class MoonshotProvider(OpenAICompatibleProvider):
     """Adapter that wraps Moonshot's OpenAI-compatible API."""
 
+    _api_key_attr = "moonshot_api_key"
+    _model_attr = "moonshot_ai_model"
+    _base_url_attr = "moonshot_ai_base_url"
+
     def __init__(self, config: Any) -> None:
-        super().__init__(name="moonshot")
-        self._config = config
-
-    def is_available(self) -> bool:
-        return bool(OpenAI) and bool(self._config)
-
-    def _get_api_credentials(self) -> tuple[str, str, str]:
-        api_config = getattr(self._config, "api", None)
-        if api_config is None:
-            raise ProviderConfigurationError("API configuration missing for Moonshot")
-
-        api_key = getattr(api_config, "moonshot_api_key", None)
-        model_name = getattr(api_config, "moonshot_ai_model", None)
-        base_url = getattr(api_config, "moonshot_ai_base_url", None)
-
-        if not all([api_key, model_name, base_url]):
-            raise ProviderConfigurationError("Moonshot configuration incomplete (api key/model/base url)")
-        return str(api_key), str(model_name), str(base_url)
+        super().__init__(name="moonshot", config=config)
 
     @staticmethod
-    def _build_request(request: ProviderRequest, model_name: str) -> dict[str, Any]:
-        payload: dict[str, Any] = {
-            "model": model_name,
-            "messages": [
-                {"role": "system", "content": request.system_prompt},
-                {"role": "user", "content": request.user_content},
-            ],
-            "max_tokens": request.max_tokens,
-            "temperature": request.temperature,
-            "stream": False,
-        }
-        if request.response_format_type == "json_object":
-            payload["response_format"] = {"type": "json_object"}
-        return payload
-
-    def call(self, request: ProviderRequest) -> ProviderResponse:
-        self.ensure_available()
-        api_key, model_name, base_url = self._get_api_credentials()
-
-        if OpenAI is None:  # Defensive guard despite ensure_available()
-            raise ProviderUnavailableError("OpenAI SDK not available for Moonshot")
-
-        client = OpenAI(api_key=api_key, base_url=base_url)
-        payload = self._build_request(request, model_name)
-        response: Any = client.chat.completions.create(**payload)
-
-        content: str | None = None
+    def _post_extract(response: Any, _content: str | None) -> None:
+        """Log Moonshot's reasoning trace if present."""
         choices = getattr(response, "choices", None)
         if isinstance(choices, list) and choices:
-            first_choice = choices[0]
-            message = getattr(first_choice, "message", None)
-            if message and getattr(message, "content", None):
-                content = str(message.content).strip()
-
-            # Moonshot exposes a reasoning trace; logging a short preview aids debugging.
+            message = getattr(choices[0], "message", None)
             reasoning_content = getattr(message, "reasoning_content", None)
             if reasoning_content:
                 logger.debug("Moonshot reasoning preview: %s", str(reasoning_content)[:200])
-
-        if content is None:
-            logger.error("Moonshot returned an empty or invalid response structure.")
-
-        return ProviderResponse(content=content, raw_response=response)
 
 
 # =============================================================================
@@ -158,7 +103,15 @@ def _test_moonshot_get_api_credentials() -> None:
 
 
 def _test_moonshot_build_request() -> None:
-    """Test _build_request static method."""
+    """Test _build_request method."""
+    from types import SimpleNamespace
+
+    mock_config = SimpleNamespace(
+        api=SimpleNamespace(
+            moonshot_api_key="k", moonshot_ai_model="m", moonshot_ai_base_url="u"
+        )
+    )
+    provider = MoonshotProvider(mock_config)
     request = ProviderRequest(
         system_prompt="You are Kimi.",
         user_content="Hello",
@@ -166,7 +119,7 @@ def _test_moonshot_build_request() -> None:
         temperature=0.3,
         response_format_type=None,
     )
-    payload = MoonshotProvider._build_request(request, "moonshot-v1-8k")
+    payload = provider._build_request(request, "moonshot-v1-8k")
 
     assert payload["model"] == "moonshot-v1-8k"
     assert payload["max_tokens"] == 1000
@@ -183,7 +136,7 @@ def _test_moonshot_build_request() -> None:
         temperature=0.5,
         response_format_type="json_object",
     )
-    payload_json = MoonshotProvider._build_request(request_json, "moonshot-v1-8k")
+    payload_json = provider._build_request(request_json, "moonshot-v1-8k")
     assert payload_json["response_format"] == {"type": "json_object"}
 
 

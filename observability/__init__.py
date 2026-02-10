@@ -49,21 +49,35 @@ def _test_prometheus_available_is_bool() -> bool:
 
 
 def _test_metrics_registry_functions_exist() -> bool:
-    """Test that core metrics registry functions are callable."""
+    """Test that core metrics registry functions work and return expected types."""
+    # is_metrics_enabled should return bool
+    enabled = is_metrics_enabled()
+    assert isinstance(enabled, bool), f"is_metrics_enabled should return bool, got {type(enabled)}"
+
+    # get_metrics_registry should return a registry object (or None if disabled)
+    registry = get_metrics_registry()
+    # Registry is either None or an object with a type name
+    assert registry is None or hasattr(registry, "__class__"), "get_metrics_registry should return None or a registry object"
+
+    # configure_metrics and disable_metrics should be callable and not crash
     assert callable(configure_metrics), "configure_metrics should be callable"
     assert callable(disable_metrics), "disable_metrics should be callable"
-    assert callable(get_metrics_registry), "get_metrics_registry should be callable"
-    assert callable(is_metrics_enabled), "is_metrics_enabled should be callable"
     assert callable(reset_metrics), "reset_metrics should be callable"
     return True
 
 
 def _test_metrics_exporter_functions_exist() -> bool:
-    """Test that core metrics exporter functions are callable."""
+    """Test that core metrics exporter functions work and return expected types."""
+    # is_metrics_exporter_running should return bool
+    running = is_metrics_exporter_running()
+    assert isinstance(running, bool), f"is_metrics_exporter_running should return bool, got {type(running)}"
+
+    # get_metrics_exporter_address should return a tuple or None
+    address = get_metrics_exporter_address()
+    assert address is None or isinstance(address, tuple), f"get_metrics_exporter_address should return None or tuple, got {type(address)}"
+
     assert callable(start_metrics_exporter), "start_metrics_exporter should be callable"
     assert callable(stop_metrics_exporter), "stop_metrics_exporter should be callable"
-    assert callable(is_metrics_exporter_running), "is_metrics_exporter_running should be callable"
-    assert callable(get_metrics_exporter_address), "get_metrics_exporter_address should be callable"
     return True
 
 

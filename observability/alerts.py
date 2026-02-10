@@ -14,9 +14,9 @@ Alerts are logged and can be forwarded to external systems.
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -47,7 +47,7 @@ class Alert:
     alert_type: AlertType
     severity: AlertSeverity
     message: str
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     details: dict[str, Any] = field(default_factory=dict)
     resolved: bool = False
 
@@ -70,7 +70,7 @@ class AlertChecker:
     and logs/emits alerts when conditions are exceeded.
     """
 
-    def __init__(self, thresholds: Optional[AlertThresholds] = None) -> None:
+    def __init__(self, thresholds: AlertThresholds | None = None) -> None:
         """Initialize the alert checker with thresholds."""
         self._active_alerts: list[Alert] = []
         if thresholds is not None:
@@ -131,12 +131,12 @@ class AlertChecker:
 
         return alerts
 
-    def _check_opt_out_rate(self, session: Session) -> Optional[Alert]:
+    def _check_opt_out_rate(self, session: Session) -> Alert | None:
         """Check if opt-out rate exceeds threshold in the time window."""
         try:
             from core.database import ConversationLog, MessageDirectionEnum
 
-            window_start = datetime.now(timezone.utc) - timedelta(hours=self.thresholds.opt_out_window_hours)
+            window_start = datetime.now(UTC) - timedelta(hours=self.thresholds.opt_out_window_hours)
 
             # Count outbound messages in window
             total_outbound = (
@@ -184,7 +184,7 @@ class AlertChecker:
 
         return None
 
-    def _check_queue_depth(self, session: Session) -> Optional[Alert]:
+    def _check_queue_depth(self, session: Session) -> Alert | None:
         """Check if review queue depth exceeds threshold."""
         try:
             from core.database import DraftReply
@@ -203,7 +203,7 @@ class AlertChecker:
 
                 oldest_age_hours = 0.0
                 if oldest and oldest.created_at:
-                    age = datetime.now(timezone.utc) - oldest.created_at.replace(tzinfo=timezone.utc)
+                    age = datetime.now(UTC) - oldest.created_at.replace(tzinfo=UTC)
                     oldest_age_hours = age.total_seconds() / 3600
 
                 if oldest_age_hours > self.thresholds.queue_age_threshold_hours:
@@ -225,7 +225,7 @@ class AlertChecker:
         return None
 
     @staticmethod
-    def _check_circuit_breaker() -> Optional[Alert]:
+    def _check_circuit_breaker() -> Alert | None:
         """Check if any circuit breakers are tripped.
 
         Note: circuit_breaker_registry doesn't exist yet.
@@ -235,7 +235,7 @@ class AlertChecker:
         return None
 
     @staticmethod
-    def _check_emergency_stop() -> Optional[Alert]:
+    def _check_emergency_stop() -> Alert | None:
         """Check if emergency stop is enabled."""
         try:
             from config import config_schema

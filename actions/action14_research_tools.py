@@ -49,25 +49,36 @@ def run_research_tools(session_manager: SessionManager, *_: Any) -> bool:
 
 def action14_module_tests() -> bool:
     """Test Action 14 module functionality."""
+    from unittest.mock import MagicMock, patch
+
     from testing.test_framework import TestSuite
 
     suite = TestSuite("Action 14: Research Tools", __file__)
 
-    def test_imports() -> bool:
-        """Test that required modules can be imported."""
-        import cli.research_tools
+    def test_delegates_to_interactive_menu() -> None:
+        """Test that run_research_tools delegates to cli.research_tools.run_interactive_menu."""
+        mock_sm = MagicMock()
+        with patch("actions.action14_research_tools.run_interactive_menu") as mock_menu:
+            result = run_research_tools(mock_sm)
+            mock_menu.assert_called_once()
+            assert result is True, "Should return True on successful execution"
 
-        return hasattr(cli.research_tools, "run_interactive_menu")
+    def test_returns_false_on_error() -> None:
+        """Test that run_research_tools returns False when menu raises."""
+        mock_sm = MagicMock()
+        with patch("actions.action14_research_tools.run_interactive_menu", side_effect=RuntimeError("test")):
+            result = run_research_tools(mock_sm)
+            assert result is False, "Should return False on exception"
 
-    def test_function_signature() -> bool:
-        """Test run_research_tools signature."""
-        import inspect
+    def test_handles_none_session_manager() -> None:
+        """Test that run_research_tools handles None session_manager gracefully."""
+        with patch("actions.action14_research_tools.run_interactive_menu"):
+            result = run_research_tools(None)  # type: ignore[arg-type]
+            assert result is True, "Should handle None session_manager without crashing"
 
-        sig = inspect.signature(run_research_tools)
-        return "session_manager" in sig.parameters
-
-    suite.run_test("Import validation", test_imports, "Verify cli.research_tools is available")
-    suite.run_test("Signature validation", test_function_signature, "Verify run_research_tools signature")
+    suite.run_test("Delegates to interactive menu", test_delegates_to_interactive_menu)
+    suite.run_test("Returns False on error", test_returns_false_on_error)
+    suite.run_test("Handles None session_manager", test_handles_none_session_manager)
 
     return suite.finish_suite()
 

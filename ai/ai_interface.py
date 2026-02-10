@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-from __future__ import annotations
 
 """
 AI Intelligence & Genealogical Content Analysis Engine
@@ -39,6 +38,8 @@ intelligent content analysis, automated research assistance, and contextual
 understanding of family relationships and genealogical data structures.
 """
 
+from __future__ import annotations
+
 # === PATH SETUP FOR PACKAGE IMPORTS ===
 # === CORE INFRASTRUCTURE ===
 import logging
@@ -51,9 +52,9 @@ logger = logging.getLogger(__name__)
 import importlib
 import json
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypedDict, cast
+from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 # === THIRD-PARTY IMPORTS ===
 # Attempt OpenAI import for DeepSeek/compatible APIs
@@ -116,14 +117,14 @@ if not xai_available:
 # === LOCAL IMPORTS ===
 import contextlib
 
-from ai.prompt_telemetry import record_extraction_experiment_event
-from ai.prompts import (
+from ai.ai_prompt_utils import (
     get_prompt,
     get_prompt_version,
     get_prompt_with_experiment,
     load_prompts,
     supports_json_prompts,
 )
+from ai.prompt_telemetry import record_extraction_experiment_event
 from ai.providers.base import (
     ProviderAdapter,
     ProviderConfigurationError,
@@ -392,7 +393,7 @@ Your response should be ONLY the message text, with no additional formatting, ex
 # --- Private Helper for AI Calls ---
 
 
-def _apply_rate_limiting(session_manager: Optional[SessionManager], provider: str) -> None:
+def _apply_rate_limiting(session_manager: SessionManager | None, provider: str) -> None:
     """Apply rate limiting before AI API call."""
     try:
         if session_manager and hasattr(session_manager, "rate_limiter"):
@@ -747,7 +748,7 @@ def _handle_authentication_errors(e: Exception, provider: str) -> None:
         logger.error(f"Gemini Permission Denied: {e}")
 
 
-def _handle_rate_limit_errors(e: Exception, provider: str, session_manager: Optional[SessionManager]) -> None:
+def _handle_rate_limit_errors(e: Exception, provider: str, session_manager: SessionManager | None) -> None:
     """Handle rate limiting-related errors."""
     if RateLimitError and isinstance(e, RateLimitError):
         logger.error(f"AI Rate Limit Error ({provider}): {e}")
@@ -787,7 +788,7 @@ def _handle_internal_errors(e: Exception, provider: str) -> None:
         logger.error(f"Unexpected error in _call_ai_model ({provider}): {type(e).__name__} - {e}", exc_info=True)
 
 
-def _handle_ai_exceptions(e: Exception, provider: str, session_manager: Optional[SessionManager]) -> None:
+def _handle_ai_exceptions(e: Exception, provider: str, session_manager: SessionManager | None) -> None:
     """Handle AI API exceptions with appropriate logging and actions."""
     _handle_authentication_errors(e, provider)
     _handle_rate_limit_errors(e, provider, session_manager)
@@ -802,9 +803,9 @@ def _execute_provider_with_retries(
     user_content: str,
     max_tokens: int,
     temperature: float,
-    response_format_type: Optional[str],
-    session_manager: Optional[SessionManager],
-) -> tuple[Optional[str], Optional[Exception]]:
+    response_format_type: str | None,
+    session_manager: SessionManager | None,
+) -> tuple[str | None, Exception | None]:
     """Execute a single provider with retries."""
     max_retries = 3
     base_delay = 1.0
@@ -845,7 +846,7 @@ def _call_ai_model(
     provider: str,
     system_prompt: str,
     user_content: str,
-    session_manager: Optional[SessionManager],
+    session_manager: SessionManager | None,
     max_tokens: int,
     temperature: float,
     response_format_type: str | None = None,
@@ -905,11 +906,11 @@ def _call_ai_model(
 
 def call_ai_with_prompt(
     prompt: str,
-    session_manager: Optional[SessionManager] = None,
+    session_manager: SessionManager | None = None,
     max_tokens: int = 1000,
     temperature: float = 0.7,
-    response_format: Optional[str] = None,
-) -> Optional[str]:
+    response_format: str | None = None,
+) -> str | None:
     """
     Simple public interface to call AI with a raw prompt.
 
@@ -1330,7 +1331,7 @@ def generate_genealogical_reply(
     relationship_context: str = "",
     semantic_search_results: str = "",
     prompt_key: str = "genealogical_reply",
-    prompt_variant: Optional[str] = None,
+    prompt_variant: str | None = None,
 ) -> str | None:
     """
     Generates a personalized genealogical reply with RAG-style tree context.
@@ -1509,13 +1510,13 @@ def generate_simple_outreach(
         return None
 
 
-def _extract_variant_text(variant_entry: Any) -> Optional[str]:
+def _extract_variant_text(variant_entry: Any) -> str | None:
     """Normalize prompt variant payload into a string, if possible."""
 
     if isinstance(variant_entry, dict):
         variant_entry = cast(dict[str, Any], variant_entry)
         prompt_text = variant_entry.get("prompt") or variant_entry.get("text")
-        return cast(Optional[str], prompt_text)
+        return cast(str | None, prompt_text)
 
     if isinstance(variant_entry, str):
         return variant_entry
@@ -1529,7 +1530,7 @@ def _get_prompt_variants(prompts_data: dict[str, Any], prompt_key: str) -> dict[
     return cast(dict[str, Any], prompt_entry.get("variants", {}) or {})
 
 
-def _load_prompt_variant_text(prompt_key: str, prompt_variant: Optional[str]) -> Optional[str]:
+def _load_prompt_variant_text(prompt_key: str, prompt_variant: str | None) -> str | None:
     """Return prompt variant text when available in ai_prompts.json."""
 
     if not (USE_JSON_PROMPTS and prompt_variant):
@@ -1547,7 +1548,7 @@ def _load_prompt_variant_text(prompt_key: str, prompt_variant: Optional[str]) ->
 
 
 def _load_genealogical_reply_template(
-    prompt_key: str = "genealogical_reply", prompt_variant: Optional[str] = None
+    prompt_key: str = "genealogical_reply", prompt_variant: str | None = None
 ) -> str:
     """Load the genealogical_reply prompt template from JSON or fallback."""
 
@@ -2707,7 +2708,7 @@ def _validate_name_in_tree(
 
 
 def _check_known_to_recipient(
-    recipient_tree_context: Optional[dict[str, Any]],
+    recipient_tree_context: dict[str, Any] | None,
     verified_facts: list[dict[str, Any]],
     known_to_recipient: list[dict[str, Any]],
     warnings: list[str],
@@ -2746,8 +2747,8 @@ def _determine_context_recommendation(unverified_count: int, total_names: int, k
 def validate_context_accuracy(
     extracted_names: list[str],
     context_summary: str,
-    recipient_tree_context: Optional[dict[str, Any]] = None,
-    tree_service: Optional[Any] = None,
+    recipient_tree_context: dict[str, Any] | None = None,
+    tree_service: Any | None = None,
 ) -> ContextAccuracyResult:
     """Validate that extracted names exist in OUR tree before generating drafts."""
     _ = context_summary
@@ -2895,11 +2896,11 @@ def _get_self_message_result(recipient_profile_id: str) -> DraftQualityResult:
 
 
 def _run_context_accuracy_check(
-    extracted_names: Optional[list[str]],
-    recipient_tree_context: Optional[dict[str, Any]],
+    extracted_names: list[str] | None,
+    recipient_tree_context: dict[str, Any] | None,
     draft_message: str,
     context_summary: str,
-) -> Optional[ContextAccuracyResult]:
+) -> ContextAccuracyResult | None:
     """Run context accuracy validation if applicable."""
     if not extracted_names and not recipient_tree_context:
         return None
@@ -2920,7 +2921,7 @@ def _run_context_accuracy_check(
 
 
 def _build_context_accuracy_strings(
-    context_accuracy_result: Optional[ContextAccuracyResult],
+    context_accuracy_result: ContextAccuracyResult | None,
 ) -> tuple[str, str, str]:
     """Build formatted strings for context accuracy facts."""
     verified_str = "None"
@@ -2964,7 +2965,7 @@ def _check_draft_quality_prerequisites(
     ai_provider: str,
     draft_message: str,
     prompt_template: str | None,
-    session_manager: Optional[SessionManager],
+    session_manager: SessionManager | None,
 ) -> tuple[bool, DraftQualityResult | None]:
     """Check prerequisites for draft quality validation.
 
@@ -3024,9 +3025,9 @@ def validate_draft_quality(
     sender_name: str,
     sender_profile_id: str,
     context_summary: str,
-    session_manager: Optional[SessionManager] = None,
-    extracted_names: Optional[list[str]] = None,
-    recipient_tree_context: Optional[dict[str, Any]] = None,
+    session_manager: SessionManager | None = None,
+    extracted_names: list[str] | None = None,
+    recipient_tree_context: dict[str, Any] | None = None,
 ) -> DraftQualityResult:
     """Validate a draft message for quality issues before queueing."""
     # Self-message check
@@ -3085,11 +3086,11 @@ class DraftCorrectionResult:
     """Result of auto-correction attempt."""
 
     success: bool
-    corrected_draft: Optional[str]
+    corrected_draft: str | None
     attempt_count: int
-    final_quality_result: Optional[DraftQualityResult]
+    final_quality_result: DraftQualityResult | None
     routed_to_human_review: bool
-    failure_reason: Optional[str]
+    failure_reason: str | None
 
 
 def attempt_draft_correction(
@@ -3100,7 +3101,7 @@ def attempt_draft_correction(
     sender_name: str,
     sender_profile_id: str,
     context_summary: str,
-    session_manager: Optional[SessionManager] = None,
+    session_manager: SessionManager | None = None,
     max_attempts: int = 1,
 ) -> DraftCorrectionResult:
     """
@@ -3237,9 +3238,9 @@ def _regenerate_draft_with_corrections(
     recipient_profile_id: str,
     sender_name: str,
     context_summary: str,
-    session_manager: Optional[SessionManager],
+    session_manager: SessionManager | None,
     ai_provider: str,
-) -> Optional[str]:
+) -> str | None:
     """Regenerate draft using the draft_correction prompt."""
     prompt_template = get_prompt("draft_correction")
     if not prompt_template:
@@ -3293,7 +3294,7 @@ def _regenerate_draft_with_corrections(
 
 def _record_correction_attempt(
     success: bool,
-    reason: Optional[str],
+    reason: str | None,
     attempt_number: int = 1,  # noqa: ARG001 - reserved for future use
 ) -> None:
     """Record correction attempt metrics for telemetry."""

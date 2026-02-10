@@ -272,6 +272,88 @@ def ensure_grafana_ready(auto_setup: bool = False, silent: bool = False) -> bool
     return True  # Return True to not block app startup
 
 
+def reset_admin_password(password: str = "ancestry") -> bool:
+    """Reset Grafana admin password using grafana-cli.
+
+    Args:
+        password: New password for the admin account.
+
+    Returns:
+        True if password was reset successfully.
+    """
+    if not GRAFANA_CLI.exists():
+        logger.error(f"grafana-cli not found: {GRAFANA_CLI}")
+        return False
+
+    logger.info(f"Resetting Grafana admin password to '{password}'...")
+    try:
+        result = subprocess.run(
+            [str(GRAFANA_CLI), "admin", "reset-admin-password", password],
+            cwd=str(GRAFANA_INSTALL_PATH),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        logger.info(result.stdout.strip())
+        logger.info("Password reset successfully.")
+        # Clear cached auth headers since credentials changed
+        _grafana_api_auth_headers.cache_clear()
+        return True
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to reset password: {e}")
+        if e.stdout:
+            logger.error(e.stdout)
+        if e.stderr:
+            logger.error(e.stderr)
+        return False
+
+
+def delete_all_datasources() -> bool:
+    """Delete all Grafana datasources.
+
+    Useful for a clean slate before re-deploying datasource configurations.
+
+    Returns:
+        True if all datasources were deleted (or none existed).
+    """
+    grafana_base = _grafana_base()
+    headers = {"Content-Type": "application/json", **_grafana_api_auth_headers()}
+
+    try:
+        resp = requests.get(f"{grafana_base}/api/datasources", headers=headers, timeout=10)
+        if resp.status_code != 200:
+            logger.error(f"Failed to list datasources: {resp.status_code}")
+            return False
+
+        datasources = resp.json()
+        if not datasources:
+            logger.info("No datasources to delete.")
+            return True
+
+        all_ok = True
+        for ds in datasources:
+            name = ds.get("name", "?")
+            uid = ds.get("uid")
+            ds_id = ds.get("id")
+            logger.info(f"Deleting datasource: {name} (UID: {uid})")
+
+            # Try UID first, fall back to numeric ID
+            del_resp = requests.delete(f"{grafana_base}/api/datasources/uid/{uid}", headers=headers, timeout=10)
+            if del_resp.status_code != 200 and ds_id:
+                del_resp = requests.delete(f"{grafana_base}/api/datasources/{ds_id}", headers=headers, timeout=10)
+
+            if del_resp.status_code == 200:
+                logger.info(f"  Deleted: {name}")
+            else:
+                logger.error(f"  Failed to delete {name}: {del_resp.status_code} {del_resp.text}")
+                all_ok = False
+
+        return all_ok
+    except Exception as exc:
+        logger.error(f"Error deleting datasources: {exc}")
+        return False
+
+
 def get_status_message() -> str:
     """
     Get a human-readable status message with emoji indicator

@@ -29,7 +29,7 @@ import json
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, ClassVar, Optional
+from typing import TYPE_CHECKING, Any, ClassVar
 
 if TYPE_CHECKING:
     from core.session_manager import SessionManager
@@ -149,7 +149,7 @@ class DraftModerator:
     before they reach the human review queue.
     """
 
-    def __init__(self, session_manager: Optional[SessionManager] = None) -> None:
+    def __init__(self, session_manager: SessionManager | None = None) -> None:
         """Initialize the moderator."""
         self._session_manager = session_manager
         self._logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
@@ -312,7 +312,7 @@ def moderate_draft(
     sender_profile_id: str,
     recipient_profile_id: str,
     verified_facts: str = "",
-    session_manager: Optional[SessionManager] = None,
+    session_manager: SessionManager | None = None,
 ) -> ModerationResult:
     """
     Convenience function to moderate a draft message.

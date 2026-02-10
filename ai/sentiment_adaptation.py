@@ -17,7 +17,7 @@ import re
 import sys
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar
 
 from testing.test_framework import TestSuite
 from testing.test_utilities import create_standard_test_runner
@@ -73,13 +73,13 @@ class ConversationProfile:
     person_id: str
     person_name: str
     message_count: int
-    avg_response_time_hours: Optional[float]
+    avg_response_time_hours: float | None
     overall_sentiment: Sentiment
     engagement_level: EngagementLevel
     preferred_tone: MessageTone
     topics_of_interest: list[str]
     communication_style: str
-    last_interaction_date: Optional[str]
+    last_interaction_date: str | None
 
 
 @dataclass
@@ -144,7 +144,7 @@ class SentimentAdapter:
 
     def __init__(
         self,
-        db_session: Optional[Any] = None,
+        db_session: Any | None = None,
     ):
         """
         Initialize the sentiment adapter.
@@ -372,7 +372,7 @@ class SentimentAdapter:
 
     @staticmethod
     def _calculate_engagement(
-        avg_response_hours: Optional[float],
+        avg_response_hours: float | None,
         message_count: int,
     ) -> EngagementLevel:
         """Calculate engagement level from metrics."""
@@ -403,7 +403,6 @@ class SentimentAdapter:
             "cousin",
             "grandparent",
             "great",
-            "ancestor",
             "genealogy",
             "research",
             "records",

@@ -1,8 +1,9 @@
 import sys
+from collections.abc import Callable
 from importlib import import_module
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Callable, Optional, cast
+from typing import Any, cast
 from unittest import mock
 
 ModulePatch = Any
@@ -21,9 +22,9 @@ logger = logging.getLogger(__name__)
 MatchRecord = dict[str, Any]
 MatchList = list[MatchRecord]
 RowBuilder = Callable[[MatchRecord], list[str]]
-MatchAnalyzer = Callable[[Any, MatchRecord, Optional[str], str], None]
+MatchAnalyzer = Callable[[Any, MatchRecord, str | None, str], None]
 SupplementaryHandler = Callable[[MatchRecord, Any], None]  # SessionManager is Any to avoid circular import
-IDNormalizer = Callable[[Optional[str]], Optional[str]]
+IDNormalizer = Callable[[str | None], str | None]
 AnalyticsExtrasSetter = Callable[[dict[str, Any]], None]
 
 
@@ -74,7 +75,7 @@ def set_comparison_mode_analytics(gedcom_count: int, api_count: int) -> None:
         logger.debug("Analytics extras setter failed", exc_info=True)
 
 
-def get_metrics_bundle() -> Optional[Any]:
+def get_metrics_bundle() -> Any | None:
     """Return a metrics bundle if the observability module is available."""
     try:
         metrics_module = import_module("observability.metrics_registry")
@@ -124,10 +125,10 @@ def _test_load_result_row_builders_returns_callables() -> bool:
 
 
 def _test_load_match_analysis_helpers_returns_expected_helpers() -> bool:
-    def normalize(value: Optional[str]) -> Optional[str]:
+    def normalize(value: str | None) -> str | None:
         return value.upper() if value else None
 
-    def analyze(_: Any, __: MatchRecord, ___: Optional[str], ____: str) -> None:
+    def analyze(_: Any, __: MatchRecord, ___: str | None, ____: str) -> None:
         return None
 
     def handle(_: MatchRecord, __: Any) -> None:

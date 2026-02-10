@@ -21,10 +21,11 @@ from __future__ import annotations
 import sys
 import time
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING
 
 from sqlalchemy import text as sa_text
 
@@ -455,7 +456,7 @@ class ConfigurationHealthCheck(HealthCheck):
 class SessionHealthCheck(HealthCheck):
     """Health check for session manager (optional - requires session_manager)."""
 
-    def __init__(self, session_manager: Optional[SessionManager] = None):
+    def __init__(self, session_manager: SessionManager | None = None):
         self._session_manager = session_manager
 
     @property
@@ -507,7 +508,7 @@ class SessionHealthCheck(HealthCheck):
 class HealthCheckRunner:
     """Runs multiple health checks and aggregates results."""
 
-    def __init__(self, session_manager: Optional[SessionManager] = None):
+    def __init__(self, session_manager: SessionManager | None = None):
         self._session_manager = session_manager
         self._checks: list[HealthCheck] = []
         self._setup_default_checks()
@@ -582,7 +583,7 @@ class HealthCheckRunner:
         return len(self._checks)
 
 
-def run_startup_health_checks(session_manager: Optional[SessionManager] = None) -> bool:
+def run_startup_health_checks(session_manager: SessionManager | None = None) -> bool:
     """
     Run startup health checks and return whether system is healthy.
 
@@ -604,7 +605,7 @@ def run_startup_health_checks(session_manager: Optional[SessionManager] = None) 
     return True
 
 
-def run_interactive_health_check(session_manager: Optional[SessionManager] = None) -> HealthReport:
+def run_interactive_health_check(session_manager: SessionManager | None = None) -> HealthReport:
     """
     Run interactive health check from main menu.
 

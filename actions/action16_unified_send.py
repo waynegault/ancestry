@@ -28,9 +28,9 @@ import logging
 import sys
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import and_, not_, or_
 from sqlalchemy.orm import Session
@@ -141,7 +141,7 @@ class UnifiedSendProcessor:
             raise RuntimeError("Database session not available")
         return session
 
-    def process(self, max_sends: Optional[int] = None) -> UnifiedSendResult:
+    def process(self, max_sends: int | None = None) -> UnifiedSendResult:
         """
         Process all outbound messaging needs.
 
@@ -331,7 +331,7 @@ class UnifiedSendProcessor:
         try:
             # Find people with recent inbound productive messages needing reply
             # A "productive" conversation is one with ACTIVE status and recent inbound
-            lookback = datetime.now(timezone.utc) - timedelta(days=7)
+            lookback = datetime.now(UTC) - timedelta(days=7)
 
             # Get conversations with recent inbound messages
             recent_inbound = (
@@ -542,7 +542,7 @@ def run_unified_send(session_manager: SessionManager, *args: Any) -> bool:
         True if action completed successfully.
     """
     # Parse optional max_sends argument
-    max_sends: Optional[int] = None
+    max_sends: int | None = None
     if args and args[0]:
         try:
             max_sends = int(args[0])
@@ -605,11 +605,25 @@ def _module_tests() -> bool:
 
     suite.run_test("UnifiedSendResult has correct defaults", test_result_defaults)
 
-    # Test 4: Priority enum has 4 values
-    def test_priority_count() -> None:
-        assert len(MessagePriority) == 4
+    # Test 4: Process with no candidates returns clean result
+    def test_process_empty_candidates() -> None:
+        from unittest.mock import MagicMock, patch
 
-    suite.run_test("MessagePriority has 4 values", test_priority_count)
+        mock_sm = MagicMock()
+        mock_session = MagicMock()
+        mock_sm.db_manager.get_session.return_value = mock_session
+        # Mock empty queries for all candidate sources
+        mock_session.query.return_value.filter.return_value.all.return_value = []
+        mock_session.query.return_value.join.return_value.filter.return_value.all.return_value = []
+
+        processor = UnifiedSendProcessor(mock_sm)
+        with patch.object(processor, '_gather_all_candidates', return_value=[]):
+            result = processor.process()
+            assert result.total_candidates == 0, "Empty candidates should yield zero total"
+            assert result.sent_count == 0, "No sends expected"
+            assert result.error_count == 0, "No errors expected"
+
+    suite.run_test("Process with no candidates", test_process_empty_candidates)
 
     return suite.finish_suite()
 

@@ -26,7 +26,7 @@ import json
 import os
 import sys  # Used for sys.exit in main block
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 # --- Third-party imports ---
 import msal  # MSAL library for authentication
@@ -53,10 +53,10 @@ logger.debug("Loaded environment variables for MS Graph utils.")
 # Step 2: Load required MS Graph configuration
 logger.debug("Loading MS Graph configuration from environment...")
 # Client ID (Application ID) registered in Azure AD/Microsoft Entra ID
-CLIENT_ID: Optional[str] = os.getenv("MS_GRAPH_CLIENT_ID")
+CLIENT_ID: str | None = os.getenv("MS_GRAPH_CLIENT_ID")
 # Tenant ID (Directory ID). Defaults to 'consumers' for multi-tenant apps / personal accounts.
 # Use 'common' for multi-tenant work/school/personal, or specific tenant ID.
-TENANT_ID: Optional[str] = os.getenv("MS_GRAPH_TENANT_ID", "consumers")  # Default to consumers
+TENANT_ID: str | None = os.getenv("MS_GRAPH_TENANT_ID", "consumers")  # Default to consumers
 
 # --- Critical Check: Client ID is Required ---
 if not CLIENT_ID:
@@ -146,7 +146,7 @@ atexit.register(save_cache_on_exit)
 logger.debug("Registered MSAL cache save function with atexit.")
 
 # Step 10: Initialize Shared MSAL Public Client Application instance
-msal_app_instance: Optional[msal.PublicClientApplication] = None
+msal_app_instance: msal.PublicClientApplication | None = None
 if CLIENT_ID and authority:  # Only initialize if config is valid
     try:
         msal_app_instance = msal.PublicClientApplication(
@@ -162,7 +162,7 @@ if CLIENT_ID and authority:  # Only initialize if config is valid
 # --- Core Authentication and API Functions ---
 
 
-def _try_silent_token_acquisition(app: Any) -> Optional[str]:
+def _try_silent_token_acquisition(app: Any) -> str | None:
     """Attempt to acquire token silently from cache."""
     accounts = app.get_accounts()
     if not accounts:
@@ -180,7 +180,7 @@ def _try_silent_token_acquisition(app: Any) -> Optional[str]:
     return None
 
 
-def _initiate_device_flow(app: Any) -> Optional[dict[str, Any]]:
+def _initiate_device_flow(app: Any) -> dict[str, Any] | None:
     """Initiate device flow and return flow object."""
     logger.debug("Initiating interactive device flow...")
     try:
@@ -211,7 +211,7 @@ def _display_device_flow_instructions(flow: dict[str, Any]) -> None:
     logger.debug(f"Device flow started. Please authenticate using the code above ({timeout_seconds}s timeout).")
 
 
-def _process_device_flow_result(result: Optional[dict[str, Any]]) -> Optional[str]:
+def _process_device_flow_result(result: dict[str, Any] | None) -> str | None:
     """Process device flow result and return access token."""
     if not result:
         logger.error("Device flow failed, timed out, or returned unexpected result: None")
@@ -245,7 +245,7 @@ def _process_device_flow_result(result: Optional[dict[str, Any]]) -> Optional[st
     return None
 
 
-def acquire_token_device_flow() -> Optional[str]:
+def acquire_token_device_flow() -> str | None:
     """
     Acquires an MS Graph API access token using the device code flow.
     Prioritizes silent acquisition from cache, falls back to interactive flow.
@@ -287,7 +287,7 @@ def acquire_token_device_flow() -> Optional[str]:
 # End of acquire_token_device_flow
 
 
-def _process_list_query_response(lists_data: dict[str, Any], list_name: str) -> Optional[str]:
+def _process_list_query_response(lists_data: dict[str, Any], list_name: str) -> str | None:
     """Process the list query response and extract list ID."""
     if not lists_data or "value" not in lists_data:
         logger.error(f"Microsoft To-Do list named '{list_name}' not found.")
@@ -327,7 +327,7 @@ def _handle_list_query_http_error(http_err: requests.exceptions.HTTPError) -> No
         logger.debug(f"Error response content: {http_err.response.text[:500]}")
 
 
-def get_todo_list_id(access_token: str, list_name: str) -> Optional[str]:
+def get_todo_list_id(access_token: str, list_name: str) -> str | None:
     """
     Finds the ID of a specific Microsoft To-Do list by its display name using MS Graph API.
     Includes specific handling for common HTTP errors.
@@ -396,10 +396,10 @@ def _handle_task_creation_http_error(http_err: requests.exceptions.HTTPError, li
 
 def _build_task_payload(
     task_title: str,
-    task_body: Optional[str] = None,
-    importance: Optional[str] = None,
-    due_date: Optional[str] = None,
-    categories: Optional[list[str]] = None,
+    task_body: str | None = None,
+    importance: str | None = None,
+    due_date: str | None = None,
+    categories: list[str] | None = None,
 ) -> dict[str, Any]:
     """Build task data payload for MS Graph API."""
     task_data: dict[str, Any] = {"title": task_title}
@@ -427,13 +427,13 @@ def _execute_task_creation_request(
     task_data: dict[str, Any],
     task_title: str,
     list_id: str,
-) -> Optional[str]:
+) -> str | None:
     """Execute task creation request and handle errors."""
     try:
         response = requests.post(task_create_url, headers=headers, json=task_data, timeout=30)
         response.raise_for_status()
 
-        response_data: Optional[dict[str, Any]] = None
+        response_data: dict[str, Any] | None = None
         with contextlib.suppress(json.JSONDecodeError):
             response_data = response.json()
             logger.debug(f"Create task response details: {response_data}")
@@ -464,11 +464,11 @@ def create_todo_task(
     access_token: str,
     list_id: str,
     task_title: str,
-    task_body: Optional[str] = None,
-    importance: Optional[str] = None,
-    due_date: Optional[str] = None,
-    categories: Optional[list[str]] = None,
-) -> Optional[str]:
+    task_body: str | None = None,
+    importance: str | None = None,
+    due_date: str | None = None,
+    categories: list[str] | None = None,
+) -> str | None:
     """
     Creates a new task in a specified Microsoft To-Do list using MS Graph API.
     Includes specific handling for common HTTP errors.
@@ -535,54 +535,63 @@ def test_core_functionality():
     # Test authentication function structure
     assert callable(acquire_token_device_flow), "acquire_token_device_flow should be callable"
 
-    # Test with mock MSAL client using test data
+    # Directly set module-level msal_app_instance for __main__ compatibility
+    # (patch() targets a different module object when running via python -m)
+    global msal_app_instance
+    original_app = msal_app_instance
     test_token_12345 = "test_token_12345"
-    with patch("integrations.ms_graph_utils.msal.PublicClientApplication") as mock_msal:
-        mock_app = MagicMock()
-        mock_msal.return_value = mock_app
-        mock_app.get_accounts.return_value = []
-        mock_app.acquire_token_silent.return_value = None
-        mock_app.initiate_device_flow.return_value = {
-            "user_code": "TEST12345",
-            "device_code": "DEV12345",
-        }
-        mock_app.acquire_token_by_device_flow.return_value = {"access_token": test_token_12345}
-
-        # Test device flow with mock response
+    mock_app = MagicMock()
+    mock_app.get_accounts.return_value = []
+    mock_app.acquire_token_silent.return_value = None
+    mock_app.initiate_device_flow.return_value = {
+        "user_code": "TEST12345",
+        "device_code": "DEV12345",
+        "verification_uri": "https://test.example.com/deviceauth",
+        "expires_in": 900,
+    }
+    mock_app.acquire_token_by_device_flow.return_value = {"access_token": test_token_12345}
+    try:
+        msal_app_instance = mock_app
         result = acquire_token_device_flow()
-        # Result may be None due to mocked environment, which is acceptable
-        assert result is None or isinstance(result, str), "Device flow should return None or string"
+        assert result == test_token_12345, f"Device flow should return token, got {result}"
+    finally:
+        msal_app_instance = original_app
 
 
 def test_edge_cases():
     """Test edge cases and error scenarios."""
+    global msal_app_instance
+    original_app = msal_app_instance
 
-    # Test handling of None device flow response
-    with patch("integrations.ms_graph_utils.msal.PublicClientApplication") as mock_msal:
-        mock_app = MagicMock()
-        mock_msal.return_value = mock_app
-        mock_app.get_accounts.return_value = []
-        mock_app.acquire_token_silent.return_value = None
-        mock_app.initiate_device_flow.return_value = None  # Simulate failure
-
+    # Test handling of failed device flow (no user_code in response)
+    mock_app = MagicMock()
+    mock_app.get_accounts.return_value = []
+    mock_app.acquire_token_silent.return_value = None
+    mock_app.initiate_device_flow.return_value = {"error_description": "Simulated failure"}
+    try:
+        msal_app_instance = mock_app
         result = acquire_token_device_flow()
-        # Should handle gracefully - returns None on failure
         assert result is None, "None device flow should return None"
+    finally:
+        msal_app_instance = original_app
 
-    # Test with empty accounts and failed silent acquisition
-    with patch("integrations.ms_graph_utils.msal.PublicClientApplication") as mock_msal:
-        mock_app = MagicMock()
-        mock_msal.return_value = mock_app
-        mock_app.get_accounts.return_value = [{"username": "test@test.com"}]
-        mock_app.acquire_token_silent.return_value = None
-        mock_app.initiate_device_flow.return_value = {
-            "user_code": "TESTCODE",
-            "device_code": "DEVCODE",
-        }
-        mock_app.acquire_token_by_device_flow.return_value = {"error": "expired_token"}
-
+    # Test with accounts present but failed silent acquisition and expired token
+    mock_app2 = MagicMock()
+    mock_app2.get_accounts.return_value = [{"username": "test@test.com"}]
+    mock_app2.acquire_token_silent.return_value = None
+    mock_app2.initiate_device_flow.return_value = {
+        "user_code": "TESTCODE",
+        "device_code": "DEVCODE",
+        "verification_uri": "https://test.example.com/deviceauth",
+        "expires_in": 900,
+    }
+    mock_app2.acquire_token_by_device_flow.return_value = {"error": "expired_token"}
+    try:
+        msal_app_instance = mock_app2
         result = acquire_token_device_flow()
-        assert result is None or isinstance(result, str), "Should handle expired token gracefully"
+        assert result is None, "Should handle expired token gracefully"
+    finally:
+        msal_app_instance = original_app
 
 
 def test_integration():
@@ -616,18 +625,21 @@ def test_performance():
 
 def test_error_handling():
     """Test error handling for Graph API failures."""
-    # Test that acquire_token_device_flow handles MSAL failures gracefully
-    with patch("integrations.ms_graph_utils.msal.PublicClientApplication") as mock_msal:
-        mock_app = MagicMock()
-        mock_msal.return_value = mock_app
-        mock_app.get_accounts.return_value = []
-        mock_app.acquire_token_silent.return_value = None
-        # Simulate device flow failure
-        mock_app.initiate_device_flow.return_value = None
-
+    # Directly set module-level msal_app_instance for __main__ compatibility
+    global msal_app_instance
+    original_app = msal_app_instance
+    mock_app = MagicMock()
+    mock_app.get_accounts.return_value = []
+    mock_app.acquire_token_silent.return_value = None
+    # Simulate device flow failure (return dict without 'user_code' as MSAL does)
+    mock_app.initiate_device_flow.return_value = {"error_description": "Simulated test error"}
+    try:
+        msal_app_instance = mock_app
         result = acquire_token_device_flow()
         # Should return None on failure, not crash
         assert result is None, "Failed device flow should return None"
+    finally:
+        msal_app_instance = original_app
 
 
 def test_enhanced_task_creation():

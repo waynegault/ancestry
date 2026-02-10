@@ -14,7 +14,6 @@ Usage:
     )
 """
 
-from __future__ import annotations
 
 from typing import Any, Literal, Protocol, TypedDict, Union
 
@@ -30,7 +29,7 @@ UUID = str  # DNA test GUID (uppercase)
 ConversationId = str  # Messaging conversation identifier
 
 # Score types
-MatchScore = Union[int, float]
+MatchScore = int | float
 QualityScore = int  # 0-100 scale
 
 # Date types
@@ -234,7 +233,87 @@ from testing.test_utilities import create_standard_test_runner
 
 def _test_module_integrity() -> bool:
     "Test that module can be imported and definitions are valid."
-    return True
+    from testing.test_framework import TestSuite
+
+    suite = TestSuite("Type Definitions", "core/type_definitions.py")
+    suite.start_suite()
+
+    def test_type_aliases_exist():
+        assert PersonId is str
+        assert TreeId is str
+        assert ProfileId is str
+        assert UUID is str
+        assert CacheKey is str
+        assert CacheTTL is int
+        assert StatusCode is int
+        assert QualityScore is int
+        return True
+
+    suite.run_test("Type aliases are valid", test_type_aliases_exist)
+
+    def test_person_info_instantiation():
+        p: PersonInfo = {"person_id": "I123", "full_name": "John Doe", "birth_year": 1900}
+        assert p["person_id"] == "I123"
+        assert p["full_name"] == "John Doe"
+        assert p["birth_year"] == 1900
+        return True
+
+    suite.run_test("PersonInfo TypedDict instantiation", test_person_info_instantiation)
+
+    def test_dna_match_info_instantiation():
+        d: DNAMatchInfo = {"uuid": "ABC-123", "name": "Jane", "shared_cm": 250.5, "shared_segments": 12}
+        assert d["uuid"] == "ABC-123"
+        assert d["shared_cm"] == 250.5
+        return True
+
+    suite.run_test("DNAMatchInfo TypedDict instantiation", test_dna_match_info_instantiation)
+
+    def test_api_response_instantiation():
+        r: APIResponse = {"success": True, "status_code": 200, "data": {"key": "val"}, "error": None}
+        assert r["success"] is True
+        assert r["status_code"] == 200
+        return True
+
+    suite.run_test("APIResponse TypedDict instantiation", test_api_response_instantiation)
+
+    def test_session_state_instantiation():
+        s: SessionState = {"is_valid": True, "browser_ready": False, "session_age_seconds": 42.0}
+        assert s["is_valid"] is True
+        assert s["session_age_seconds"] == 42.0
+        return True
+
+    suite.run_test("SessionState TypedDict instantiation", test_session_state_instantiation)
+
+    def test_search_criteria_and_result():
+        sc: SearchCriteria = {"first_name": "John", "surname": "Doe", "birth_year": 1900}
+        assert sc["first_name"] == "John"
+        sr: SearchResult = {"person_id": "I1", "tree_id": "T1", "name": "John Doe", "score": 95}
+        assert sr["score"] == 95
+        return True
+
+    suite.run_test("SearchCriteria and SearchResult instantiation", test_search_criteria_and_result)
+
+    def test_constants():
+        assert STATUS_SUCCESS == "success"
+        assert STATUS_ERROR == "error"
+        assert STATUS_PENDING == "pending"
+        assert GENDER_MALE == "m"
+        assert GENDER_FEMALE == "f"
+        assert "vital_records" in TASK_CATEGORIES
+        assert "dna_analysis" in TASK_CATEGORIES
+        assert len(TASK_CATEGORIES) == 8
+        return True
+
+    suite.run_test("Constants are defined correctly", test_constants)
+
+    def test_http_method_literal():
+        valid_methods: list[HTTPMethod] = ["GET", "POST", "PUT", "DELETE", "PATCH"]
+        assert len(valid_methods) == 5
+        return True
+
+    suite.run_test("HTTPMethod literal values", test_http_method_literal)
+
+    return suite.finish_suite()
 
 
 run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)

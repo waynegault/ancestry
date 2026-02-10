@@ -6,11 +6,10 @@ inside DraftReply.content, and strip it before sending outbound messages.
 This module intentionally has no SQLAlchemy dependencies.
 """
 
-from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any
 
 _INTERNAL_BLOCK_BEGIN = "\n\n---\n[INTERNAL_DRAFT_METADATA]\n"
 _INTERNAL_BLOCK_END = "\n[/INTERNAL_DRAFT_METADATA]\n"
@@ -20,14 +19,14 @@ _LEGACY_RESEARCH_SUGGESTIONS_MARKER = "\n\n---\nResearch Suggestions:\n"
 
 @dataclass(frozen=True, slots=True)
 class DraftInternalMetadata:
-    ai_confidence: Optional[int] = None
-    ai_reasoning: Optional[str] = None
-    context_summary: Optional[str] = None
-    research_suggestions: Optional[str] = None
-    research_metadata: Optional[dict[str, Any]] = None
+    ai_confidence: int | None = None
+    ai_reasoning: str | None = None
+    context_summary: str | None = None
+    research_suggestions: str | None = None
+    research_metadata: dict[str, Any] | None = None
 
 
-def _sanitize_field(value: Optional[str], *, max_len: int) -> Optional[str]:
+def _sanitize_field(value: str | None, *, max_len: int) -> str | None:
     if value is None:
         return None
     cleaned = str(value).strip()
@@ -38,7 +37,7 @@ def _sanitize_field(value: Optional[str], *, max_len: int) -> Optional[str]:
     return cleaned
 
 
-def _sanitize_json(value: Optional[dict[str, Any]], *, max_len: int) -> Optional[str]:
+def _sanitize_json(value: dict[str, Any] | None, *, max_len: int) -> str | None:
     if not value:
         return None
     try:

@@ -13,7 +13,7 @@ Sprint 1, Task 1: Core Intelligence & Retrieval
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -23,15 +23,15 @@ class PersonSearchResult:
     """Result of searching for a person in the tree."""
 
     found: bool = False
-    person_id: Optional[str] = None
+    person_id: str | None = None
     name: str = ""
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    birth_year: Optional[int] = None
-    birth_place: Optional[str] = None
-    death_year: Optional[int] = None
-    death_place: Optional[str] = None
-    gender: Optional[str] = None
+    first_name: str | None = None
+    last_name: str | None = None
+    birth_year: int | None = None
+    birth_place: str | None = None
+    death_year: int | None = None
+    death_place: str | None = None
+    gender: str | None = None
     match_score: int = 0
     confidence: str = "low"  # low, medium, high
     alternatives: list[dict[str, Any]] = field(default_factory=list)
@@ -63,7 +63,7 @@ class RelationshipResult:
     relationship_label: str = ""  # e.g., "3rd cousin twice removed"
     relationship_description: str = ""  # Natural language explanation
     path: list[dict[str, Any]] = field(default_factory=list)  # Full path with details
-    common_ancestor: Optional[dict[str, Any]] = None
+    common_ancestor: dict[str, Any] | None = None
     generations_apart: int = 0
     confidence: str = "low"
 
@@ -150,9 +150,9 @@ class FamilyMember:
     person_id: str
     name: str
     relation: str  # parent, sibling, spouse, child
-    birth_year: Optional[int] = None
-    death_year: Optional[int] = None
-    birth_place: Optional[str] = None
+    birth_year: int | None = None
+    death_year: int | None = None
+    birth_place: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -235,7 +235,7 @@ class TreeQueryService:
     - get_descendants: Get descendants up to N generations
     """
 
-    def __init__(self, gedcom_path: Optional[Path] = None):
+    def __init__(self, gedcom_path: Path | None = None):
         """
         Initialize the TreeQueryService.
 
@@ -244,7 +244,7 @@ class TreeQueryService:
         """
         self._gedcom_data: Any = None
         self._gedcom_path = gedcom_path
-        self._reference_person_id: Optional[str] = None
+        self._reference_person_id: str | None = None
         self._initialized = False
 
     def _ensure_initialized(self) -> bool:
@@ -291,8 +291,8 @@ class TreeQueryService:
     def find_person(
         self,
         name: str,
-        approx_birth_year: Optional[int] = None,
-        location: Optional[str] = None,
+        approx_birth_year: int | None = None,
+        location: str | None = None,
         max_results: int = 5,
     ) -> PersonSearchResult:
         """
@@ -387,7 +387,7 @@ class TreeQueryService:
     def explain_relationship(
         self,
         person_a_id: str,
-        person_b_id: Optional[str] = None,
+        person_b_id: str | None = None,
     ) -> RelationshipResult:
         """
         Explain the relationship between two people.
@@ -535,7 +535,7 @@ class TreeQueryService:
 
         return " ".join(parts)
 
-    def get_person_details(self, person_id: str) -> Optional[dict[str, Any]]:
+    def get_person_details(self, person_id: str) -> dict[str, Any] | None:
         """
         Get detailed information about a person.
 
@@ -645,7 +645,7 @@ class TreeQueryService:
             logger.error(f"Error getting family members: {e}", exc_info=True)
             return not_found
 
-    def _get_family_member_details(self, person_id: str, relation: str) -> Optional[FamilyMember]:
+    def _get_family_member_details(self, person_id: str, relation: str) -> FamilyMember | None:
         """Get details for a single family member."""
         try:
             from genealogy.gedcom import gedcom_utils
@@ -704,7 +704,7 @@ class TreeQueryService:
     def get_common_ancestors(
         self,
         person_a_id: str,
-        person_b_id: Optional[str] = None,
+        person_b_id: str | None = None,
         max_generations: int = 10,
     ) -> list[dict[str, Any]]:
         """

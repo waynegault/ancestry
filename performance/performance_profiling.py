@@ -46,10 +46,11 @@ import cProfile
 import io
 import pstats
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path
-from typing import Any, Callable, Optional, TypeVar, cast
+from typing import Any, TypeVar, cast
 
 # Type variables for generic decorator support
 FuncType = TypeVar('FuncType', bound=Callable[..., Any])
@@ -78,7 +79,7 @@ _profile_config = ProfileConfig()
 
 def configure_profiling(
     enabled: bool = False,
-    output_dir: Optional[Path] = None,
+    output_dir: Path | None = None,
     sort_by: str = "cumulative",
     top_n_functions: int = 50,
 ) -> None:
@@ -145,9 +146,9 @@ def is_profiling_enabled() -> bool:
 
 
 def profile_with_cprofile(
-    output_file: Optional[str] = None,
-    enabled: Optional[bool] = None,
-    sort_by: Optional[str] = None,
+    output_file: str | None = None,
+    enabled: bool | None = None,
+    sort_by: str | None = None,
 ) -> Callable[[FuncType], FuncType]:
     """
     Decorator to profile a function with cProfile.
@@ -219,7 +220,7 @@ def profile_with_cprofile(
     return decorator
 
 
-def time_function(func: Callable[..., R]) -> Callable[..., R]:
+def time_function[R](func: Callable[..., R]) -> Callable[..., R]:
     """
     Lightweight timing decorator with no cProfile overhead.
 
@@ -293,7 +294,7 @@ def _generate_txt_report(stats_path: Path, sort_by: str = "cumulative") -> None:
 
 
 def generate_report_from_stats(
-    stats_file: Path, output_file: Optional[Path] = None, sort_by: str = "cumulative"
+    stats_file: Path, output_file: Path | None = None, sort_by: str = "cumulative"
 ) -> str:
     """
     Generate human-readable report from existing .stats file.

@@ -1,5 +1,5 @@
 line-length = 120
-target-version = "py39"
+target-version = "py312"
 
 [lint]
 preview = true
@@ -30,17 +30,14 @@ select = [
 # - PLR0915: many statements in main functions by design
 # - PLR2004: magic value comparisons (intentional for readability)
 # - PLC0415: imports outside top-level (architectural decision)
-# - UP006: non-PEP585 annotations (Python 3.9 compatibility)
-# - UP007: Union syntax (Python 3.9 compatibility)
+
 ignore = [
     "E501", "E402", "F401", "F403", "F405",
     "B009", "B010",  # setattr/getattr with constants (SQLAlchemy ORM workaround)
     "PLR0913", "PLR0915", "PLR0912", "PLR2004", "PLC0415",
     "PLR0917",  # certain helper functions require many arguments
     "N806",  # variable names in functions (for compatibility)
-    "UP006", # non-PEP585 annotations (Python 3.9 compatibility)
-    "UP007", # Union syntax (for Python 3.9 compatibility)
-    "UP045", # Optional[X] annotations for Python 3.9 compatibility
+    "PLW0603", # global statements (intentional for module-level state management)
 ]
 
 [lint.isort]

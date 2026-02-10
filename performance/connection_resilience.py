@@ -21,7 +21,8 @@ logger = logging.getLogger(__name__)
 
 import functools
 import time
-from typing import Any, Callable, Optional, ParamSpec, TypeVar
+from collections.abc import Callable
+from typing import Any, ParamSpec, TypeVar
 
 from core.utils import prevent_system_sleep, restore_system_sleep
 
@@ -52,7 +53,7 @@ class ConnectionResilienceManager:
         logger.debug("Sleep prevention disabled, normal power management restored")
 
     def handle_connection_loss(
-        self, session_manager: Any, operation_name: str, retry_callback: Optional[Callable[..., Any]] = None
+        self, session_manager: Any, operation_name: str, retry_callback: Callable[..., Any] | None = None
     ) -> bool:
         """
         Handle connection loss with automatic recovery.
@@ -260,9 +261,24 @@ def _test_resilience_manager_state_transitions() -> bool:
 
 
 def _test_decorators_are_callable() -> bool:
-    """Test that decorators are properly defined and callable."""
-    assert callable(with_connection_resilience), "with_connection_resilience should be callable"
-    assert callable(with_periodic_health_check), "with_periodic_health_check should be callable"
+    """Test that decorators can be applied to a function and called."""
+    # Apply with_connection_resilience to a test function and invoke it
+    @with_connection_resilience("test_operation", max_recovery_attempts=1)
+    def _dummy_resilient() -> str:
+        return "resilient_ok"
+
+    result1 = _dummy_resilient()
+    assert result1 == "resilient_ok", f"Decorated function should return 'resilient_ok', got {result1}"
+
+    # Apply with_periodic_health_check to a test function and invoke it
+    @with_periodic_health_check(check_interval=9999)
+    def _dummy_health(_session_manager: object) -> str:
+        return "health_ok"
+
+    from unittest.mock import MagicMock
+    mock_sm = MagicMock()
+    result2 = _dummy_health(mock_sm)
+    assert result2 == "health_ok", f"Decorated function should return 'health_ok', got {result2}"
     return True
 
 

@@ -105,7 +105,7 @@ class FeatureFlags:
 
         self._flags: dict[str, FeatureFlag] = {}
         self._overrides: dict[str, bool] = {}
-        self._config_path: Optional[Path] = None
+        self._config_path: Path | None = None
         self._initialized = True
         logger.debug("FeatureFlags singleton initialized")
 
@@ -148,7 +148,7 @@ class FeatureFlags:
     def is_enabled(
         self,
         name: str,
-        user_id: Optional[str] = None,
+        user_id: str | None = None,
         default: bool = False,
     ) -> bool:
         """
@@ -195,7 +195,7 @@ class FeatureFlags:
     @staticmethod
     def _is_in_rollout(
         flag_name: str,
-        user_id: Optional[str],
+        user_id: str | None,
         percentage: float,
     ) -> bool:
         """Determine if user falls within rollout percentage using consistent hashing."""
@@ -227,7 +227,7 @@ class FeatureFlags:
         self._overrides.clear()
         logger.info("All feature flag overrides cleared")
 
-    def get_flag(self, name: str) -> Optional[FeatureFlag]:
+    def get_flag(self, name: str) -> FeatureFlag | None:
         """Get a feature flag by name."""
         return self._flags.get(name)
 
@@ -235,7 +235,7 @@ class FeatureFlags:
         """List all registered feature flags."""
         return list(self._flags.values())
 
-    def get_all_states(self, user_id: Optional[str] = None) -> dict[str, bool]:
+    def get_all_states(self, user_id: str | None = None) -> dict[str, bool]:
         """Get current state of all flags for a user."""
         return {name: self.is_enabled(name, user_id) for name in self._flags}
 
@@ -270,7 +270,7 @@ class FeatureFlags:
             logger.error("Failed to load feature flags from %s: %s", path, e)
             return 0
 
-    def save_to_file(self, path: Optional[Path] = None) -> bool:
+    def save_to_file(self, path: Path | None = None) -> bool:
         """
         Save current feature flags to JSON file.
 
@@ -316,14 +316,14 @@ class FeatureFlags:
 # Convenience function for quick access
 def is_feature_enabled(
     name: str,
-    user_id: Optional[str] = None,
+    user_id: str | None = None,
     default: bool = False,
 ) -> bool:
     """Check if a feature flag is enabled (convenience wrapper)."""
     return FeatureFlags().is_enabled(name, user_id, default)
 
 
-def bootstrap_feature_flags(config: Any | None = None, default_path: Optional[Path] = None) -> FeatureFlags:
+def bootstrap_feature_flags(config: Any | None = None, default_path: Path | None = None) -> FeatureFlags:
     """Load feature flags from config/env/default path and return the singleton.
 
     Order of precedence for loading:

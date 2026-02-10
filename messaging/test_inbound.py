@@ -260,9 +260,10 @@ def run_tests() -> bool:
         test_method_name = str(test).split(' ')[0]  # Extract method name from string representation
 
         # Create a closure to capture the current test instance
-        from typing import Callable, Union
+        from collections.abc import Callable
+        from typing import Union
 
-        def make_run_adapter(current_test: Union[unittest.TestCase, unittest.TestSuite]) -> Callable[[], None]:
+        def make_run_adapter(current_test: unittest.TestCase | unittest.TestSuite) -> Callable[[], None]:
             def run_adapter() -> None:
                 # Create a fresh instance for each test run
                 result = unittest.TestResult()

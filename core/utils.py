@@ -27,13 +27,15 @@ import random  # Used by RateLimiter jitter calculations
 import re
 import time
 import uuid  # For make_ube
-from collections.abc import Mapping  # Consolidated typing imports
+from collections.abc import (
+    Callable,
+    Mapping,  # Consolidated typing imports
+)
 from dataclasses import dataclass, field
 from functools import wraps
 from pathlib import Path  # For cookie persistence
 from typing import (
     Any,
-    Callable,
     Optional,
     ParamSpec,
     TypeVar,
@@ -90,12 +92,12 @@ logger = logging.getLogger(__name__)
 
 # === TYPE ALIASES ===
 # Define type aliases
-RequestsResponseTypeOptional = Optional[RequestsResponse]
+RequestsResponseTypeOptional = RequestsResponse | None
 Locator = tuple[str, str]
-ApiResponseType = Union[dict[str, Any], list[Any], str, bytes, RequestsResponse, None]
+ApiResponseType = dict[str, Any] | list[Any] | str | bytes | RequestsResponse | None
 
 
-DriverType = Optional[WebDriver]
+DriverType = WebDriver | None
 
 
 # === SELENIUM HELPERS (Delegated) ===
@@ -163,18 +165,18 @@ class ApiRequestConfig:
     url: str
     # HTTP method and data
     method: str = "GET"
-    data: Optional[dict[str, Any]] = None
-    json_data: Optional[dict[str, Any]] = None
-    json: Optional[dict[str, Any]] = None
+    data: dict[str, Any] | None = None
+    json_data: dict[str, Any] | None = None
+    json: dict[str, Any] | None = None
 
     # Headers and authentication
-    headers: Optional[dict[str, str]] = None
-    referer_url: Optional[str] = None
+    headers: dict[str, str] | None = None
+    referer_url: str | None = None
     use_csrf_token: bool = True
     add_default_origin: bool = True
 
     # Request behavior
-    timeout: Optional[int] = None
+    timeout: int | None = None
     cookie_jar: Optional["RequestsCookieJar"] = None
     allow_redirects: bool = True
     force_text_response: bool = False
@@ -184,8 +186,8 @@ class ApiRequestConfig:
     initial_delay: float = 1.0
     backoff_factor: float = 2.0
     max_delay: float = 60.0
-    retry_status_codes: Union[list[int], set[int]] = field(default_factory=lambda: [429, 500, 502, 503, 504])
-    retry_policy: Optional[Union[str, "RetryPolicyProfile"]] = "api"
+    retry_status_codes: list[int] | set[int] = field(default_factory=lambda: [429, 500, 502, 503, 504])
+    retry_policy: Union[str, "RetryPolicyProfile"] | None = "api"
     jitter_seconds: float = 0.2
 
     # Metadata
@@ -426,7 +428,7 @@ def _title_case_with_lowercase_particles(text: str) -> str:
     return " ".join(words)
 
 
-def ordinal_case(text: Union[str, int]) -> str:
+def ordinal_case(text: str | int) -> str:
     """
     Corrects ordinal suffixes (1st, 2nd, 3rd, 4th) to lowercase within a string,
     often used after applying title casing. Handles relationship terms simply.
@@ -462,7 +464,7 @@ def _remove_gedcom_slashes(name: str) -> str:
     return re.sub(r"\s+", " ", name).strip()
 
 
-def _format_quoted_nickname(part: str) -> Optional[str]:
+def _format_quoted_nickname(part: str) -> str | None:
     """Format quoted nicknames like 'Betty' or 'Bo'."""
     if part.startswith("'") and part.endswith("'") and len(part) > 2:
         inner_content = part[1:-1]
@@ -482,7 +484,7 @@ def _format_hyphenated_name(part: str, lowercase_particles: set[str]) -> str:
     return "-".join(filter(None, hyphenated_elements))
 
 
-def _format_apostrophe_name(part: str) -> Optional[str]:
+def _format_apostrophe_name(part: str) -> str | None:
     """Format names with internal apostrophes like O'Malley or D'Angelo."""
     if "'" in part and len(part) > 1 and not (part.startswith("'") or part.endswith("'")):
         name_pieces = part.split("'")
@@ -490,7 +492,7 @@ def _format_apostrophe_name(part: str) -> Optional[str]:
     return None
 
 
-def _format_mc_mac_prefix(part: str) -> Optional[str]:
+def _format_mc_mac_prefix(part: str) -> str | None:
     """Format Mc/Mac prefixes like McDonald or MacGregor."""
     part_lower = part.lower()
     if part_lower.startswith("mc") and len(part) > 2:
@@ -502,7 +504,7 @@ def _format_mc_mac_prefix(part: str) -> Optional[str]:
     return None
 
 
-def _format_initial(part: str) -> Optional[str]:
+def _format_initial(part: str) -> str | None:
     """Format initials like J. or J."""
     if len(part) == 2 and part.endswith(".") and part[0].isalpha():
         return part[0].upper() + "."
@@ -548,7 +550,7 @@ def _format_name_part(part: str, index: int, lowercase_particles: set[str], uppe
     return result
 
 
-def format_name(name: Optional[str]) -> str:
+def format_name(name: str | None) -> str:
     """
     Formats a person's name string to title case, preserving uppercase components
     (like initials or acronyms) and handling None/empty input gracefully.
@@ -597,9 +599,9 @@ def format_name(name: Optional[str]) -> str:
 
 
 def retry(
-    max_retries: Optional[int] = None,
-    backoff_factor: Optional[float] = None,
-    max_delay: Optional[float] = None,
+    max_retries: int | None = None,
+    backoff_factor: float | None = None,
+    max_delay: float | None = None,
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator factory to retry a function with exponential backoff and jitter."""
 
@@ -701,14 +703,14 @@ def time_wait(wait_description: str) -> Callable[[Callable[P, R]], Callable[P, R
 # PHASE 3.1: Direct AdaptiveRateLimiter usage
 # ------------------------------
 def get_rate_limiter(
-    initial_fill_rate: Optional[float] = None,
-    success_threshold: Optional[int] = None,
-    min_fill_rate: Optional[float] = None,
-    max_fill_rate: Optional[float] = None,
-    capacity: Optional[float] = None,
-    endpoint_profiles: Optional[dict[str, Any]] = None,
-    rate_limiter_429_backoff: Optional[float] = None,
-    rate_limiter_success_factor: Optional[float] = None,
+    initial_fill_rate: float | None = None,
+    success_threshold: int | None = None,
+    min_fill_rate: float | None = None,
+    max_fill_rate: float | None = None,
+    capacity: float | None = None,
+    endpoint_profiles: dict[str, Any] | None = None,
+    rate_limiter_429_backoff: float | None = None,
+    rate_limiter_success_factor: float | None = None,
 ):
     """Return the global AdaptiveRateLimiter singleton.
 
@@ -749,8 +751,8 @@ def get_rate_limiter(
 def _prepare_base_headers(
     method: str,
     api_description: str,
-    referer_url: Optional[str] = None,
-    headers: Optional[dict[str, str]] = None,
+    referer_url: str | None = None,
+    headers: dict[str, str] | None = None,
 ) -> dict[str, str]:
     """
     Prepares the base headers for an API request.
@@ -799,7 +801,7 @@ def _prepare_base_headers(
 # Helper functions for _prepare_api_headers
 
 
-def _get_user_agent_from_browser(driver: DriverType, api_description: str) -> Optional[str]:
+def _get_user_agent_from_browser(driver: DriverType, api_description: str) -> str | None:
     """Get User-Agent from browser using JavaScript."""
     if not driver:
         return None
@@ -1081,7 +1083,7 @@ def _sync_cookies_for_request(
 
 def _get_rate_limiter_from_session(
     session_manager: Optional["SessionManager"],
-) -> Optional[RateLimiterProtocol]:
+) -> RateLimiterProtocol | None:
     """Return the adaptive rate limiter attached to the session, if any."""
     if session_manager is None:
         return None
@@ -1235,7 +1237,7 @@ def _handle_429_error(
     """Handle 429 Too Many Requests error."""
     rate_limiter = _get_rate_limiter_from_session(session_manager)
     if rate_limiter:
-        retry_after: Optional[float] = None
+        retry_after: float | None = None
         if response and hasattr(response, 'headers'):
             retry_header = response.headers.get("Retry-After")
             if retry_header:
@@ -1252,7 +1254,7 @@ def _handle_retryable_status(
     retry_ctx: RetryContext,
     api_description: str,
     session_manager: Optional["SessionManager"],
-) -> tuple[bool, Optional[RequestsResponseTypeOptional], int, float]:
+) -> tuple[bool, RequestsResponseTypeOptional | None, int, float]:
     """
     Handle retryable status codes.
 
@@ -1305,7 +1307,7 @@ def _handle_redirect_response(
     reason: str,
     allow_redirects: bool,
     api_description: str,
-) -> Optional[RequestsResponseTypeOptional]:
+) -> RequestsResponseTypeOptional | None:
     """Handle redirect responses (3xx status codes)."""
     if 300 <= status < 400:
         if not allow_redirects:
@@ -1465,7 +1467,7 @@ def _handle_response_status(
     metrics_endpoint: str,
     metrics_method: str,
     attempt_duration: float,
-) -> tuple[Optional[Any], bool, int, float, Optional[Exception]]:
+) -> tuple[Any | None, bool, int, float, Exception | None]:
     """
     Handle response status codes and return appropriate result.
     Returns (response, should_continue, retries_left, current_delay, last_exception).
@@ -1554,17 +1556,17 @@ def _api_req(
     session_manager: Optional["SessionManager"],
     url: str,
     method: str = "GET",
-    data: Optional[dict[str, Any]] = None,
-    json_data: Optional[dict[str, Any]] = None,
-    headers: Optional[dict[str, str]] = None,
-    referer_url: Optional[str] = None,
-    timeout: Optional[int] = None,
+    data: dict[str, Any] | None = None,
+    json_data: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    referer_url: str | None = None,
+    timeout: int | None = None,
     max_retries: int = 3,
     initial_delay: float = 1.0,
     backoff_factor: float = 2.0,
     max_delay: float = 60.0,
-    retry_status_codes: Optional[Union[list[int], set[int]]] = None,
-    retry_policy: Optional[Union[str, RetryPolicyProfile]] = "api",
+    retry_status_codes: list[int] | set[int] | None = None,
+    retry_policy: str | RetryPolicyProfile | None = "api",
     api_description: str = "API Call",
     force_text_response: bool = False,
     use_csrf_token: bool = True,
@@ -1632,7 +1634,7 @@ def _process_request_attempt(
     config: ApiRequestConfig,
     retries_left: int,
     current_delay: float,
-) -> tuple[Optional[Any], bool, int, float, Optional[Exception]]:
+) -> tuple[Any | None, bool, int, float, Exception | None]:
     """
     Process a single request attempt.
     Returns (response, should_continue, retries_left, current_delay, last_exception).
@@ -1773,7 +1775,7 @@ def _validate_driver_session(driver: DriverType) -> bool:
         return False
 
 
-def _extract_cookie_value(cookie_obj: Optional[Mapping[str, Any]]) -> Optional[str]:
+def _extract_cookie_value(cookie_obj: Mapping[str, Any] | None) -> str | None:
     """Return cookie value when available."""
     if not isinstance(cookie_obj, Mapping):
         return None
@@ -1795,7 +1797,7 @@ def _build_cookie_lookup(driver: WebDriver) -> dict[str, str]:
     return cookies_dict
 
 
-def _get_ancsessionid_cookie(driver: DriverType) -> Optional[str]:
+def _get_ancsessionid_cookie(driver: DriverType) -> str | None:
     """Get ANCSESSIONID cookie value from driver."""
     if not driver:
         return None
@@ -1842,7 +1844,7 @@ def _build_ube_payload(ancsessionid: str) -> dict[str, str]:
     }
 
 
-def _encode_ube_payload(ube_data: dict[str, str]) -> Optional[str]:
+def _encode_ube_payload(ube_data: dict[str, str]) -> str | None:
     """Encode UBE payload to base64."""
     try:
         json_payload = json.dumps(ube_data, separators=(",", ":")).encode("utf-8")
@@ -1855,7 +1857,7 @@ def _encode_ube_payload(ube_data: dict[str, str]) -> Optional[str]:
         return None
 
 
-def make_ube(driver: DriverType) -> Optional[str]:
+def make_ube(driver: DriverType) -> str | None:
     """Generate UBE header for Ancestry API requests."""
     if not _validate_driver_session(driver):
         return None
@@ -1895,7 +1897,7 @@ def _wait_for_2fa_header(element_wait: "WebDriverWait[Any]", session_manager: "S
         return False
 
 
-def _find_sms_button_with_selectors(selector_wait: "WebDriverWait[Any]") -> Optional[WebElement]:
+def _find_sms_button_with_selectors(selector_wait: "WebDriverWait[Any]") -> WebElement | None:
     """Try multiple selectors to find the SMS button."""
     sms_selectors = [
         "button[data-method='sms']",
@@ -2167,7 +2169,7 @@ def _enter_username(driver: WebDriver, element_wait: "WebDriverWait[Any]") -> bo
     return False
 
 
-def _find_next_button_with_selectors(short_wait: "WebDriverWait[Any]") -> Optional[WebElement]:
+def _find_next_button_with_selectors(short_wait: "WebDriverWait[Any]") -> WebElement | None:
     """Try multiple selectors to find the Next button."""
     next_selectors = [
         SIGN_IN_BUTTON_SELECTOR,
@@ -2269,7 +2271,7 @@ def _click_next_button(driver: WebDriver, short_wait: "WebDriverWait[Any]") -> b
         return True
 
 
-def _wait_for_password_field(driver: WebDriver, element_wait: "WebDriverWait[Any]") -> Optional[WebElement]:
+def _wait_for_password_field(driver: WebDriver, element_wait: "WebDriverWait[Any]") -> WebElement | None:
     """Wait for the password field, retrying once with a longer timeout."""
     try:
         logger.debug("[PASSWORD_ENTRY] Waiting for password field to appear...")
@@ -2345,7 +2347,7 @@ def _sleep_between_password_attempts(attempt: int, max_attempts: int) -> None:
         time.sleep(0.5)
 
 
-def _enter_password(driver: WebDriver, element_wait: "WebDriverWait[Any]") -> tuple[bool, Optional[WebElement]]:
+def _enter_password(driver: WebDriver, element_wait: "WebDriverWait[Any]") -> tuple[bool, WebElement | None]:
     """Enter password into the login form."""
     logger.info("[PASSWORD_ENTRY] Starting password entry process...")
     logger.debug(f"Waiting for password input: '{PASSWORD_INPUT_SELECTOR}'...")
@@ -2507,7 +2509,7 @@ def enter_creds(driver: WebDriver) -> bool:
 # Helper functions for consent
 
 
-def _find_consent_banner(driver: WebDriver) -> Optional[WebElement]:
+def _find_consent_banner(driver: WebDriver) -> WebElement | None:
     """Find the cookie consent banner if present."""
     logger.debug(f"Checking for cookie consent overlay: '{COOKIE_BANNER_SELECTOR}'")
     try:
@@ -2625,7 +2627,7 @@ def consent(driver: WebDriver) -> bool:
 # End of consent
 
 
-def _check_initial_login_status(session_manager: "SessionManager") -> Optional[str]:
+def _check_initial_login_status(session_manager: "SessionManager") -> str | None:
     """Check if already logged in before attempting login."""
     initial_status = login_status(session_manager, disable_ui_fallback=True)
     if initial_status is True:
@@ -2634,7 +2636,7 @@ def _check_initial_login_status(session_manager: "SessionManager") -> Optional[s
     return None
 
 
-def _navigate_to_signin(driver: Any, session_manager: "SessionManager", signin_url: str) -> Optional[str]:
+def _navigate_to_signin(driver: Any, session_manager: "SessionManager", signin_url: str) -> str | None:
     """Navigate to sign-in page and verify."""
     if not nav_to_page(driver, signin_url, USERNAME_INPUT_SELECTOR, session_manager):
         logger.debug("Navigation to sign-in page failed/redirected. Checking login status...")
@@ -2648,7 +2650,7 @@ def _navigate_to_signin(driver: Any, session_manager: "SessionManager", signin_u
     return None
 
 
-def _check_for_login_errors(driver: Any) -> Optional[str]:
+def _check_for_login_errors(driver: Any) -> str | None:
     """Check for specific or generic login error messages."""
     try:
         WebDriverWait(driver, 1).until(
@@ -2724,7 +2726,7 @@ def _debug_log_page_headers(driver: Any) -> None:
         logger.debug(f"[DEBUG] Error checking page elements: {debug_err}")
 
 
-def _detect_2fa_page(driver: Any) -> tuple[bool, Optional[str]]:
+def _detect_2fa_page(driver: Any) -> tuple[bool, str | None]:
     """Detect if 2FA page is present."""
     try:
         logger.info("Checking for two-step verification page (waiting up to 15 seconds)...")
@@ -2821,7 +2823,7 @@ def _debug_log_post_credentials_state(driver: Any) -> None:
         logger.debug(f"[DEBUG] Error capturing page state: {e}")
 
 
-def _handle_credentials_entry(driver: Any) -> Optional[str]:
+def _handle_credentials_entry(driver: Any) -> str | None:
     """Handle credential entry and check for errors. Returns error status if failed."""
     if not enter_creds(driver):
         logger.error("Failed during credential entry or submission.")
@@ -2909,7 +2911,7 @@ def log_in(session_manager: "SessionManager") -> str:
 # End of log_in
 
 
-def _validate_login_status_inputs(session_manager: "SessionManager") -> Optional[bool]:
+def _validate_login_status_inputs(session_manager: "SessionManager") -> bool | None:
     """Validate session manager for login status check."""
     if not hasattr(session_manager, 'is_sess_valid'):
         logger.error(f"Invalid argument: Expected SessionManager-like object, got {type(session_manager)}.")
@@ -2943,7 +2945,7 @@ def _validate_login_status_inputs(session_manager: "SessionManager") -> Optional
     return True  # Valid
 
 
-def _perform_api_login_check(session_manager: "SessionManager") -> Optional[bool]:
+def _perform_api_login_check(session_manager: "SessionManager") -> bool | None:
     """Perform API-based login status check."""
     logger.debug("Performing primary API-based login status check...")
     try:
@@ -2964,7 +2966,7 @@ def _perform_api_login_check(session_manager: "SessionManager") -> Optional[bool
         return None
 
 
-def _check_ui_login_indicators(driver: Any) -> Optional[bool]:
+def _check_ui_login_indicators(driver: Any) -> bool | None:
     """Check UI for login indicators."""
     # Check for logged-in element
     logged_in_selector = CONFIRMED_LOGGED_IN_SELECTOR
@@ -3016,7 +3018,7 @@ def _perform_ui_login_check_with_navigation(driver: Any) -> bool:
 
 # Login Status Check Function
 @retry(max_retries=2)
-def login_status(session_manager: "SessionManager", disable_ui_fallback: bool = False) -> Optional[bool]:
+def login_status(session_manager: "SessionManager", disable_ui_fallback: bool = False) -> bool | None:
     """
     Checks if the user is currently logged in. Prioritizes API check, with optional UI fallback.
 
@@ -3078,7 +3080,7 @@ def _validate_nav_inputs(url: str) -> bool:
     return True
 
 
-def _parse_and_normalize_url(url: str) -> Optional[str]:
+def _parse_and_normalize_url(url: str) -> str | None:
     """Parse and normalize URL to base form."""
     try:
         target_url_parsed = urlparse(url)
@@ -3101,7 +3103,7 @@ def _check_browser_session(
     driver: WebDriver,
     session_manager: Optional["SessionManager"],
     attempt: int,
-) -> Optional[WebDriver]:
+) -> WebDriver | None:
     """Check browser session and restart if needed. Returns driver or None if failed."""
     if not is_browser_open(driver):
         logger.error(f"Navigation failed (Attempt {attempt}): Browser session invalid before nav.")
@@ -3171,7 +3173,7 @@ def _dump_navigation_debug_artifacts(driver: WebDriver, selector: str) -> None:
         logger.debug(f"Failed to dump navigation debug artifacts: {dump_err}")
 
 
-def _get_landed_url_base(driver: WebDriver, attempt: int) -> Optional[str]:
+def _get_landed_url_base(driver: WebDriver, attempt: int) -> str | None:
     """Get and normalize the current URL after navigation."""
     try:
         landed_url = driver.current_url
@@ -3363,7 +3365,7 @@ def _handle_navigation_alert(driver: WebDriver, attempt: int) -> str:
 def _handle_webdriver_exception(
     driver: WebDriver,
     session_manager: Optional["SessionManager"],
-) -> tuple[str, Optional[WebDriver]]:
+) -> tuple[str, WebDriver | None]:
     """Handle WebDriver exception. Returns (action, driver) where action is 'continue' or 'fail'."""
     if session_manager and not is_browser_open(driver):
         logger.error("WebDriver session invalid after exception. Attempting restart...")
@@ -3387,7 +3389,7 @@ def _check_url_mismatch_and_handle(
     signin_page_url_base: str,
     unavailability_selectors: dict[str, tuple[str, int]],
     session_manager: Optional["SessionManager"],
-) -> tuple[Optional[str], Optional[WebDriver]]:
+) -> tuple[str | None, WebDriver | None]:
     """
     Check for URL mismatch and handle appropriately.
     Returns (action, driver) where action is 'success', 'fail', 'continue', or None.
@@ -3418,7 +3420,7 @@ def _validate_post_navigation(
     element_timeout: int,
     unavailability_selectors: dict[str, tuple[str, int]],
     session_manager: Optional["SessionManager"],
-) -> tuple[str, Optional[WebDriver]]:
+) -> tuple[str, WebDriver | None]:
     """
     Validate navigation after landing on page.
     Returns (action, driver) where action is 'success', 'fail', or 'continue'.
@@ -3467,7 +3469,7 @@ def _perform_navigation_attempt(
     nav_config: NavigationConfig,
     session_manager: Optional["SessionManager"],
     attempt: int,
-) -> tuple[str, Optional[WebDriver]]:
+) -> tuple[str, WebDriver | None]:
     """
     Perform a single navigation attempt.
     Returns (action, driver) where action is 'success', 'fail', 'continue', or 'retry'.
@@ -3602,7 +3604,7 @@ def nav_to_page(
 def _check_for_unavailability(
     driver: WebDriver,
     selectors: dict[str, tuple[str, int]],
-) -> tuple[Optional[str], int]:
+) -> tuple[str | None, int]:
     """Checks if known 'page unavailable' messages are present using provided selectors."""
     # Check if driver is usable
     if not is_browser_open(driver):
@@ -3631,7 +3633,7 @@ def _check_for_unavailability(
 # ------------------------------------------------------------------------------
 # SLEEP PREVENTION - Keep system awake during long-running operations
 # ------------------------------------------------------------------------------
-def prevent_system_sleep() -> Optional[Any]:
+def prevent_system_sleep() -> Any | None:
     """
     Prevent system sleep during long-running operations.
     Cross-platform: Windows, macOS, Linux.

@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """Menu rendering helpers for the CLI interface."""
 
-from __future__ import annotations
 
 import logging
 import sys
 from collections.abc import Iterable
 from logging import StreamHandler
-from typing import Any, Optional, TextIO
+from typing import Any, TextIO
 
 from core.action_registry import ActionCategory, ActionMetadata, ActionRegistry, ActionRequirement
 
@@ -17,7 +16,7 @@ def _format_menu_line(action: ActionMetadata) -> str:
     return f"{action.id}. {action.name}{hint}"
 
 
-def _find_console_handler(logger: Optional[logging.Logger]) -> Optional[StreamHandler[TextIO]]:
+def _find_console_handler(logger: logging.Logger | None) -> StreamHandler[TextIO] | None:
     """Find the console handler in the logger hierarchy."""
     # Check root logger first as that's where handlers usually are
     root_logger = logging.getLogger()
@@ -42,7 +41,7 @@ def _find_console_handler(logger: Optional[logging.Logger]) -> Optional[StreamHa
     return None
 
 
-def _determine_log_level_name(logger: Optional[logging.Logger], config: Any) -> str:
+def _determine_log_level_name(logger: logging.Logger | None, config: Any) -> str:
     level_name = "UNKNOWN"
 
     console_handler = _find_console_handler(logger)
@@ -61,7 +60,7 @@ def _print_action_block(actions: Iterable[ActionMetadata]) -> None:
 
 
 def render_main_menu(
-    logger: Optional[logging.Logger],
+    logger: logging.Logger | None,
     config: Any,
     registry: ActionRegistry,
 ) -> str:
@@ -202,12 +201,6 @@ def _test_print_action_block_prints_actions() -> bool:
     return True
 
 
-def _test_render_main_menu_callable() -> bool:
-    """Test that render_main_menu is callable."""
-    assert callable(render_main_menu), "render_main_menu should be callable"
-    return True
-
-
 def _test_render_main_menu_output() -> bool:
     """Test that render_main_menu produces expected output."""
     import contextlib
@@ -279,12 +272,6 @@ def module_tests() -> bool:
         "Print action block",
         _test_print_action_block_prints_actions,
         "Ensures _print_action_block prints formatted action lines.",
-    )
-
-    suite.run_test(
-        "render_main_menu callable",
-        _test_render_main_menu_callable,
-        "Ensures render_main_menu is callable.",
     )
 
     suite.run_test(

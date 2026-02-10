@@ -10,7 +10,7 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional, Protocol, cast
+from typing import TYPE_CHECKING, Any, Protocol, cast
 
 import psutil
 
@@ -63,12 +63,12 @@ class BrowserManagerProtocol(Protocol):
 
     def ensure_driver_live(self, action_name: str) -> bool: ...
 
-    def close_driver(self, reason: Optional[str] = None) -> None: ...
+    def close_driver(self, reason: str | None = None) -> None: ...
 
 
 class APIManagerProtocol(Protocol):
     csrf_token: str
-    tree_owner_name: Optional[str]
+    tree_owner_name: str | None
     my_tree_id: str
 
     def sync_cookies_from_browser(
@@ -97,7 +97,7 @@ def parse_menu_choice(choice: str) -> tuple[str, list[str]]:
     return tokens[0].lower(), tokens[1:]
 
 
-def get_action_metadata(action_id: str) -> Optional[ActionMetadata]:
+def get_action_metadata(action_id: str) -> ActionMetadata | None:
     """Return action metadata for the provided identifier."""
 
     if not action_id:
@@ -106,25 +106,25 @@ def get_action_metadata(action_id: str) -> Optional[ActionMetadata]:
     return registry.get_action(action_id)
 
 
-def get_database_manager(session_manager: SessionManager) -> Optional[DatabaseManagerProtocol]:
+def get_database_manager(session_manager: SessionManager) -> DatabaseManagerProtocol | None:
     """Safely retrieve the session's DatabaseManager-like component."""
 
-    return cast(Optional[DatabaseManagerProtocol], getattr(session_manager, "db_manager", None))
+    return cast(DatabaseManagerProtocol | None, getattr(session_manager, "db_manager", None))
 
 
-def get_browser_manager(session_manager: SessionManager) -> Optional[BrowserManagerProtocol]:
+def get_browser_manager(session_manager: SessionManager) -> BrowserManagerProtocol | None:
     """Safely retrieve the session's BrowserManager-like component."""
 
-    return cast(Optional[BrowserManagerProtocol], getattr(session_manager, "browser_manager", None))
+    return cast(BrowserManagerProtocol | None, getattr(session_manager, "browser_manager", None))
 
 
-def get_api_manager(session_manager: SessionManager) -> Optional[APIManagerProtocol]:
+def get_api_manager(session_manager: SessionManager) -> APIManagerProtocol | None:
     """Safely retrieve the session's APIManager-like component."""
 
-    return cast(Optional[APIManagerProtocol], getattr(session_manager, "api_manager", None))
+    return cast(APIManagerProtocol | None, getattr(session_manager, "api_manager", None))
 
 
-def _determine_browser_requirement(choice: str, metadata: Optional[ActionMetadata] = None) -> bool:
+def _determine_browser_requirement(choice: str, metadata: ActionMetadata | None = None) -> bool:
     if metadata is None:
         action_id, _ = parse_menu_choice(choice)
         metadata = get_action_metadata(action_id)
@@ -139,7 +139,7 @@ def _determine_browser_requirement(choice: str, metadata: Optional[ActionMetadat
 def _determine_required_state(
     choice: str,
     requires_browser: bool,
-    metadata: Optional[ActionMetadata] = None,
+    metadata: ActionMetadata | None = None,
 ) -> str:
     if metadata is None:
         action_id, _ = parse_menu_choice(choice)
@@ -164,7 +164,7 @@ def _ensure_required_state(
     required_state: str,
     action_name: str,
     choice: str,
-    metadata: Optional[ActionMetadata] = None,
+    metadata: ActionMetadata | None = None,
 ) -> bool:
     """Ensure the required state for action execution with recovery strategies.
 
@@ -225,7 +225,7 @@ def _ensure_session_ready(
     session_manager: SessionManager,
     action_name: str,
     choice: str,
-    metadata: Optional[ActionMetadata],
+    metadata: ActionMetadata | None,
 ) -> bool:
     skip_csrf = bool(metadata.skip_csrf_check) if metadata else choice in {"10"}
     if not session_manager._guard_action("session_ready", action_name):
@@ -260,7 +260,7 @@ def _prepare_action_arguments(
     action_name = action_func.__name__
 
     if action_name in {"coord", "gather_dna_matches"} and "start" in func_sig.parameters:
-        start_val: Optional[int] = None
+        start_val: int | None = None
         if args:
             potential_start = args[-1]
             if isinstance(potential_start, int):

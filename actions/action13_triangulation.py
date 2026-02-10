@@ -18,7 +18,7 @@ import logging
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -79,7 +79,7 @@ def _export_results(opportunities: list[dict[str, Any]], format: str) -> None:
         logger.error(f"Failed to export results: {e}")
 
 
-def _search_target_by_name(session: Session) -> tuple[Optional[str], Optional[str]]:
+def _search_target_by_name(session: Session) -> tuple[str | None, str | None]:
     """Search for a DNA match in the database by name."""
     print("\n--- Search DNA Matches by Name ---")
     name_query = input("Enter name (partial or full): ").strip()
@@ -110,7 +110,7 @@ def _search_target_by_name(session: Session) -> tuple[Optional[str], Optional[st
         print("Invalid choice.")
 
 
-def _render_triangulation_menu(target_name: Optional[str], results_count: int) -> str:
+def _render_triangulation_menu(target_name: str | None, results_count: int) -> str:
     """Render the triangulation action menu."""
     print("\n" + "=" * 40)
     print("🧬 ACTION 13: TRIANGULATION ANALYSIS")
@@ -141,7 +141,7 @@ def _render_triangulation_menu(target_name: Optional[str], results_count: int) -
     return input("Select option: ").strip().lower()
 
 
-def _handle_search_target(session: Session) -> tuple[Optional[str], Optional[str]]:
+def _handle_search_target(session: Session) -> tuple[str | None, str | None]:
     """Handle searching for a target person by name."""
     uid, name = _search_target_by_name(session)
     if uid:
@@ -149,7 +149,7 @@ def _handle_search_target(session: Session) -> tuple[Optional[str], Optional[str
     return None, None
 
 
-def _handle_enter_id() -> tuple[Optional[str], Optional[str]]:
+def _handle_enter_id() -> tuple[str | None, str | None]:
     """Handle manually entering a target ID."""
     uid = input("\nEnter Target Person UUID or Profile ID: ").strip()
     if uid:
@@ -159,8 +159,8 @@ def _handle_enter_id() -> tuple[Optional[str], Optional[str]]:
 
 def _handle_run_analysis(
     triangulation_service: TriangulationService,
-    selected_target_id: Optional[str],
-    selected_target_name: Optional[str],
+    selected_target_id: str | None,
+    selected_target_name: str | None,
 ) -> list[dict[str, Any]]:
     """Handle running the triangulation analysis."""
     if not selected_target_id:
@@ -218,10 +218,10 @@ def _handle_menu_choice(
     choice: str,
     session: Session,
     triangulation_service: TriangulationService,
-    selected_target_id: Optional[str],
-    selected_target_name: Optional[str],
+    selected_target_id: str | None,
+    selected_target_name: str | None,
     opportunities: list[dict[str, Any]],
-) -> tuple[Optional[str], Optional[str], list[dict[str, Any]], bool]:
+) -> tuple[str | None, str | None, list[dict[str, Any]], bool]:
     """Handle the user's menu choice. Returns updated state and exit flag."""
     if choice == "1":
         uid, name = _handle_search_target(session)
@@ -274,8 +274,8 @@ def run_triangulation_analysis(session_manager: SessionManager) -> bool:
         triangulation_service = TriangulationService(session, research_service)
 
         # State
-        selected_target_id: Optional[str] = None
-        selected_target_name: Optional[str] = None
+        selected_target_id: str | None = None
+        selected_target_name: str | None = None
         opportunities: list[dict[str, Any]] = []
 
         while True:
@@ -297,10 +297,9 @@ def run_triangulation_analysis(session_manager: SessionManager) -> bool:
 
 
 def _test_triangulation_service_integration() -> None:
-    """Test basic integration of TriangulationService."""
+    """Test TriangulationService initializes with correct dependencies."""
     from unittest.mock import MagicMock
 
-    # Mock dependencies
     mock_session = MagicMock()
     mock_research_service = MagicMock()
 
@@ -310,18 +309,43 @@ def _test_triangulation_service_integration() -> None:
     assert service.research_service == mock_research_service
 
 
+def _test_find_triangulation_groups_no_matches() -> None:
+    """Test find_triangulation_opportunities returns empty for unknown person."""
+    from unittest.mock import MagicMock, patch
+
+    mock_session = MagicMock()
+    mock_research_service = MagicMock()
+    # Query returns empty list
+    mock_session.query.return_value.filter.return_value.all.return_value = []
+
+    service = TriangulationService(mock_session, mock_research_service)
+    # Use a non-existent UUID to ensure empty results
+    result = service.find_triangulation_opportunities("NONEXISTENT-UUID")
+    assert isinstance(result, list), "Should return a list"
+    assert len(result) == 0, "Should return empty list for unknown person"
+
+
+def _test_menu_rendering() -> None:
+    """Test menu rendering function produces expected output."""
+    output = _render_triangulation_menu(None, 0)
+    assert output is not None, "Menu should return a choice"
+
+
 def module_tests() -> bool:
     """Run module-specific tests."""
     suite = TestSuite("Action 13 - Triangulation", __file__)
     suite.start_suite()
 
     suite.run_test(
-        "TriangulationService Integration",
+        "TriangulationService initialization",
         _test_triangulation_service_integration,
-        "Verify service initialization",
-        "TriangulationService.__init__",
-        "Initialize service with mock dependencies",
-        "Service initialized correctly",
+        "Verify service initialization with dependencies",
+    )
+
+    suite.run_test(
+        "find_triangulation_groups empty result",
+        _test_find_triangulation_groups_no_matches,
+        "Verify empty result for unknown person UUID",
     )
 
     return suite.finish_suite()

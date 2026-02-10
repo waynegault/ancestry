@@ -25,7 +25,7 @@ Usage:
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 # Ensure project root on path
 _project_root = Path(__file__).resolve().parent.parent
@@ -59,22 +59,22 @@ class MockRateLimiter:
         self.wait_count = 0
         self.success_count = 0
         self.error_429_count = 0
-        self.last_endpoint: Optional[str] = None
-        self.last_retry_after: Optional[float] = None
+        self.last_endpoint: str | None = None
+        self.last_retry_after: float | None = None
         self._wait_time = 0.0
 
-    def wait(self, endpoint: Optional[str] = None) -> float:
+    def wait(self, endpoint: str | None = None) -> float:
         """Record wait call, return configured wait time."""
         self.wait_count += 1
         self.last_endpoint = endpoint
         return self._wait_time
 
-    def on_success(self, endpoint: Optional[str] = None) -> None:
+    def on_success(self, endpoint: str | None = None) -> None:
         """Record success for endpoint."""
         self.success_count += 1
         self.last_endpoint = endpoint
 
-    def on_429_error(self, endpoint: Optional[str] = None, retry_after: Optional[float] = None) -> None:
+    def on_429_error(self, endpoint: str | None = None, retry_after: float | None = None) -> None:
         """Record 429 error."""
         self.error_429_count += 1
         self.last_endpoint = endpoint
@@ -108,7 +108,7 @@ class MockDatabaseSession:
         self.query_count = 0
         self._query_results: list[Any] = []
         self._should_raise_on_commit = False
-        self._commit_exception: Optional[Exception] = None
+        self._commit_exception: Exception | None = None
 
     def add(self, instance: Any) -> None:
         """Track added instance."""
@@ -171,7 +171,7 @@ class MockQuery:
         self._filters.append(kwargs)
         return self
 
-    def first(self) -> Optional[Any]:
+    def first(self) -> Any | None:
         """Return first result or None."""
         return self._results[0] if self._results else None
 
@@ -206,7 +206,7 @@ class MockSessionManager:
         self._db_ready = True
         self._session_age = 0.0
         self.driver: Any = None
-        self.db_manager: Optional[Any] = None
+        self.db_manager: Any | None = None
 
     def is_sess_valid(self) -> bool:
         """Return configured validity."""
@@ -250,18 +250,18 @@ class MockCache:
 
     def __init__(self) -> None:
         self._cache: dict[str, Any] = {}
-        self._ttls: dict[str, Optional[int]] = {}
+        self._ttls: dict[str, int | None] = {}
         self.get_count = 0
         self.set_count = 0
         self.delete_count = 0
         self.clear_count = 0
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         """Get value from cache."""
         self.get_count += 1
         return self._cache.get(key)
 
-    def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
+    def set(self, key: str, value: Any, ttl: int | None = None) -> None:
         """Set value in cache."""
         self.set_count += 1
         self._cache[key] = value

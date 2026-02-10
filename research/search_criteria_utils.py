@@ -14,9 +14,10 @@ _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime, timezone
 from importlib import import_module
-from typing import Any, Callable, Optional, Protocol, cast
+from typing import Any, Protocol, cast
 
 from core.logging_config import logger
 
@@ -27,23 +28,23 @@ class _PresenterModule(Protocol):
     def display_family_members(
         self,
         family_data: FamilyData,
-        relation_labels: Optional[dict[str, str]] = None,
+        relation_labels: dict[str, str] | None = None,
     ) -> None: ...
 
     def present_post_selection(
         self,
         display_name: str,
-        birth_year: Optional[int],
-        death_year: Optional[int],
+        birth_year: int | None,
+        death_year: int | None,
         family_data: FamilyData,
         owner_name: str,
-        relation_labels: Optional[dict[str, str]] = None,
-        unified_path: Optional[list[dict[str, Any]]] = None,
-        formatted_path: Optional[str] = None,
+        relation_labels: dict[str, str] | None = None,
+        unified_path: list[dict[str, Any]] | None = None,
+        formatted_path: str | None = None,
     ) -> None: ...
 
 
-_presenter_module: Optional[_PresenterModule] = None
+_presenter_module: _PresenterModule | None = None
 _presenter_import_error: Exception | None = None
 
 
@@ -70,8 +71,8 @@ def _resolve_presenter_module() -> _PresenterModule:
 
 
 def get_unified_search_criteria(
-    get_input_func: Optional[Callable[[str], str]] = None,
-) -> Optional[dict[str, Any]]:
+    get_input_func: Callable[[str], str] | None = None,
+) -> dict[str, Any] | None:
     """
     Collect unified search criteria from user input.
 
@@ -132,7 +133,7 @@ def get_unified_search_criteria(
     return criteria
 
 
-def _sanitize_input(value: str) -> Optional[str]:
+def _sanitize_input(value: str) -> str | None:
     """Sanitize user input by stripping whitespace."""
     if not value:
         return None
@@ -140,17 +141,17 @@ def _sanitize_input(value: str) -> Optional[str]:
     return sanitized if sanitized else None
 
 
-def _parse_year_input(year_str: str) -> Optional[int]:
+def _parse_year_input(year_str: str) -> int | None:
     """Parse year input string to integer."""
     return int(year_str) if year_str.strip().isdigit() else None
 
 
-def _create_date_object(year: Optional[int], date_type: str) -> Optional[datetime]:
+def _create_date_object(year: int | None, date_type: str) -> datetime | None:
     """Create datetime object from year, with error handling."""
     if not year:
         return None
     try:
-        return datetime(year, 1, 1, tzinfo=timezone.utc)
+        return datetime(year, 1, 1, tzinfo=UTC)
     except ValueError:
         logger.warning(f"Cannot create date object for {date_type} year {year}.")
         return None
@@ -159,7 +160,7 @@ def _create_date_object(year: Optional[int], date_type: str) -> Optional[datetim
 # Re-export unified presenter functions from genealogy_presenter (single source of truth)
 def display_family_members(
     family_data: FamilyData,
-    relation_labels: Optional[dict[str, str]] = None,
+    relation_labels: dict[str, str] | None = None,
 ) -> None:
     presenter = _resolve_presenter_module()
     presenter.display_family_members(family_data, relation_labels)
@@ -167,13 +168,13 @@ def display_family_members(
 
 def present_post_selection(
     display_name: str,
-    birth_year: Optional[int],
-    death_year: Optional[int],
+    birth_year: int | None,
+    death_year: int | None,
     family_data: FamilyData,
     owner_name: str,
-    relation_labels: Optional[dict[str, str]] = None,
-    unified_path: Optional[list[dict[str, Any]]] = None,
-    formatted_path: Optional[str] = None,
+    relation_labels: dict[str, str] | None = None,
+    unified_path: list[dict[str, Any]] | None = None,
+    formatted_path: str | None = None,
 ) -> None:
     presenter = _resolve_presenter_module()
     presenter.present_post_selection(

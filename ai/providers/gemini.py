@@ -1,4 +1,3 @@
-from __future__ import annotations
 
 """Gemini provider adapter powered by google-genai."""
 

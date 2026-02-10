@@ -9,6 +9,8 @@ to provide a clean, maintainable architecture.
 
 """
 
+from __future__ import annotations
+
 # === CORE INFRASTRUCTURE ===
 import logging
 import sys
@@ -18,11 +20,11 @@ logger = logging.getLogger(__name__)
 # === STANDARD LIBRARY IMPORTS ===
 import threading
 import time
+from collections.abc import Callable
 from contextlib import suppress
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Callable, Optional, cast
-from unittest.mock import patch
+from typing import TYPE_CHECKING, Any, cast
 
 from core.error_handling import (
     error_context,
@@ -138,7 +140,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
 
     ESSENTIAL_SESSION_COOKIES: tuple[str, str] = ("ANCSESSIONID", "SecureATT")
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         """
         Initialize the SessionManager with optimized component creation.
 
@@ -159,7 +161,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
 
         # Session state
         self.session_ready: bool = False
-        self.session_start_time: Optional[float] = None
+        self.session_start_time: float | None = None
 
         # Lifecycle state tracking for guard enforcement
         self._state_lock = threading.Lock()
@@ -168,7 +170,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         self._state_changed_at: float = time.time()
 
         # PHASE 5.1: Session state caching for performance
-        self._last_readiness_check: Optional[float] = None
+        self._last_readiness_check: float | None = None
         self._cached_session_state: dict[str, Any] = {}
 
         # Cookie sync tracking (explicit defaults for recovery logic)
@@ -176,7 +178,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         self._session_cookies_synced: bool = False
 
         # ⚡ OPTIMIZATION 1: Pre-cached CSRF token for Action 6 performance
-        self._cached_csrf_token: Optional[str] = None
+        self._cached_csrf_token: str | None = None
         self._csrf_cache_time: float = 0.0
         self._csrf_cache_duration: float = 300.0  # 5-minute cache
 
@@ -220,10 +222,10 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
 
         # === ENHANCED SESSION CAPABILITIES ===
         # JavaScript error monitoring
-        self.last_js_error_check: datetime = datetime.now(timezone.utc)
+        self.last_js_error_check: datetime = datetime.now(UTC)
 
         # CSRF token caching for performance optimization
-        self._cached_csrf_token: Optional[str] = None
+        self._cached_csrf_token: str | None = None
         self._csrf_cache_time: float = 0
         self._csrf_cache_duration: float = 300  # 5 minutes
 
@@ -247,40 +249,40 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         logger.debug(f"Optimized SessionManager created in {init_time:.3f}s: ID={id(self)}")
 
     @property
-    def driver(self) -> Optional[WebDriverType]:
+    def driver(self) -> WebDriverType | None:
         """Expose the active WebDriver for helpers that still require it."""
 
-        return cast(Optional[WebDriverType], getattr(self.browser_manager, "driver", None))
+        return cast(WebDriverType | None, getattr(self.browser_manager, "driver", None))
 
     @staticmethod
     @cached_database_manager()
-    def _get_cached_database_manager(db_path: Optional[str] = None) -> "DatabaseManager":
+    def _get_cached_database_manager(db_path: str | None = None) -> DatabaseManager:
         """Get cached DatabaseManager instance"""
         logger.debug("Creating/retrieving DatabaseManager from cache")
         return DatabaseManager(db_path)
 
     @staticmethod
     @cached_browser_manager()
-    def _get_cached_browser_manager() -> "BrowserManager":
+    def _get_cached_browser_manager() -> BrowserManager:
         """Get cached BrowserManager instance"""
         logger.debug("Creating/retrieving BrowserManager from cache")
         return BrowserManager()
 
     @staticmethod
     @cached_api_manager()
-    def _get_cached_api_manager() -> "APIManager":
+    def _get_cached_api_manager() -> APIManager:
         """Get cached APIManager instance"""
         logger.debug("Creating/retrieving APIManager from cache")
         return APIManager()
 
     @staticmethod
     @cached_session_validator()
-    def _get_cached_session_validator() -> "SessionValidator":
+    def _get_cached_session_validator() -> SessionValidator:
         """Get cached SessionValidator instance"""
         logger.debug("Creating/retrieving SessionValidator from cache")
         return SessionValidator()
 
-    def _initialize_rate_limiter(self) -> Optional[Any]:
+    def _initialize_rate_limiter(self) -> Any | None:
         """Create or reuse the adaptive rate limiter configured for this session."""
 
         get_rate_limiter = self._resolve_rate_limiter_factory()
@@ -362,7 +364,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         return self._get_utils_attr_static(attr_name)
 
     @staticmethod
-    def _resolve_rate_limiter_factory() -> Optional[Callable[..., Any]]:
+    def _resolve_rate_limiter_factory() -> Callable[..., Any] | None:
         """Import the rate limiter factory if it is available."""
 
         try:
@@ -412,10 +414,10 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         }
 
     @staticmethod
-    def _calculate_endpoint_rate_cap(endpoint_profiles: dict[str, dict[str, Any]]) -> Optional[float]:
+    def _calculate_endpoint_rate_cap(endpoint_profiles: dict[str, dict[str, Any]]) -> float | None:
         """Derive the tightest rate cap from endpoint throttle definitions."""
 
-        endpoint_rate_cap: Optional[float] = None
+        endpoint_rate_cap: float | None = None
         for profile in endpoint_profiles.values():
             max_rate_val = profile.get("max_rate")
             min_interval_val = profile.get("min_interval")
@@ -495,7 +497,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
             )
             self._scraper = None
 
-    def _start_browser(self, action_name: Optional[str] = None) -> bool:
+    def _start_browser(self, action_name: str | None = None) -> bool:
         """
         Start the browser session.
 
@@ -514,7 +516,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         self.browser_manager.close_browser()
         self._reset_cookie_sync_state("browser_close")
 
-    def start_sess(self, action_name: Optional[str] = None) -> bool:
+    def start_sess(self, action_name: str | None = None) -> bool:
         """
         Start session (database and browser if needed).
 
@@ -622,7 +624,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
     @timeout_protection(timeout=120)  # Increased timeout for complex operations like Action 7
     @graceful_degradation(fallback_value=False)
     @error_context("ensure_session_ready")
-    def _check_cached_readiness(self, action_name: Optional[str]) -> Optional[bool]:
+    def _check_cached_readiness(self, action_name: str | None) -> bool | None:
         """Check if we can use cached readiness state.
 
         Returns:
@@ -650,7 +652,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         logger.debug(f"Using cached session readiness (age: {time_since_check:.1f}s, action: {action_name})")
         return True
 
-    def _perform_readiness_validation(self, action_name: Optional[str], skip_csrf: bool) -> bool:
+    def _perform_readiness_validation(self, action_name: str | None, skip_csrf: bool) -> bool:
         """Perform readiness checks and identifier retrieval.
 
         Returns:
@@ -702,7 +704,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
             self._db_ready = False
             return False
 
-    def _handle_cached_readiness(self, action_name: Optional[str], skip_csrf: bool) -> Optional[bool]:
+    def _handle_cached_readiness(self, action_name: str | None, skip_csrf: bool) -> bool | None:
         """Check cached readiness and verify CSRF if needed."""
         cached_result = self._check_cached_readiness(action_name)
         if cached_result is True:
@@ -718,7 +720,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
             return True
         return cached_result
 
-    def ensure_session_ready(self, action_name: Optional[str] = None, skip_csrf: bool = False) -> bool:
+    def ensure_session_ready(self, action_name: str | None = None, skip_csrf: bool = False) -> bool:
         """
         Ensure the session is ready for operations.
 
@@ -778,19 +780,19 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         self._update_session_metrics()
         return readiness_ok
 
-    def get_db_conn(self) -> Optional[SqlAlchemySession]:
+    def get_db_conn(self) -> SqlAlchemySession | None:
         """Borrow a database session from the pool after ensuring readiness."""
 
         if not self.ensure_db_ready():
             return None
         return self.db_manager.get_session()
 
-    def return_session(self, session: Optional[SqlAlchemySession]) -> None:
+    def return_session(self, session: SqlAlchemySession | None) -> None:
         """Return a previously borrowed database session."""
 
         self.db_manager.return_session(session)
 
-    def get_db_conn_context(self) -> contextlib.AbstractContextManager[Optional[SqlAlchemySession]]:
+    def get_db_conn_context(self) -> contextlib.AbstractContextManager[SqlAlchemySession | None]:
         """Context manager wrapper around DatabaseManager.get_session_context."""
 
         if not self.ensure_db_ready():
@@ -1532,7 +1534,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         except Exception:
             logger.debug("Failed to update session uptime metric", exc_info=True)
 
-    def session_age_seconds(self) -> Optional[float]:
+    def session_age_seconds(self) -> float | None:
         """Return the age of the current browser session in seconds."""
 
         if not self.session_start_time:
@@ -1649,7 +1651,7 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         self._cached_csrf_token = token
         self._csrf_cache_time = cache_time
 
-    def _get_cached_csrf_token(self) -> tuple[Optional[str], float]:
+    def _get_cached_csrf_token(self) -> tuple[str | None, float]:
         """Get the cached CSRF token and cache timestamp."""
         return self._cached_csrf_token, self._csrf_cache_time
 
@@ -1658,27 +1660,27 @@ class SessionManager(SessionIdentifierMixin, SessionHealthMixin):
         self._last_readiness_check = None
 
     @property
-    def my_tree_id(self) -> Optional[str]:
+    def my_tree_id(self) -> str | None:
         """Delegate my_tree_id to api_manager."""
         return self.api_manager.my_tree_id
 
     @property
-    def my_uuid(self) -> Optional[str]:
+    def my_uuid(self) -> str | None:
         """Delegate my_uuid to api_manager."""
         return self.api_manager.my_uuid
 
     @property
-    def my_profile_id(self) -> Optional[str]:
+    def my_profile_id(self) -> str | None:
         """Delegate my_profile_id to api_manager."""
         return self.api_manager.my_profile_id
 
     @property
-    def csrf_token(self) -> Optional[str]:
+    def csrf_token(self) -> str | None:
         """Delegate csrf_token to api_manager."""
         return self.api_manager.csrf_token
 
     @property
-    def tree_owner_name(self) -> Optional[str]:
+    def tree_owner_name(self) -> str | None:
         """Delegate tree_owner_name to api_manager."""
         return self.api_manager.tree_owner_name
 
@@ -1748,11 +1750,11 @@ class APICallWatchdog:
             raise ValueError(f"timeout_seconds must be > 0, got {timeout_seconds}")
 
         self.timeout_seconds = timeout_seconds
-        self.timer: Optional[threading.Timer] = None
+        self.timer: threading.Timer | None = None
         self.is_active = False
         self._lock = threading.Lock()
         self._api_name = ""
-        self._callback: Optional[Any] = None
+        self._callback: Any | None = None
 
     def start(self, api_name: str, callback: Any) -> None:
         """
@@ -1846,15 +1848,15 @@ class APICallWatchdog:
             self.timer.start()
             self.is_active = True
 
-    def __enter__(self) -> "APICallWatchdog":
+    def __enter__(self) -> APICallWatchdog:
         """Context manager entry (timer started by set_callback)."""
         return self
 
     def __exit__(
         self,
-        exc_type: Optional[type],
-        exc_val: Optional[BaseException],
-        exc_tb: Optional[Any],
+        exc_type: type | None,
+        exc_val: BaseException | None,
+        exc_tb: Any | None,
     ) -> bool:
         """Context manager exit (always cancel timer)."""
         self.cancel()
@@ -2021,11 +2023,11 @@ def _test_browser_operations() -> bool:
 
 def _test_property_access() -> bool:
     session_manager = SessionManager()
-    properties_to_check = [
-        "session_ready",
-    ]
-    for prop in properties_to_check:
-        assert hasattr(session_manager, prop), f"Property {prop} should exist"
+    # Verify session_ready exists, is bool, and defaults to False
+    assert hasattr(session_manager, "session_ready"), "Property session_ready should exist"
+    value = session_manager.session_ready
+    assert isinstance(value, bool), f"session_ready should be bool, got {type(value).__name__}"
+    assert value is False, f"session_ready should default to False, got {value}"
     return True
 
 
@@ -2083,41 +2085,43 @@ def _test_regression_prevention_csrf_optimization() -> bool:
         session_manager = SessionManager()
 
         # Test 1: Verify CSRF caching attributes exist
-        if hasattr(session_manager, '_cached_csrf_token'):
-            print("   ✅ _cached_csrf_token attribute exists")
-            results.append(True)
-        else:
-            print("   ❌ _cached_csrf_token attribute missing")
-            results.append(False)
+        assert hasattr(session_manager, '_cached_csrf_token'), "_cached_csrf_token attribute missing"
+        print("   ✅ _cached_csrf_token attribute exists")
+        results.append(True)
 
-        if hasattr(session_manager, '_csrf_cache_time'):
-            print("   ✅ _csrf_cache_time attribute exists")
-            results.append(True)
-        else:
-            print("   ❌ _csrf_cache_time attribute missing")
-            results.append(False)
+        assert hasattr(session_manager, '_csrf_cache_time'), "_csrf_cache_time attribute missing"
+        print("   ✅ _csrf_cache_time attribute exists")
+        results.append(True)
 
-        # Test 2: Verify CSRF validation method exists (using public wrapper)
-        if hasattr(session_manager, 'is_csrf_token_valid'):
-            print("   ✅ is_csrf_token_valid method exists")
+        # Test 2: Initially no token cached, so validation should return False
+        is_valid = session_manager.is_csrf_token_valid()
+        assert isinstance(is_valid, bool), f"is_csrf_token_valid should return bool, got {type(is_valid).__name__}"
+        assert is_valid is False, "is_csrf_token_valid should be False when no token is cached"
+        print("   ✅ is_csrf_token_valid returns False for empty cache")
+        results.append(True)
 
-            # Test that it returns a boolean
-            try:
-                is_valid = session_manager.is_csrf_token_valid()
-                if isinstance(cast(Any, is_valid), bool):
-                    print("   ✅ is_csrf_token_valid returns boolean")
-                    results.append(True)
-                else:
-                    print("   ❌ is_csrf_token_valid doesn't return boolean")
-                    results.append(False)
-            except Exception as method_error:
-                print(f"   ⚠️  is_csrf_token_valid method error: {method_error}")
-                results.append(False)
-        else:
-            print("   ❌ is_csrf_token_valid method missing")
-            results.append(False)
+        # Test 3: Set a CSRF token directly, verify retrieval works
+        test_token = "test_csrf_token_value_12345"
+        session_manager._cached_csrf_token = test_token
+        session_manager._csrf_cache_time = time.time()
+        assert session_manager._cached_csrf_token == test_token, "Cached CSRF token should be retrievable"
+        print("   ✅ CSRF token can be set and retrieved")
+        results.append(True)
 
-        # Test 3: Verify pre-cache method exists
+        # Test 4: After setting token, validation should return True
+        is_valid_after = session_manager.is_csrf_token_valid()
+        assert is_valid_after is True, "is_csrf_token_valid should be True after caching a fresh token"
+        print("   ✅ is_csrf_token_valid returns True for fresh cached token")
+        results.append(True)
+
+        # Test 5: Expired token should fail validation
+        session_manager._csrf_cache_time = time.time() - (session_manager._csrf_cache_duration + 10)
+        is_valid_expired = session_manager.is_csrf_token_valid()
+        assert is_valid_expired is False, "is_csrf_token_valid should be False for expired token"
+        print("   ✅ is_csrf_token_valid returns False for expired token")
+        results.append(True)
+
+        # Test 6: Verify pre-cache method exists
         if hasattr(session_manager, '_precache_csrf_token'):
             print("   ✅ _precache_csrf_token method exists")
             results.append(True)
@@ -2609,10 +2613,10 @@ def _test_recovery_validation_resyncs_and_fetches_csrf() -> None:
 
     flags = {"resync": False, "csrf": False}
 
-    def _fake_force_resync(_session_manager: "SessionManager") -> None:
+    def _fake_force_resync(_session_manager: SessionManager) -> None:
         flags["resync"] = True
 
-    def _fake_get_csrf(_session_manager: "SessionManager") -> str:
+    def _fake_get_csrf(_session_manager: SessionManager) -> str:
         flags["csrf"] = True
         return "csrf-token"
 
@@ -2744,6 +2748,7 @@ def _test_initialize_cloudscraper_without_dependency() -> None:
     """CloudScraper init should no-op cleanly when dependency missing."""
 
     from types import SimpleNamespace
+    from unittest.mock import patch
 
     sm = SessionManager.__new__(SessionManager)
     sm.api_manager = cast(APIManager, SimpleNamespace())
@@ -2757,6 +2762,7 @@ def _test_initialize_cloudscraper_with_factory() -> None:
     """CloudScraper init should create scraper and mount adapters when available."""
 
     from types import SimpleNamespace
+    from unittest.mock import patch
 
     class _FakeScraper:
         def __init__(self) -> None:
@@ -2767,7 +2773,7 @@ def _test_initialize_cloudscraper_with_factory() -> None:
 
     class _FakeCloudscraper:
         def __init__(self) -> None:
-            self.kwargs: Optional[dict[str, Any]] = None
+            self.kwargs: dict[str, Any] | None = None
 
         def create_scraper(self, **kwargs: Any) -> _FakeScraper:
             self.kwargs = kwargs

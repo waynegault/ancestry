@@ -16,11 +16,11 @@ import json
 import logging
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from difflib import SequenceMatcher
 from enum import Enum
 from pathlib import Path
-from typing import Any, ClassVar, Optional
+from typing import Any, ClassVar
 
 from sqlalchemy.orm import Session
 
@@ -50,7 +50,7 @@ class FieldComparison:
     """Result of comparing a single field."""
 
     field_name: str
-    existing_value: Optional[str]
+    existing_value: str | None
     new_value: str
     is_conflict: bool
     similarity_score: float  # 0.0 to 1.0
@@ -68,7 +68,7 @@ class ConflictDetectionResult:
     total_fields_checked: int = 0
     conflicts_found: int = 0
     source: str = "conversation"
-    source_message_id: Optional[int] = None
+    source_message_id: int | None = None
 
     @property
     def has_conflicts(self) -> bool:
@@ -76,7 +76,7 @@ class ConflictDetectionResult:
         return self.conflicts_found > 0
 
     @property
-    def max_severity(self) -> Optional[ConflictSeverity]:
+    def max_severity(self) -> ConflictSeverity | None:
         """Return the highest severity among detected conflicts."""
         if not self.conflicts:
             return None
@@ -127,7 +127,7 @@ class ConflictDetector:
     def compare_values(
         self,
         field_name: str,
-        existing: Optional[Any],
+        existing: Any | None,
         new: Any,
     ) -> FieldComparison:
         """
@@ -203,7 +203,7 @@ class ConflictDetector:
         person: Person,
         extracted_data: dict[str, Any],
         source: str = "conversation",
-        source_message_id: Optional[int] = None,
+        source_message_id: int | None = None,
     ) -> ConflictDetectionResult:
         """
         Detect conflicts between person record and extracted data.
@@ -249,7 +249,7 @@ class ConflictDetector:
     def create_conflict_records(
         db_session: Session,
         detection_result: ConflictDetectionResult,
-        confidence_score: Optional[int] = None,
+        confidence_score: int | None = None,
     ) -> list[DataConflict]:
         """
         Create DataConflict records in the database.
@@ -315,9 +315,9 @@ class ConflictDetector:
         conflict_id: int,
         resolution: ConflictStatusEnum,
         apply_new_value: bool = False,
-        resolution_notes: Optional[str] = None,
+        resolution_notes: str | None = None,
         resolved_by: str = "user",
-    ) -> Optional[DataConflict]:
+    ) -> DataConflict | None:
         """
         Resolve a data conflict.
 
@@ -342,7 +342,7 @@ class ConflictDetector:
         conflict.status = resolution
         conflict.resolution_notes = resolution_notes
         conflict.resolved_by = resolved_by
-        conflict.resolved_at = datetime.now(timezone.utc)
+        conflict.resolved_at = datetime.now(UTC)
 
         # Apply new value to person if requested
         if apply_new_value and resolution == ConflictStatusEnum.RESOLVED:
@@ -360,7 +360,7 @@ class ConflictDetector:
     @staticmethod
     def get_open_conflicts(
         db_session: Session,
-        person_id: Optional[int] = None,
+        person_id: int | None = None,
         limit: int = 100,
     ) -> list[DataConflict]:
         """

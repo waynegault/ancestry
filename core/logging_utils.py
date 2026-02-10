@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 
 # === STANDARD LIBRARY IMPORTS ===
 from collections.abc import Callable, Mapping
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 
 # Global flag to track if logging has been initialized
@@ -35,7 +35,7 @@ class _CentralizedLoggingState:
     setup_complete = False
 
 
-def get_logger(name: Optional[str] = None) -> logging.Logger:
+def get_logger(name: str | None = None) -> logging.Logger:
     """
     Get a properly configured logger instance.
 
@@ -84,7 +84,7 @@ def ensure_no_duplicate_handlers(logger_instance: logging.Logger) -> None:
     Args:
         logger_instance: The logger to check and clean up
     """
-    seen_handlers: set[tuple[str, Optional[str]]] = set()
+    seen_handlers: set[tuple[str, str | None]] = set()
     handlers_to_remove: list[logging.Handler] = []
 
     for handler in logger_instance.handlers:
@@ -142,7 +142,7 @@ _ACTION_STAGE_LABEL: dict[ActionStage, str] = {
 }
 
 
-def _format_banner_details(details: Optional[Mapping[str, Any]]) -> str:
+def _format_banner_details(details: Mapping[str, Any] | None) -> str:
     if not details:
         return ""
 
@@ -161,9 +161,9 @@ def log_action_banner(
     action_name: str,
     stage: ActionStage,
     *,
-    action_number: Optional[int] = None,
-    logger_instance: Optional[logging.Logger] = None,
-    details: Optional[Mapping[str, Any]] = None,
+    action_number: int | None = None,
+    logger_instance: logging.Logger | None = None,
+    details: Mapping[str, Any] | None = None,
 ) -> None:
     """Log standardized action lifecycle banner messages."""
 
@@ -520,7 +520,7 @@ def log_action_configuration(config_dict: Mapping[str, Any], section_title: str 
     get_app_logger().info(f"{section_title}: {summary}")
 
 
-def log_starting_position(description: str, details: Optional[Mapping[str, Any]] = None) -> None:
+def log_starting_position(description: str, details: Mapping[str, Any] | None = None) -> None:
     """
     Log starting position summary.
 
@@ -552,9 +552,9 @@ def log_cumulative_counts(counts: Mapping[str, int], prefix: str = "Cumulative")
 def log_batch_indicator(
     batch_num: int,
     total_batches: int,
-    item_range: Optional[tuple[int, int]] = None,
-    page_num: Optional[int] = None,
-    total_pages: Optional[int] = None,
+    item_range: tuple[int, int] | None = None,
+    page_num: int | None = None,
+    total_pages: int | None = None,
 ) -> None:
     """
     Log batch/page indicator before processing.
@@ -614,7 +614,7 @@ def log_final_summary(summary_dict: Mapping[str, Any], run_time_seconds: float) 
     logger.info("=" * 50)
 
 
-def log_action_status(action_name: str, success: bool, error_msg: Optional[str] = None) -> None:
+def log_action_status(action_name: str, success: bool, error_msg: str | None = None) -> None:
     """
     Log final action status with checkmark or X.
 

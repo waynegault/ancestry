@@ -9,12 +9,14 @@ These tools help genealogists analyze DNA matches, identify research gaps,
 and optimize communication with matches.
 """
 
-from __future__ import annotations
 
+import importlib
 import logging
 import sys
+from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 from sqlalchemy import text
 from tqdm import tqdm
@@ -40,6 +42,14 @@ from testing.test_framework import TestSuite
 from testing.test_utilities import create_standard_test_runner
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SimpleReport:
+    """Simple report structure for gap analysis results."""
+
+    gaps: list[Any]
+    completeness_score: float
 
 
 def _resolve_gedcom_path() -> Path:
@@ -71,53 +81,35 @@ class ResearchToolsCLI:
         self._sentiment_adapter = None
         self._conflict_detector = None
 
+    def _ensure_component(self, attr_name: str, module_path: str, class_name: str) -> Any:
+        """Generic lazy-loader for optional components."""
+        instance = getattr(self, attr_name)
+        if instance is None:
+            try:
+                module = importlib.import_module(module_path)
+                cls = getattr(module, class_name)
+                instance = cls()
+                setattr(self, attr_name, instance)
+            except ImportError as e:
+                logger.warning(f"{class_name} not available: {e}")
+                return None
+        return instance
+
     def _ensure_triangulation(self) -> Any:
         """Lazy-load TriangulationIntelligence."""
-        if self._triangulation is None:
-            try:
-                from research.triangulation_intelligence import TriangulationIntelligence
-
-                self._triangulation = TriangulationIntelligence()
-            except ImportError as e:
-                logger.warning(f"TriangulationIntelligence not available: {e}")
-                return None
-        return self._triangulation
+        return self._ensure_component("_triangulation", "research.triangulation_intelligence", "TriangulationIntelligence")
 
     def _ensure_conflict_detector(self) -> Any:
         """Lazy-load ConflictDetector."""
-        if self._conflict_detector is None:
-            try:
-                from research.conflict_detector import ConflictDetector
-
-                self._conflict_detector = ConflictDetector()
-            except ImportError as e:
-                logger.warning(f"ConflictDetector not available: {e}")
-                return None
-        return self._conflict_detector
+        return self._ensure_component("_conflict_detector", "research.conflict_detector", "ConflictDetector")
 
     def _ensure_gap_detector(self) -> Any:
         """Lazy-load PredictiveGapDetector."""
-        if self._gap_detector is None:
-            try:
-                from research.predictive_gaps import PredictiveGapDetector
-
-                self._gap_detector = PredictiveGapDetector()
-            except ImportError as e:
-                logger.warning(f"PredictiveGapDetector not available: {e}")
-                return None
-        return self._gap_detector
+        return self._ensure_component("_gap_detector", "research.predictive_gaps", "PredictiveGapDetector")
 
     def _ensure_sentiment_adapter(self) -> Any:
         """Lazy-load SentimentAdapter."""
-        if self._sentiment_adapter is None:
-            try:
-                from ai.sentiment_adaptation import SentimentAdapter
-
-                self._sentiment_adapter = SentimentAdapter()
-            except ImportError as e:
-                logger.warning(f"SentimentAdapter not available: {e}")
-                return None
-        return self._sentiment_adapter
+        return self._ensure_component("_sentiment_adapter", "ai.sentiment_adaptation", "SentimentAdapter")
 
     # ------------------------------------------------------------------
     # Triangulation Intelligence
@@ -126,8 +118,8 @@ class ResearchToolsCLI:
     def analyze_match_triangulation(
         self,
         match_uuid: str,
-        tree_data: Optional[dict[str, Any]] = None,
-    ) -> Optional[dict[str, Any]]:
+        tree_data: dict[str, Any] | None = None,
+    ) -> dict[str, Any] | None:
         """
         Analyze a DNA match for triangulation opportunities.
 
@@ -228,7 +220,7 @@ class ResearchToolsCLI:
     def analyze_person_gaps(
         self,
         person_data: dict[str, Any],
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Analyze a person's record for research gaps.
 
@@ -262,14 +254,6 @@ class ResearchToolsCLI:
                     score -= 2
 
             completeness_score = max(0.0, score)
-
-            # Create a simple object structure for _print_gap_report
-            from dataclasses import dataclass
-
-            @dataclass
-            class SimpleReport:
-                gaps: list[Any]
-                completeness_score: float
 
             report = SimpleReport(gaps=gaps, completeness_score=completeness_score)
 
@@ -356,7 +340,7 @@ class ResearchToolsCLI:
     def analyze_message_sentiment(
         self,
         message: str,
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Analyze sentiment of a message.
 
@@ -402,7 +386,7 @@ class ResearchToolsCLI:
     def recommend_message_tone(
         self,
         messages: list[dict[str, Any]],
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """
         Recommend message tone based on conversation history.
 
@@ -456,7 +440,7 @@ class ResearchToolsCLI:
         self,
         message: str,
         target_tone: str,
-    ) -> Optional[str]:
+    ) -> str | None:
         """
         Adapt a message to a target tone.
 
@@ -612,7 +596,7 @@ class ResearchToolsCLI:
 # ------------------------------------------------------------------
 
 
-def sanitize_input(value: str) -> Optional[str]:
+def sanitize_input(value: str) -> str | None:
     """
     Sanitize user input for safe processing.
     """
@@ -667,7 +651,7 @@ def _merge_tree_details(person_data: dict[str, Any], details: dict[str, Any]) ->
 
 def _enrich_person_data_from_tree(
     full_name: str,
-    birth_year_int: Optional[int],
+    birth_year_int: int | None,
     person_data: dict[str, Any],
 ) -> None:
     """Try to find person in tree to enrich data."""
@@ -774,7 +758,7 @@ def _handle_conflict_resolution(cli: ResearchToolsCLI) -> None:
     cli.resolve_conflicts_interactive()
 
 
-def _select_ethnicity_region(regions: list[dict[str, Any]]) -> Optional[dict[str, Any]]:
+def _select_ethnicity_region(regions: list[dict[str, Any]]) -> dict[str, Any] | None:
     """Display available regions and get user selection."""
     print("\nAvailable Regions:")
     for i, region in enumerate(regions, 1):
@@ -869,7 +853,7 @@ def _handle_ethnicity_analysis(cli: ResearchToolsCLI) -> None:
         session.close()
 
 
-def _search_and_select_by_name(gedcom_data: GedcomData, search_term: str) -> tuple[Optional[str], str]:
+def _search_and_select_by_name(gedcom_data: GedcomData, search_term: str) -> tuple[str | None, str]:
     """Search for a person by name and allow user selection."""
     found: list[tuple[str, str]] = []
     for pid, indi in gedcom_data.indi_index.items():
@@ -901,8 +885,8 @@ def _search_and_select_by_name(gedcom_data: GedcomData, search_term: str) -> tup
 
 
 def _select_person_from_gedcom(
-    gedcom_data: GedcomData, prompt: str, allow_empty: bool = False, default_id: Optional[str] = None
-) -> tuple[Optional[str], str]:
+    gedcom_data: GedcomData, prompt: str, allow_empty: bool = False, default_id: str | None = None
+) -> tuple[str | None, str]:
     """Select a person from GEDCOM data by ID or name."""
     input_val = input(prompt).strip()
 

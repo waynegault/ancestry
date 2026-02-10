@@ -26,9 +26,10 @@ import logging
 import threading
 import time
 import weakref
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import wraps
-from typing import Any, Callable, Optional, ParamSpec, TypeVar, cast
+from typing import Any, ParamSpec, TypeVar, cast
 
 from core.registry_utils import auto_register_module
 
@@ -101,6 +102,7 @@ class SessionComponentCache(BaseCacheModule):
     """
 
     def __init__(self) -> None:
+        super().__init__()
         self._active_sessions: dict[str, weakref.ReferenceType[Any]] = {}
         self._session_lock = threading.Lock()
         self._stats = {
@@ -144,7 +146,7 @@ class SessionComponentCache(BaseCacheModule):
             logger.warning(f"Error caching component {component_type}: {e}")
             return False
 
-    def get_cached_component(self, component_type: str) -> Optional[Any]:
+    def get_cached_component(self, component_type: str) -> Any | None:
         """Retrieve cached component using existing cache infrastructure"""
         if _cache_module.cache is None:
             return None
@@ -234,7 +236,7 @@ class APICacheManager(BaseCacheModule):
         return f"api_{endpoint}_{params_hash}"
 
     def cache_api_response(
-        self, service: str, method: str, params: dict[str, Any], response: Any, ttl: Optional[int] = None
+        self, service: str, method: str, params: dict[str, Any], response: Any, ttl: int | None = None
     ) -> bool:
         """Cache an API response with intelligent TTL management."""
         if _cache_module.cache is None:
@@ -311,7 +313,7 @@ class APICacheManager(BaseCacheModule):
         # Reject everything else (objects, connections, etc.)
         return False
 
-    def get_cached_api_response(self, service: str, method: str, params: dict[str, Any]) -> Optional[Any]:
+    def get_cached_api_response(self, service: str, method: str, params: dict[str, Any]) -> Any | None:
         """Retrieve cached API response."""
         if _cache_module.cache is None:
             return None
@@ -712,7 +714,7 @@ def _test_memory_management() -> bool:
     return True
 
 
-def _test_database_integration() -> bool:
+def _test_cache_config_bounds() -> bool:
     """Test database query caching configuration values are sensible."""
     config = SYSTEM_CACHE_CONFIG
     assert config.db_query_ttl > 0, "DB query TTL should be positive"
@@ -786,8 +788,8 @@ def _test_data_corruption_handling() -> bool:
     return True
 
 
-def _test_data_encryption() -> bool:
-    """Test cache subsystem availability for storage layer encryption."""
+def _test_subsystem_availability() -> bool:
+    """Test cache subsystem availability and operational readiness."""
     manager = CacheCoordinator()
     # Verify all three subsystems are available
     assert manager.session_cache is not None, "Session cache should be available"
@@ -846,7 +848,7 @@ def _test_environment_adaptation() -> bool:
     manager = CacheCoordinator()
     # Memory optimization should work regardless of environment
     result = manager.system_cache.optimize_memory()
-    assert isinstance(result, str), "optimize_memory should return a string"
+    assert isinstance(result, dict), "optimize_memory should return a dict"
     assert "optimized" in result, "Result should indicate optimization occurred"
     # Memory usage should be reported as non-negative
     mem_after = manager.system_cache.get_memory_usage_mb()
@@ -897,13 +899,13 @@ def cache_manager_module_tests() -> bool:
         ("Cache Performance", _test_cache_performance, "Should perform well under load"),
         ("Concurrent Access", _test_concurrent_access, "Should handle concurrent operations"),
         ("Memory Management", _test_memory_management, "Should manage memory efficiently"),
-        ("Database Integration", _test_database_integration, "Should integrate with database"),
+        ("Database Integration", _test_cache_config_bounds, "Should have sensible cache config values"),
         ("API Integration", _test_api_integration, "Should integrate with API calls"),
         ("Session Management", _test_session_management, "Should handle sessions properly"),
         ("Error Handling", _test_error_handling, "Should handle errors gracefully"),
         ("Recovery Mechanisms", _test_recovery_mechanisms, "Should recover from failures"),
         ("Data Corruption Handling", _test_data_corruption_handling, "Should handle corrupted data"),
-        ("Data Encryption", _test_data_encryption, "Should encrypt cache data"),
+        ("Subsystem Availability", _test_subsystem_availability, "Should have all cache subsystems available"),
         ("Access Control", _test_access_control, "Should control access properly"),
         ("Audit Logging", _test_audit_logging, "Should log cache operations"),
         ("Configuration Loading", _test_configuration_loading, "Should load configuration"),

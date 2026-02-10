@@ -26,7 +26,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum, auto
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from testing.test_framework import TestSuite
 
@@ -95,7 +95,7 @@ class PersonEligibilityContext:
     """Additional context for eligibility checks."""
 
     conversation_logs: list[ConversationLog] = field(default_factory=list)
-    latest_inbound_message: Optional[str] = None
+    latest_inbound_message: str | None = None
     check_opt_out: bool = True
     check_rate_limit: bool = True
     rate_limit_config: RateLimitConfig = field(default_factory=RateLimitConfig)
@@ -129,15 +129,15 @@ class PersonEligibilityChecker:
     BLOCKED_STATUSES = frozenset(["ARCHIVE", "BLOCKED", "DEAD"])
     OPT_OUT_STATUSES = frozenset(["DESIST"])
 
-    def __init__(self, db_session: Optional[Session] = None) -> None:
+    def __init__(self, db_session: Session | None = None) -> None:
         """Initialize with optional database session."""
         self._db_session = db_session
-        self._opt_out_detector: Optional[object] = None
+        self._opt_out_detector: object | None = None
 
     def check_eligibility(
         self,
         person: Person,
-        context: Optional[PersonEligibilityContext] = None,
+        context: PersonEligibilityContext | None = None,
     ) -> EligibilityResult:
         """
         Check if a person is eligible to receive a message.
@@ -217,7 +217,8 @@ class PersonEligibilityChecker:
 
         return EligibilityResult(is_eligible=True)
 
-    def _check_contact_info(self, person: Person) -> EligibilityResult:  # noqa: PLR6301
+    @staticmethod
+    def _check_contact_info(person: Person) -> EligibilityResult:
         """Check if person has contact information."""
         # Need either profile_id or administrator_profile_id to message
         profile_id = getattr(person, "profile_id", None)
@@ -323,10 +324,10 @@ class PersonEligibilityChecker:
     def _count_outbound_messages(
         logs: list[ConversationLog],
         window_start: datetime,
-    ) -> tuple[int, Optional[datetime]]:
+    ) -> tuple[int, datetime | None]:
         """Count outbound messages and find most recent."""
         outbound_count = 0
-        most_recent: Optional[datetime] = None
+        most_recent: datetime | None = None
 
         for log in logs:
             log_direction = getattr(log, "direction", None)
@@ -343,9 +344,9 @@ class PersonEligibilityChecker:
     @staticmethod
     def _check_cooldown(
         now: datetime,
-        most_recent: Optional[datetime],
+        most_recent: datetime | None,
         config: RateLimitConfig,
-    ) -> Optional[EligibilityResult]:
+    ) -> EligibilityResult | None:
         """Check if cooldown period has passed."""
         if not most_recent:
             return None
@@ -376,14 +377,16 @@ class PersonEligibilityChecker:
 
         return TreeClassification.IN_TREE
 
-    def _is_recent(self, timestamp: datetime, days: int = 7) -> bool:  # noqa: PLR6301
+    @staticmethod
+    def _is_recent(timestamp: datetime, days: int = 7) -> bool:
         """Check if a timestamp is within the specified number of days."""
         if not timestamp:
             return False
         cutoff = datetime.now() - timedelta(days=days)
         return timestamp > cutoff
 
-    def _get_status_name(self, person: Person) -> str:  # noqa: PLR6301
+    @staticmethod
+    def _get_status_name(person: Person) -> str:
         """Get the status name from a person, handling enum or string."""
         status = getattr(person, "status", None)
         if status is None:
@@ -411,10 +414,10 @@ def module_tests() -> bool:
         id: int = 1
         username: str = "test_user"
         status: str = "ACTIVE"
-        profile_id: Optional[str] = "12345"
-        administrator_profile_id: Optional[str] = None
+        profile_id: str | None = "12345"
+        administrator_profile_id: str | None = None
         in_my_tree: bool = False
-        family_tree: Optional[object] = None
+        family_tree: object | None = None
 
     def _get_mock_person(**kwargs: Any) -> Person:
         """Create a mock Person with proper type cast."""

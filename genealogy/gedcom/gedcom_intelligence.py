@@ -16,7 +16,6 @@ Created: August 6, 2025
 Phase: 12.1 - GEDCOM Integration & Family Tree Intelligence
 """
 
-from __future__ import annotations
 
 # === PATH SETUP FOR PACKAGE IMPORTS ===
 import sys
@@ -30,7 +29,7 @@ if str(_project_root) not in sys.path:
 import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -315,8 +314,8 @@ class GedcomIntelligenceAnalyzer:
         self,
         person_id: str,
         parent_id: str,
-        person_birth_year: Optional[int],
-        parent_birth_year: Optional[int],
+        person_birth_year: int | None,
+        parent_birth_year: int | None,
     ) -> None:
         if person_birth_year is None or parent_birth_year is None:
             return
@@ -460,7 +459,7 @@ class GedcomIntelligenceAnalyzer:
             return "Unknown Name"
 
     @staticmethod
-    def _extract_birth_year(_person_record: Any) -> Optional[int]:
+    def _extract_birth_year(_person_record: Any) -> int | None:
         """Extract birth year from GEDCOM record."""
         try:
             # This would need to be implemented based on the actual GEDCOM structure
@@ -470,7 +469,7 @@ class GedcomIntelligenceAnalyzer:
             return None
 
     @staticmethod
-    def _extract_death_year(_person_record: Any) -> Optional[int]:
+    def _extract_death_year(_person_record: Any) -> int | None:
         """Extract death year from GEDCOM record."""
         try:
             # This would need to be implemented based on the actual GEDCOM structure
@@ -479,7 +478,7 @@ class GedcomIntelligenceAnalyzer:
             return None
 
     @staticmethod
-    def _extract_birth_place(_person_record: Any) -> Optional[str]:
+    def _extract_birth_place(_person_record: Any) -> str | None:
         """Extract birth place from GEDCOM record."""
         try:
             # This would need to be implemented based on the actual GEDCOM structure
@@ -488,7 +487,7 @@ class GedcomIntelligenceAnalyzer:
             return None
 
     @staticmethod
-    def _extract_death_place(_person_record: Any) -> Optional[str]:
+    def _extract_death_place(_person_record: Any) -> str | None:
         """Extract death place from GEDCOM record."""
         try:
             # This would need to be implemented based on the actual GEDCOM structure
@@ -505,7 +504,7 @@ class GedcomIntelligenceAnalyzer:
         return self._extract_birth_place(person_record) is not None
 
     @staticmethod
-    def _extract_country_from_place(place: str) -> Optional[str]:
+    def _extract_country_from_place(place: str) -> str | None:
         """Extract country from place string."""
         if not place:
             return None
@@ -637,12 +636,12 @@ def test_gap_detection_with_mocked_birth_year() -> None:
         """Analyzer variant with deterministic extractors for testing."""
 
         @staticmethod
-        def _extract_birth_year(person_record: Any) -> Optional[int]:
+        def _extract_birth_year(person_record: Any) -> int | None:
             _ = person_record
             return 1865
 
         @staticmethod
-        def _extract_birth_place(person_record: Any) -> Optional[str]:
+        def _extract_birth_place(person_record: Any) -> str | None:
             _ = person_record
             return None
 

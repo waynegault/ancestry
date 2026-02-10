@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
@@ -99,7 +99,7 @@ class TriangulationService:
             f"Do you happen to have {ancestor_name} in your tree as well?"
         )
 
-    def _resolve_person(self, person_id: str) -> Optional[Person]:
+    def _resolve_person(self, person_id: str) -> Person | None:
         """Resolve Person object."""
         return (
             self.db.query(Person).filter((Person.profile_id == person_id) | (Person.uuid == person_id.upper())).first()
@@ -131,7 +131,71 @@ from testing.test_utilities import create_standard_test_runner
 
 def _test_module_integrity() -> bool:
     "Test that module can be imported and definitions are valid."
-    return True
+    from unittest.mock import MagicMock
+
+    from testing.test_framework import TestSuite
+
+    suite = TestSuite("Triangulation Service", "genealogy/triangulation.py")
+    suite.start_suite()
+
+    def test_triangulation_service_instantiation():
+        mock_db = MagicMock()
+        mock_research = MagicMock()
+        svc = TriangulationService(db_session=mock_db, research_service=mock_research)
+        assert svc.db is mock_db
+        assert svc.research_service is mock_research
+        return True
+
+    suite.run_test("TriangulationService can be instantiated", test_triangulation_service_instantiation)
+
+    def test_triangulation_service_methods_exist():
+        assert hasattr(TriangulationService, 'find_triangulation_opportunities')
+        assert hasattr(TriangulationService, 'generate_hypothesis_message')
+        assert hasattr(TriangulationService, '_resolve_person')
+        assert hasattr(TriangulationService, '_get_shared_matches')
+        assert callable(TriangulationService.find_triangulation_opportunities)
+        assert callable(TriangulationService.generate_hypothesis_message)
+        return True
+
+    suite.run_test("TriangulationService methods exist and are callable", test_triangulation_service_methods_exist)
+
+    def test_generate_hypothesis_message():
+        mock_target = MagicMock()
+        mock_target.username = "Alice"
+        mock_shared = MagicMock()
+        mock_shared.username = "Bob"
+        common_ancestor = {"name": "Great-Grandpa Smith"}
+        msg = TriangulationService.generate_hypothesis_message(mock_target, mock_shared, common_ancestor)
+        assert isinstance(msg, str)
+        assert "Bob" in msg
+        assert "Great-Grandpa Smith" in msg
+        return True
+
+    suite.run_test("generate_hypothesis_message produces correct output", test_generate_hypothesis_message)
+
+    def test_resolve_person_not_found():
+        mock_db = MagicMock()
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_research = MagicMock()
+        svc = TriangulationService(db_session=mock_db, research_service=mock_research)
+        result = svc._resolve_person("nonexistent")
+        assert result is None
+        return True
+
+    suite.run_test("_resolve_person returns None when not found", test_resolve_person_not_found)
+
+    def test_find_opportunities_returns_empty_when_person_not_found():
+        mock_db = MagicMock()
+        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_research = MagicMock()
+        svc = TriangulationService(db_session=mock_db, research_service=mock_research)
+        result = svc.find_triangulation_opportunities("missing-uuid")
+        assert result == []
+        return True
+
+    suite.run_test("find_triangulation_opportunities returns [] for missing person", test_find_opportunities_returns_empty_when_person_not_found)
+
+    return suite.finish_suite()
 
 
 run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)

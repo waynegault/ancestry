@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 class _LimiterState:
     """Mutable container for module-level rate limiter state."""
 
-    persisted_state_cache: Optional[dict[str, Any]] = None
+    persisted_state_cache: dict[str, Any] | None = None
     rate_limiter_state_source: str = "default"
     global_rate_limiter: Optional["AdaptiveRateLimiter"] = None
 
@@ -55,7 +55,7 @@ class RateLimiterMetrics:
     success_count: int = 0
     tokens_available: float = 0.0
     avg_wait_time: float = 0.0
-    endpoint_rate_cap: Optional[float] = None
+    endpoint_rate_cap: float | None = None
 
 
 @dataclass
@@ -65,7 +65,7 @@ class _EndpointProfile:
     min_interval: float = 0.0
     delay_multiplier: float = 1.0
     cooldown_after_429: float = 0.0
-    max_rate: Optional[float] = None
+    max_rate: float | None = None
 
     def __post_init__(self) -> None:
         self.min_interval = max(0.0, float(self.min_interval))
@@ -124,7 +124,7 @@ class LimiterStateDict(TypedDict, total=False):
     error_429_count: int
 
 
-def _safe_int(value: Any) -> Optional[int]:
+def _safe_int(value: Any) -> int | None:
     """Return an int if the value is numeric, otherwise None."""
     if isinstance(value, bool):  # Guard against bool subclassing int
         return None
@@ -133,7 +133,7 @@ def _safe_int(value: Any) -> Optional[int]:
     return None
 
 
-def _safe_float(value: Any) -> Optional[float]:
+def _safe_float(value: Any) -> float | None:
     """Return a float if the value is numeric, otherwise None."""
     if isinstance(value, bool):
         return None
@@ -143,10 +143,10 @@ def _safe_float(value: Any) -> Optional[float]:
 
 
 def _resolve_rate_from_persisted(
-    rate: Optional[float],
-    persisted: Optional[dict[str, Any]],
+    rate: float | None,
+    persisted: dict[str, Any] | None,
     source: str,
-) -> tuple[Optional[float], str]:
+) -> tuple[float | None, str]:
     """Prefer persisted rate if it's safer (lower) than requested rate."""
     if not persisted:
         return rate, source
@@ -165,7 +165,7 @@ def _resolve_rate_from_persisted(
     return rate, source
 
 
-def _finalize_rate(rate: Optional[float], explicit_rate: Optional[float]) -> float:
+def _finalize_rate(rate: float | None, explicit_rate: float | None) -> float:
     """Determine the starting fill rate."""
     if explicit_rate is not None:
         return float(explicit_rate)
@@ -174,37 +174,37 @@ def _finalize_rate(rate: Optional[float], explicit_rate: Optional[float]) -> flo
     return 5.0
 
 
-def _finalize_threshold(threshold_value: Optional[int]) -> int:
+def _finalize_threshold(threshold_value: int | None) -> int:
     """Ensure a valid success threshold is selected."""
     return max(threshold_value or 5, 1)
 
 
-def _finalize_min_rate(min_rate: Optional[float]) -> float:
+def _finalize_min_rate(min_rate: float | None) -> float:
     """Ensure the minimum rate is positive and reasonable."""
     value = min_rate if min_rate is not None else 0.1
     return max(0.01, float(value))
 
 
-def _finalize_max_rate(max_rate: Optional[float], min_rate: float) -> float:
+def _finalize_max_rate(max_rate: float | None, min_rate: float) -> float:
     """Ensure the maximum rate is not below the minimum."""
     value = max_rate if max_rate is not None else 20.0
     return max(min_rate, float(value))
 
 
-def _finalize_capacity(capacity: Optional[float]) -> float:
+def _finalize_capacity(capacity: float | None) -> float:
     """Ensure capacity is at least one token."""
     value = capacity if capacity is not None else 20.0
     return max(1.0, float(value))
 
 
-def _sanitize_positive_int(value: Optional[int]) -> Optional[int]:
+def _sanitize_positive_int(value: int | None) -> int | None:
     """Return value when positive integer, otherwise None."""
     if value is None:
         return None
     return value if value > 0 else None
 
 
-def _sanitize_positive_float(value: Optional[float]) -> Optional[float]:
+def _sanitize_positive_float(value: float | None) -> float | None:
     """Return value when positive float, otherwise None."""
     if value is None:
         return None
@@ -214,7 +214,7 @@ def _sanitize_positive_float(value: Optional[float]) -> Optional[float]:
 def _adjust_bounds_for_explicit_rate(
     min_rate: float,
     max_rate: float,
-    explicit_rate: Optional[float],
+    explicit_rate: float | None,
     persisted_min_used: bool,
     persisted_max_used: bool,
 ) -> tuple[float, float]:
@@ -236,16 +236,16 @@ def _clamp_rate(rate: float, min_rate: float, max_rate: float) -> float:
 
 
 def _apply_persisted_config(
-    persisted: Optional[dict[str, Any]],
-    threshold_value: Optional[int],
-    current_min_rate: Optional[float],
-    current_max_rate: Optional[float],
-    bucket_capacity: Optional[float],
+    persisted: dict[str, Any] | None,
+    threshold_value: int | None,
+    current_min_rate: float | None,
+    current_max_rate: float | None,
+    bucket_capacity: float | None,
 ) -> tuple[
-    Optional[int],
-    Optional[float],
-    Optional[float],
-    Optional[float],
+    int | None,
+    float | None,
+    float | None,
+    float | None,
     bool,
     bool,
 ]:
@@ -287,12 +287,12 @@ def _apply_persisted_config(
 
 
 def _finalize_config_values(
-    rate: Optional[float],
-    threshold_value: Optional[int],
-    min_rate: Optional[float],
-    max_rate: Optional[float],
-    capacity: Optional[float],
-    initial_fill_rate: Optional[float],
+    rate: float | None,
+    threshold_value: int | None,
+    min_rate: float | None,
+    max_rate: float | None,
+    capacity: float | None,
+    initial_fill_rate: float | None,
     persisted_min_used: bool,
     persisted_max_used: bool,
 ) -> tuple[float, int, float, float, float]:
@@ -314,13 +314,13 @@ def _finalize_config_values(
 
 
 def _build_limiter_config(
-    initial_fill_rate: Optional[float],
-    success_threshold: Optional[int],
-    min_fill_rate: Optional[float],
-    max_fill_rate: Optional[float],
-    capacity: Optional[float],
-    rate_limiter_429_backoff: Optional[float] = None,
-    rate_limiter_success_factor: Optional[float] = None,
+    initial_fill_rate: float | None,
+    success_threshold: int | None,
+    min_fill_rate: float | None,
+    max_fill_rate: float | None,
+    capacity: float | None,
+    rate_limiter_429_backoff: float | None = None,
+    rate_limiter_success_factor: float | None = None,
 ) -> _LimiterConfig:
     """Resolve limiter configuration using overrides and persisted state."""
     persisted = _load_persisted_state()
@@ -381,7 +381,7 @@ def _build_limiter_config(
     )
 
 
-def _update_success_threshold(limiter: "AdaptiveRateLimiter", success_threshold: Optional[int]) -> None:
+def _update_success_threshold(limiter: "AdaptiveRateLimiter", success_threshold: int | None) -> None:
     """Apply a new success threshold when provided."""
     if success_threshold is None or success_threshold <= 0:
         return
@@ -397,8 +397,8 @@ def _update_success_threshold(limiter: "AdaptiveRateLimiter", success_threshold:
 
 def _update_rate_bounds(
     limiter: "AdaptiveRateLimiter",
-    min_fill_rate: Optional[float],
-    max_fill_rate: Optional[float],
+    min_fill_rate: float | None,
+    max_fill_rate: float | None,
 ) -> None:
     """Update limiter bounds and clamp the current rate."""
     bounds_changed = False
@@ -429,7 +429,7 @@ def _update_rate_bounds(
         )
 
 
-def _update_capacity(limiter: "AdaptiveRateLimiter", capacity: Optional[float]) -> None:
+def _update_capacity(limiter: "AdaptiveRateLimiter", capacity: float | None) -> None:
     """Update token bucket capacity when requested."""
     if capacity is None or capacity <= 0:
         return
@@ -442,11 +442,11 @@ def _update_capacity(limiter: "AdaptiveRateLimiter", capacity: Optional[float]) 
 
 def _update_existing_limiter(
     limiter: "AdaptiveRateLimiter",
-    success_threshold: Optional[int],
-    min_fill_rate: Optional[float],
-    max_fill_rate: Optional[float],
-    capacity: Optional[float],
-    endpoint_profiles: Optional[dict[str, Any]],
+    success_threshold: int | None,
+    min_fill_rate: float | None,
+    max_fill_rate: float | None,
+    capacity: float | None,
+    endpoint_profiles: dict[str, Any] | None,
 ) -> None:
     """Apply runtime updates to the existing singleton instance."""
     _update_success_threshold(limiter, success_threshold)
@@ -558,8 +558,8 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
         self._endpoint_profiles: dict[str, _EndpointProfile] = {}
         # Per-endpoint adaptive state (dynamic, learns from 429s/successes)
         self._endpoint_states: dict[str, _EndpointState] = {}
-        self._endpoint_rate_cap: Optional[float] = None
-        self._endpoint_summary: Optional[str] = None
+        self._endpoint_rate_cap: float | None = None
+        self._endpoint_summary: str | None = None
         # Default endpoint for calls without explicit endpoint
         self._default_endpoint = "_default_"
 
@@ -571,7 +571,7 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
             f"success_threshold={success_threshold}, speedup=+2%"
         )
 
-    def wait(self, endpoint: Optional[str] = None) -> float:
+    def wait(self, endpoint: str | None = None) -> float:
         """Wait according to per-endpoint adaptive rate limiting.
 
         Each endpoint has its own rate that adapts independently based on
@@ -659,7 +659,7 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
 
         return state
 
-    def configure_endpoint_profiles(self, profiles: Optional[dict[str, Any]], log_config: bool = False) -> None:
+    def configure_endpoint_profiles(self, profiles: dict[str, Any] | None, log_config: bool = False) -> None:
         """Configure endpoint-specific throttling behavior and initialize adaptive state.
 
         Args:
@@ -772,7 +772,7 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
         self,
         endpoint: str,
         raw_profile: Any,
-    ) -> Optional[tuple[_EndpointProfile, Optional[float]]]:
+    ) -> tuple[_EndpointProfile, float | None] | None:
         """Return sanitized endpoint profile and any effective rate cap."""
 
         if not isinstance(raw_profile, dict):
@@ -804,7 +804,7 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
         return profile, rate_cap
 
     @staticmethod
-    def _sanitize_max_rate(value: Any) -> Optional[float]:
+    def _sanitize_max_rate(value: Any) -> float | None:
         """Return a positive max rate when specified."""
 
         max_rate = _safe_float(value)
@@ -825,8 +825,8 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
     @staticmethod
     def _apply_rate_cap_adjustments(
         min_interval: float,
-        max_rate: Optional[float],
-    ) -> tuple[float, Optional[float]]:
+        max_rate: float | None,
+    ) -> tuple[float, float | None]:
         """Harmonize min interval and max rate, returning any cap discovered."""
 
         if max_rate is not None:
@@ -891,7 +891,7 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
             " | ".join(cap_summaries),
         )
 
-    def get_endpoint_summary(self) -> Optional[str]:
+    def get_endpoint_summary(self) -> str | None:
         """Return the most recent endpoint throttle summary, if available."""
 
         return self._endpoint_summary
@@ -905,7 +905,7 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
         if hasattr(self, "_rate_caps") and self._rate_caps:
             self._log_endpoint_rate_caps(self._rate_caps)
 
-    def get_endpoint_state(self, endpoint: Optional[str] = None) -> Optional[_EndpointState]:
+    def get_endpoint_state(self, endpoint: str | None = None) -> _EndpointState | None:
         """Get the adaptive state for a specific endpoint.
 
         Args:
@@ -917,7 +917,7 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
         effective_endpoint = endpoint or self._default_endpoint
         return self._endpoint_states.get(effective_endpoint)
 
-    def get_endpoint_rate(self, endpoint: Optional[str] = None) -> float:
+    def get_endpoint_rate(self, endpoint: str | None = None) -> float:
         """Get the current adaptive rate for an endpoint.
 
         Args:
@@ -931,7 +931,7 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
             return state.current_rate
         return self.fill_rate
 
-    def on_429_error(self, endpoint: Optional[str] = None, retry_after: Optional[float] = None) -> None:
+    def on_429_error(self, endpoint: str | None = None, retry_after: float | None = None) -> None:
         """
         Handle 429 rate limit error by decreasing the endpoint's rate.
 
@@ -993,7 +993,7 @@ class AdaptiveRateLimiter:  # noqa: PLR0904 - 22 methods is appropriate for this
                 f"429s for endpoint: {state.total_429s}{retry_msg}{cooldown_msg}"
             )
 
-    def on_success(self, endpoint: Optional[str] = None) -> None:
+    def on_success(self, endpoint: str | None = None) -> None:
         """
         Handle successful API call for a specific endpoint.
 
@@ -1358,7 +1358,7 @@ def _get_state_path() -> Path:
     return project_root / "Cache" / "rate_limiter_state.json"
 
 
-def _load_persisted_state() -> Optional[dict[str, Any]]:
+def _load_persisted_state() -> dict[str, Any] | None:
     """Load persisted rate limiter state from disk."""
     cached_state = _LIMITER_STATE.persisted_state_cache
     if cached_state is not None:
@@ -1401,14 +1401,14 @@ _global_rate_limiter_lock = threading.Lock()
 
 
 def get_adaptive_rate_limiter(
-    initial_fill_rate: Optional[float] = None,
-    success_threshold: Optional[int] = None,
-    min_fill_rate: Optional[float] = None,
-    max_fill_rate: Optional[float] = None,
-    capacity: Optional[float] = None,
-    endpoint_profiles: Optional[dict[str, Any]] = None,
-    rate_limiter_429_backoff: Optional[float] = None,
-    rate_limiter_success_factor: Optional[float] = None,
+    initial_fill_rate: float | None = None,
+    success_threshold: int | None = None,
+    min_fill_rate: float | None = None,
+    max_fill_rate: float | None = None,
+    capacity: float | None = None,
+    endpoint_profiles: dict[str, Any] | None = None,
+    rate_limiter_429_backoff: float | None = None,
+    rate_limiter_success_factor: float | None = None,
 ) -> AdaptiveRateLimiter:
     """
     Get or create the global AdaptiveRateLimiter instance.
@@ -1487,14 +1487,14 @@ def get_rate_limiter_state_source() -> str:
     return _LIMITER_STATE.rate_limiter_state_source
 
 
-def get_persisted_rate_state() -> Optional[dict[str, Any]]:
+def get_persisted_rate_state() -> dict[str, Any] | None:
     """Expose the persisted rate limiter state (if available)."""
     return _load_persisted_state()
 
 
 def persist_rate_limiter_state(
-    limiter: Optional[AdaptiveRateLimiter],
-    metrics: Optional[RateLimiterMetrics] = None,
+    limiter: AdaptiveRateLimiter | None,
+    metrics: RateLimiterMetrics | None = None,
 ) -> None:
     """Persist the latest limiter state and optional metrics for next run reuse.
 

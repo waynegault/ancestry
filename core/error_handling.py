@@ -50,11 +50,12 @@ import threading
 import time
 import traceback
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 from functools import wraps
-from typing import Any, Callable, Optional, ParamSpec, TypeVar, Union, cast
+from typing import Any, Optional, ParamSpec, TypeVar, Union, cast
 
 # === THIRD-PARTY IMPORTS ===
 import requests
@@ -133,7 +134,7 @@ _RETRY_POLICY_CACHE: dict[str, RetryPolicyProfile] = {}
 class RetryDecoratorSettings:
     """Resolved retry decorator configuration."""
 
-    policy_name: Optional[str]
+    policy_name: str | None
     max_attempts: int
     backoff_factor: float
     base_delay: float
@@ -209,9 +210,9 @@ def _build_retry_policy(name: str) -> RetryPolicyProfile:
 
 
 def resolve_retry_policy(
-    policy: Optional[Union[str, RetryPolicyProfile]],
+    policy: str | RetryPolicyProfile | None,
     default: str = "selenium",
-) -> Optional[RetryPolicyProfile]:
+) -> RetryPolicyProfile | None:
     """Return resolved RetryPolicyProfile for retry decorators."""
 
     if isinstance(policy, RetryPolicyProfile):
@@ -244,7 +245,7 @@ class RecoveryContext:
     operation_name: str
     attempt_number: int = 1
     max_attempts: int = 3
-    last_error: Optional[Exception] = None
+    last_error: Exception | None = None
     error_history: list[Exception] = field(default_factory=list)
     start_time: datetime = field(default_factory=datetime.now)
     partial_results: list[Any] = field(default_factory=list)
@@ -350,7 +351,7 @@ def _handle_non_retryable_error(operation_name: str, exc: Exception) -> None:
 
 def _handle_partial_success(
     operation_name: str,
-    partial_success_handler: Optional[Callable[[list[Any], Exception], Any]],
+    partial_success_handler: Callable[[list[Any], Exception], Any] | None,
     context: RecoveryContext,
     last_exception: Exception,
 ) -> Any:
@@ -368,7 +369,7 @@ def _handle_partial_success(
 def _handle_retry_failure(
     operation_name: str,
     max_attempts: int,
-    partial_success_handler: Optional[Callable[[list[Any], Exception], Any]],
+    partial_success_handler: Callable[[list[Any], Exception], Any] | None,
     context: RecoveryContext,
     last_exception: Exception,
 ) -> Any:
@@ -412,8 +413,8 @@ def with_enhanced_recovery(
     max_delay: float = 60.0,
     recovery_strategy: RecoveryStrategy = RecoveryStrategy.EXPONENTIAL_BACKOFF,
     retryable_exceptions: tuple[type[Exception], ...] = (Exception,),
-    partial_success_handler: Optional[Callable[[list[Any], Exception], Any]] = None,
-    user_guidance: Optional[dict[type[Exception], str]] = None,
+    partial_success_handler: Callable[[list[Any], Exception], Any] | None = None,
+    user_guidance: dict[type[Exception], str] | None = None,
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator that standardizes retries, jittered backoff, and guidance logging."""
 
@@ -430,7 +431,7 @@ def with_enhanced_recovery(
             if error_recovery.is_circuit_open(operation_name):
                 raise RuntimeError(f"Circuit breaker is open for {operation_name}")
 
-            last_exception: Optional[Exception] = None
+            last_exception: Exception | None = None
 
             for attempt in range(1, max_attempts + 1):
                 context.attempt_number = attempt
@@ -521,7 +522,7 @@ class CircuitBreaker:
     Opens the circuit after a threshold of failures and closes after a timeout.
     """
 
-    def __init__(self, name: str = "default", config: Optional[CircuitBreakerConfig] = None):
+    def __init__(self, name: str = "default", config: CircuitBreakerConfig | None = None):
         self.name = name
         self.config = config or CircuitBreakerConfig()
         self.failure_count = 0
@@ -751,11 +752,11 @@ class AppError(Exception):
         message: str,
         category: ErrorCategory = ErrorCategory.SYSTEM,
         severity: ErrorSeverity = ErrorSeverity.MEDIUM,
-        user_message: Optional[str] = None,
-        technical_details: Optional[str] = None,
-        recovery_suggestion: Optional[str] = None,
-        context: Optional[dict[str, Any]] = None,
-        original_exception: Optional[Exception] = None,
+        user_message: str | None = None,
+        technical_details: str | None = None,
+        recovery_suggestion: str | None = None,
+        context: dict[str, Any] | None = None,
+        original_exception: Exception | None = None,
     ):
         super().__init__(message)
         self.message = message
@@ -797,7 +798,7 @@ class AppError(Exception):
         }
 
 
-def _safe_update_error_context(error: Exception, payload: Optional[dict[str, Any]]) -> None:
+def _safe_update_error_context(error: Exception, payload: dict[str, Any] | None) -> None:
     """Attach diagnostic payloads to legacy error types that track context."""
 
     if not payload:
@@ -887,7 +888,7 @@ class APIError(AppError):
 class ErrorHandler(ABC):
     """Abstract base class for error handlers."""
 
-    def _augment_context(self, context: Optional[dict[str, Any]]) -> dict[str, Any]:
+    def _augment_context(self, context: dict[str, Any] | None) -> dict[str, Any]:
         """Attach handler metadata to the context for downstream diagnostics."""
         enriched_context = dict(context or {})
         enriched_context.setdefault("handler", type(self).__name__)
@@ -906,7 +907,7 @@ class ErrorHandler(ABC):
         pass
 
     @abstractmethod
-    def handle(self, error: Exception, context: Optional[dict[str, Any]] = None) -> AppError:
+    def handle(self, error: Exception, context: dict[str, Any] | None = None) -> AppError:
         """Handle the error and return a standardized AppError."""
         pass
 
@@ -918,7 +919,7 @@ class DatabaseErrorHandler(ErrorHandler):
         keywords = ("sql", "database", "connection", "integrity")
         return self._match_keywords(error, keywords)
 
-    def handle(self, error: Exception, context: Optional[dict[str, Any]] = None) -> AppError:
+    def handle(self, error: Exception, context: dict[str, Any] | None = None) -> AppError:
         error_message = str(error)
         context_with_handler = self._augment_context(context)
 
@@ -954,7 +955,7 @@ class NetworkErrorHandler(ErrorHandler):
         keywords = ("connection", "timeout", "http", "request", "url")
         return self._match_keywords(error, keywords)
 
-    def handle(self, error: Exception, context: Optional[dict[str, Any]] = None) -> AppError:
+    def handle(self, error: Exception, context: dict[str, Any] | None = None) -> AppError:
         error_message = str(error)
         context_with_handler = self._augment_context(context)
 
@@ -990,7 +991,7 @@ class BrowserErrorHandler(ErrorHandler):
         keywords = ("webdriver", "selenium", "browser", "chrome")
         return self._match_keywords(error, keywords)
 
-    def handle(self, error: Exception, context: Optional[dict[str, Any]] = None) -> AppError:
+    def handle(self, error: Exception, context: dict[str, Any] | None = None) -> AppError:
         error_message = str(error)
         context_with_handler = self._augment_context(context)
 
@@ -1042,7 +1043,7 @@ class ErrorHandlerRegistry:
     def handle_error(
         self,
         error: Exception,
-        context: Optional[dict[str, Any]] = None,
+        context: dict[str, Any] | None = None,
         fallback_category: ErrorCategory = ErrorCategory.SYSTEM,
     ) -> AppError:
         """
@@ -1095,7 +1096,7 @@ _error_registry = ErrorHandlerRegistry()
 
 def handle_error(
     error: Exception,
-    context: Optional[dict[str, Any]] = None,
+    context: dict[str, Any] | None = None,
     fallback_category: ErrorCategory = ErrorCategory.SYSTEM,
 ) -> AppError:
     """
@@ -1125,9 +1126,9 @@ def error_handler(
         reraise: Whether to reraise the original exception
     """
 
-    def decorator(func: Callable[P, R]) -> Callable[P, Optional[R]]:
+    def decorator(func: Callable[P, R]) -> Callable[P, R | None]:
         @wraps(func)
-        def wrapper(*args: P.args, **kwargs: P.kwargs) -> Optional[R]:
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R | None:
             try:
                 return func(*args, **kwargs)
             except Exception as e:
@@ -1172,7 +1173,7 @@ def execute_safely(
     func: Callable[..., Any],
     *args: Any,
     default_return: Any = None,
-    context: Optional[dict[str, Any]] = None,
+    context: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> Any:
     """
@@ -1197,7 +1198,7 @@ def execute_safely(
 
 
 def safe_execute(
-    default_return: Any = None, log_errors: bool = True, error_message: Optional[str] = None
+    default_return: Any = None, log_errors: bool = True, error_message: str | None = None
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """
     Decorator to safely execute a function with error handling.
@@ -1246,7 +1247,7 @@ class ErrorContext:
         logger.debug(f"Starting operation: {self.operation_name}")
         return self
 
-    def __exit__(self, exc_type: Optional[type], exc_val: Optional[BaseException], _exc_tb: Optional[Any]) -> bool:
+    def __exit__(self, exc_type: type | None, exc_val: BaseException | None, _exc_tb: Any | None) -> bool:
         duration = time.time() - self.start_time if self.start_time else 0
 
         if exc_type is not None and exc_val is not None:
@@ -1287,7 +1288,7 @@ def get_error_handler(error_type: type[Exception]) -> ErrorHandler:
             )
             return True  # Catch-all for unknown errors
 
-        def handle(self, error: Exception, context: Optional[dict[str, Any]] = None) -> AppError:
+        def handle(self, error: Exception, context: dict[str, Any] | None = None) -> AppError:
             context_with_handler = self._augment_context(context)
             return AppError(
                 str(error),
@@ -1475,7 +1476,7 @@ class ErrorRecoveryManager:
         self.recovery_strategies: dict[str, Callable[..., Any]] = {}
         self._lock = threading.Lock()
 
-    def get_circuit_breaker(self, name: str, config: Optional[CircuitBreakerConfig] = None) -> CircuitBreaker:
+    def get_circuit_breaker(self, name: str, config: CircuitBreakerConfig | None = None) -> CircuitBreaker:
         """Get or create circuit breaker for a service."""
         with self._lock:
             if name not in self.circuit_breakers:
@@ -1587,9 +1588,9 @@ _DEFAULT_STOP_EXCEPTIONS = (
 
 
 def _resolve_exception_tuples(
-    retry_on: Optional[list[type[Exception]]],
-    stop_on: Optional[list[type[Exception]]],
-    resolved_policy: Optional[RetryPolicyProfile],
+    retry_on: list[type[Exception]] | None,
+    stop_on: list[type[Exception]] | None,
+    resolved_policy: RetryPolicyProfile | None,
 ) -> tuple[tuple[type[Exception], ...], tuple[type[Exception], ...]]:
     """Resolve retry and stop exception tuples from arguments or policy."""
     if retry_on is not None:
@@ -1610,25 +1611,25 @@ def _resolve_exception_tuples(
 
 
 def _resolve_retry_settings(
-    max_attempts: Optional[int],
-    backoff_factor: Optional[float],
-    retry_on: Optional[list[type[Exception]]],
-    stop_on: Optional[list[type[Exception]]],
-    jitter: Optional[bool],
-    base_delay: Optional[float],
-    max_delay: Optional[float],
-    policy: Optional[Union[str, RetryPolicyProfile]],
+    max_attempts: int | None,
+    backoff_factor: float | None,
+    retry_on: list[type[Exception]] | None,
+    stop_on: list[type[Exception]] | None,
+    jitter: bool | None,
+    base_delay: float | None,
+    max_delay: float | None,
+    policy: str | RetryPolicyProfile | None,
 ) -> RetryDecoratorSettings:
     resolved_policy = resolve_retry_policy(policy, default="selenium")
 
-    def _int_value(value: Optional[int], attr: str, fallback: int) -> int:
+    def _int_value(value: int | None, attr: str, fallback: int) -> int:
         if value is not None:
             return value
         if resolved_policy is not None:
             return int(getattr(resolved_policy, attr))
         return fallback
 
-    def _float_value(value: Optional[float], attr: str, fallback: float) -> float:
+    def _float_value(value: float | None, attr: str, fallback: float) -> float:
         if value is not None:
             return value
         if resolved_policy is not None:
@@ -1653,7 +1654,7 @@ def _resolve_retry_settings(
     )
 
 
-def _wrap_with_retry(func: Callable[P, R], settings: RetryDecoratorSettings) -> Callable[P, R]:
+def _wrap_with_retry[**P, R](func: Callable[P, R], settings: RetryDecoratorSettings) -> Callable[P, R]:
     stop_on = list(settings.stop_on)
     retry_on = list(settings.retry_on)
 
@@ -1667,7 +1668,7 @@ def _wrap_with_retry(func: Callable[P, R], settings: RetryDecoratorSettings) -> 
             "kwargs_keys": list(kwargs.keys()),
         }
         start_time = time.time()
-        last_exception: Optional[Exception] = None
+        last_exception: Exception | None = None
 
         for attempt in range(settings.max_attempts):
             try:
@@ -1731,14 +1732,14 @@ def _wrap_with_retry(func: Callable[P, R], settings: RetryDecoratorSettings) -> 
 
 
 def retry_on_failure(
-    max_attempts: Optional[int] = None,
-    backoff_factor: Optional[float] = None,
-    retry_on: Optional[list[type[Exception]]] = None,
-    stop_on: Optional[list[type[Exception]]] = None,
-    jitter: Optional[bool] = None,
-    base_delay: Optional[float] = None,
-    max_delay: Optional[float] = None,
-    policy: Optional[Union[str, RetryPolicyProfile]] = "selenium",
+    max_attempts: int | None = None,
+    backoff_factor: float | None = None,
+    retry_on: list[type[Exception]] | None = None,
+    stop_on: list[type[Exception]] | None = None,
+    jitter: bool | None = None,
+    base_delay: float | None = None,
+    max_delay: float | None = None,
+    policy: str | RetryPolicyProfile | None = "selenium",
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator for automatic retry with telemetry-derived policies."""
 
@@ -1822,7 +1823,7 @@ def timeout_protection(timeout: int = 30) -> Callable[[Callable[P, R]], Callable
             if platform.system() == "Windows":
                 # Windows doesn't support SIGALRM, use threading approach
                 result_container: list[R] = []  # Use empty list instead of [None]
-                exception: list[Optional[Exception]] = [None]
+                exception: list[Exception | None] = [None]
 
                 def target() -> None:
                     try:
@@ -1850,7 +1851,7 @@ def timeout_protection(timeout: int = 30) -> Callable[[Callable[P, R]], Callable
                 raise TimeoutError(f"Function {func.__name__} timed out after {timeout} seconds")
 
             sigalrm = getattr(signal, "SIGALRM", None)
-            alarm_fn: Optional[Callable[[int], Any]] = getattr(signal, "alarm", None)
+            alarm_fn: Callable[[int], Any] | None = getattr(signal, "alarm", None)
             if sigalrm is None or alarm_fn is None:
                 # Platform does not expose SIGALRM, fall back to direct execution
                 return func(*args, **kwargs)
@@ -1871,7 +1872,7 @@ def timeout_protection(timeout: int = 30) -> Callable[[Callable[P, R]], Callable
 
 
 def graceful_degradation(
-    fallback_value: Any = None, fallback_func: Optional[Callable[..., Any]] = None
+    fallback_value: Any = None, fallback_func: Callable[..., Any] | None = None
 ) -> Callable[[Callable[P, R]], Callable[P, R]]:
     """Decorator for graceful degradation when service fails."""
 
@@ -1911,7 +1912,7 @@ def error_context(context_name: str = "", **context_data: Any) -> Callable[[Call
     return decorator
 
 
-def with_circuit_breaker(service_name: str, config: Optional[CircuitBreakerConfig] = None):
+def with_circuit_breaker(service_name: str, config: CircuitBreakerConfig | None = None):
     """Decorator to add circuit breaker protection to functions."""
 
     def decorator(func: Callable[P, R]) -> Callable[P, R]:
@@ -1946,7 +1947,7 @@ def with_recovery(recovery_strategy: Callable[..., Any]) -> Callable[[Callable[P
 # === RECOVERY STRATEGIES ===
 
 
-def ancestry_session_recovery(session_manager: Optional[Any] = None, *_args: Any, **_kwargs: Any) -> bool:
+def ancestry_session_recovery(session_manager: Any | None = None, *_args: Any, **_kwargs: Any) -> bool:
     """
     Recovery strategy for session-related failures.
 
@@ -2014,7 +2015,7 @@ def ancestry_session_recovery(session_manager: Optional[Any] = None, *_args: Any
         return False
 
 
-def _get_session_manager_for_recovery(session_manager: Optional[Any]) -> Optional[Any]:
+def _get_session_manager_for_recovery(session_manager: Any | None) -> Any | None:
     """Get or create SessionManager for recovery operations."""
     if session_manager is not None:
         return session_manager
@@ -2035,7 +2036,7 @@ def _get_session_manager_for_recovery(session_manager: Optional[Any]) -> Optiona
         return None
 
 
-def ancestry_api_recovery(session_manager: Optional[Any] = None, *_args: Any, **_kwargs: Any) -> bool:
+def ancestry_api_recovery(session_manager: Any | None = None, *_args: Any, **_kwargs: Any) -> bool:
     """
     Recovery strategy for API-related failures (403, cookie expiry).
 
@@ -2083,7 +2084,7 @@ def ancestry_api_recovery(session_manager: Optional[Any] = None, *_args: Any, **
         return False
 
 
-def ancestry_database_recovery(session_manager: Optional[Any] = None, *_args: Any, **_kwargs: Any) -> bool:
+def ancestry_database_recovery(session_manager: Any | None = None, *_args: Any, **_kwargs: Any) -> bool:
     """
     Recovery strategy for database-related failures.
 
@@ -2164,7 +2165,7 @@ def test_error_handling() -> None:
             _ = self
             return isinstance(error, ValueError)
 
-        def handle(self, error: Exception, context: Optional[dict[str, Any]] = None) -> AppError:
+        def handle(self, error: Exception, context: dict[str, Any] | None = None) -> AppError:
             _ = self
             recorded["contexts"].append(context or {})
             return AppError(str(error), context=context, original_exception=error)
@@ -2265,7 +2266,7 @@ def test_error_context() -> None:
             _ = self
             return isinstance(error, RuntimeError)
 
-        def handle(self, error: Exception, context: Optional[dict[str, Any]] = None) -> AppError:
+        def handle(self, error: Exception, context: dict[str, Any] | None = None) -> AppError:
             _ = self
             handled.append(context or {})
             return AppError(str(error), context=context, original_exception=error)

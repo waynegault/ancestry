@@ -16,13 +16,12 @@ Usage:
 Phase 3.3: Review Queue for Facts implementation.
 """
 
-from __future__ import annotations
 
 import argparse
 import logging
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 
 # Ensure project root is on path
@@ -155,7 +154,7 @@ class FactsQueueService:
             return False
 
         fact.status = FactStatusEnum.APPROVED
-        fact.updated_at = datetime.now(timezone.utc)
+        fact.updated_at = datetime.now(UTC)
         self.session.commit()
         logger.info(f"Approved fact #{fact_id}")
         return True
@@ -176,7 +175,7 @@ class FactsQueueService:
             return False
 
         fact.status = FactStatusEnum.REJECTED
-        fact.updated_at = datetime.now(timezone.utc)
+        fact.updated_at = datetime.now(UTC)
         self.session.commit()
         logger.info(f"Rejected fact #{fact_id}: {reason or 'No reason provided'}")
         return True
@@ -876,4 +875,9 @@ run_comprehensive_tests = create_standard_test_runner(facts_queue_module_tests)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    import os
+
+    if os.environ.get("RUN_MODULE_TESTS") == "1":
+        sys.exit(0 if run_comprehensive_tests() else 1)
+    else:
+        sys.exit(main())

@@ -28,8 +28,9 @@ import json
 
 # Import standard modules
 import logging
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Callable, Optional, cast
+from typing import Any, cast
 
 # A/B testing and metrics imports for Phase 11.4
 from ai.ab_testing import ExperimentManager, Variant
@@ -43,7 +44,7 @@ except ImportError:
     def is_metrics_enabled() -> bool:
         return False
 
-    def metrics() -> Optional[Any]:
+    def metrics() -> Any | None:
         """Fallback metrics function when observability is not available."""
         return None
 
@@ -66,7 +67,7 @@ class MessagePersonalizer:
     """
 
     # Class-level experiment manager singleton
-    _experiment_manager: Optional[ExperimentManager] = None
+    _experiment_manager: ExperimentManager | None = None
 
     def __init__(self) -> None:
         """Initialize the message personalizer with templates and configuration."""
@@ -75,7 +76,7 @@ class MessagePersonalizer:
         self.effectiveness_tracker = MessageEffectivenessTracker()
         self.ab_testing_enabled = True
         self.personalization_functions_registry = self._build_personalization_registry()
-        self._last_generation_snapshot: Optional[dict[str, Any]] = None
+        self._last_generation_snapshot: dict[str, Any] | None = None
 
         # Phase 11.4: Initialize experiment manager and personalization strategies
         self._ensure_experiment_manager()
@@ -224,9 +225,9 @@ class MessagePersonalizer:
     def create_personalized_message(
         self,
         template_key: str,
-        person_data: Optional[dict[str, Any]] = None,
-        extracted_data: Optional[dict[str, Any]] = None,
-        base_format_data: Optional[dict[str, str]] = None,
+        person_data: dict[str, Any] | None = None,
+        extracted_data: dict[str, Any] | None = None,
+        base_format_data: dict[str, str] | None = None,
         track_effectiveness: bool = True,
     ) -> tuple[str, list[str]]:
         """
@@ -284,7 +285,7 @@ class MessagePersonalizer:
     @staticmethod
     def _prepare_base_format_data(
         person_payload: dict[str, Any],
-        base_format_data: Optional[dict[str, str]],
+        base_format_data: dict[str, str] | None,
     ) -> dict[str, str]:
         """Normalize and populate base format data with safe defaults."""
         normalized_base_format = {key: str(value) for key, value in (base_format_data or {}).items()}
@@ -373,7 +374,7 @@ class MessagePersonalizer:
             "timestamp": datetime.now().isoformat(),
         }
 
-    def _apply_ab_testing(self, template_key: str, extracted_data: Optional[dict[str, Any]] = None) -> str:
+    def _apply_ab_testing(self, template_key: str, extracted_data: dict[str, Any] | None = None) -> str:
         """Apply A/B testing for template selection based on effectiveness data."""
         # Get alternative templates for A/B testing
         alternative_templates = self._get_alternative_templates(template_key)
@@ -461,7 +462,7 @@ class MessagePersonalizer:
                 selected_functions.append(func)
 
     def _select_optimal_personalization_functions(
-        self, extracted_data: dict[str, Any], person_id: Optional[int] = None
+        self, extracted_data: dict[str, Any], person_id: int | None = None
     ) -> list[str]:
         """
         Select optimal personalization functions based on data availability,
@@ -493,7 +494,7 @@ class MessagePersonalizer:
 
         return list(set(selected_functions))
 
-    def _get_ab_test_variant(self, experiment_id: str, person_id: Optional[int]) -> Optional[Variant]:
+    def _get_ab_test_variant(self, experiment_id: str, person_id: int | None) -> Variant | None:
         """Get A/B test variant assignment for a person."""
         if not self.ab_testing_enabled or self._experiment_manager is None:
             return None
@@ -529,7 +530,7 @@ class MessagePersonalizer:
         except Exception:
             pass  # Metrics failure is non-fatal
 
-    def _get_best_performing_function(self, function_list: list[str]) -> Optional[str]:
+    def _get_best_performing_function(self, function_list: list[str]) -> str | None:
         """Get the best performing function from a list based on effectiveness data."""
         best_func = None
         best_score = 0.0
@@ -563,8 +564,8 @@ class MessagePersonalizer:
         self,
         extracted_data: dict[str, Any],
         base_format_data: dict[str, str],
-        person_data: Optional[dict[str, Any]] = None,
-        selected_functions: Optional[list[str]] = None,
+        person_data: dict[str, Any] | None = None,
+        selected_functions: list[str] | None = None,
     ) -> dict[str, str]:
         """Create enhanced format data by applying selected personalization functions."""
         enhanced_data = base_format_data.copy()
@@ -593,7 +594,7 @@ class MessagePersonalizer:
         if hometown:
             enhanced_data.setdefault("person_location", str(hometown))
 
-    def _resolve_selected_functions(self, selected_functions: Optional[list[str]]) -> list[str]:
+    def _resolve_selected_functions(self, selected_functions: list[str] | None) -> list[str]:
         """Determine which personalization functions should run."""
         if selected_functions is not None:
             return list(selected_functions)
@@ -672,7 +673,7 @@ class MessagePersonalizer:
         return f"{', '.join(ancestor_names[:-1])}, and {ancestor_names[-1]}"
 
     @staticmethod
-    def _format_single_vital_record(record: Any) -> Optional[str]:
+    def _format_single_vital_record(record: Any) -> str | None:
         """Format a single vital record detail."""
         if not isinstance(record, dict):
             return None
@@ -887,7 +888,7 @@ class MessagePersonalizer:
         return "In_Tree-Initial"  # Default fallback
 
     @staticmethod
-    def _create_fallback_message(person_data: Optional[dict[str, Any]], base_format_data: dict[str, str]) -> str:
+    def _create_fallback_message(person_data: dict[str, Any] | None, base_format_data: dict[str, str]) -> str:
         """Create a simple fallback message when template processing fails."""
         name = base_format_data.get("name") or (person_data or {}).get("name") or "there"
         hometown = (person_data or {}).get("location") or "Aberdeen, Scotland"
@@ -1117,7 +1118,7 @@ class MessagePersonalizer:
         return "Understanding family migration patterns helps piece together our shared ancestry."
 
     @staticmethod
-    def _extract_year_from_date(date: str) -> Optional[int]:
+    def _extract_year_from_date(date: str) -> int | None:
         """Extract 4-digit year from date string."""
         for part in date.split():
             if part.isdigit() and len(part) == 4:
@@ -1127,7 +1128,7 @@ class MessagePersonalizer:
         return None
 
     @staticmethod
-    def _get_historical_context_for_location(year: int, place: str, event_type: str) -> Optional[str]:
+    def _get_historical_context_for_location(year: int, place: str, event_type: str) -> str | None:
         """Get historical context based on year and location."""
         if "Scotland" in place and 1840 <= year <= 1920:
             return f"The {event_type} in {place} around {year} coincides with significant Scottish emigration periods."
@@ -1137,7 +1138,7 @@ class MessagePersonalizer:
             return f"The {year} timeframe was during World War I, which affected many family records."
         return None
 
-    def _analyze_vital_record_context(self, record: Any) -> Optional[str]:
+    def _analyze_vital_record_context(self, record: Any) -> str | None:
         """Analyze historical context for a single vital record."""
         if not isinstance(record, dict):
             return None
@@ -1247,7 +1248,7 @@ class MessagePersonalizer:
         return "Surname distribution patterns often reveal family migration routes and concentrations."
 
     @staticmethod
-    def _get_occupation_context(occupation: str, person: str) -> Optional[str]:
+    def _get_occupation_context(occupation: str, person: str) -> str | None:
         """Get social context for a specific occupation."""
         occupation_lower = occupation.lower()
 
@@ -1343,7 +1344,7 @@ class MessagePersonalizer:
         return birth_years, marriage_years
 
     @staticmethod
-    def _analyze_birth_year_gap(birth_years: list[int]) -> Optional[str]:
+    def _analyze_birth_year_gap(birth_years: list[int]) -> str | None:
         """Analyze gap between birth years and return interpretation."""
         if len(birth_years) >= 2:
             gap = abs(birth_years[0] - birth_years[1])
@@ -1484,7 +1485,7 @@ class MessageEffectivenessTracker:
         response_quality_score: float,
         conversation_length: int,
         genealogical_data_extracted: int,
-        person_id: Optional[int] = None,
+        person_id: int | None = None,
     ) -> None:
         """
         Track the effectiveness of a message and its response.
@@ -1585,7 +1586,7 @@ class MessageEffectivenessTracker:
         self,
         personalization_functions_used: list[str],
         response_intent: str,
-        person_id: Optional[int],
+        person_id: int | None,
     ) -> None:
         """
         Record Prometheus metrics for personalization effectiveness.
@@ -1607,17 +1608,8 @@ class MessageEffectivenessTracker:
         except Exception as e:
             logger.debug(f"Failed to record effectiveness metrics: {e}")
 
-    @staticmethod
-    def _calculate_engagement_score(response_intent: str) -> float:
-        return {
-            "ENTHUSIASTIC": 5.0,
-            "PRODUCTIVE": 4.0,
-            "CAUTIOUSLY_INTERESTED": 3.0,
-            "CONFUSED": 2.0,
-            "UNINTERESTED": 1.0,
-            "DESIST": 0.0,
-            "OTHER": 2.0,
-        }.get(response_intent, 2.0)
+    def _calculate_engagement_score(self, response_intent: str) -> float:
+        return float(self.response_categories.get(response_intent, 2))
 
     @staticmethod
     def _record_function_metrics(metrics_client: Any, funcs_used: list[str], engagement_score: float) -> None:
@@ -1629,7 +1621,7 @@ class MessageEffectivenessTracker:
     @staticmethod
     def _record_ab_outcomes(
         metrics_client: Any,
-        person_id: Optional[int],
+        person_id: int | None,
         response_intent: str,
         engagement_score: float,
     ) -> None:
@@ -1747,7 +1739,7 @@ class MessageEffectivenessTracker:
 
         return insights
 
-    def _summarize_experiment(self, exp_manager: Any, exp_id: str) -> Optional[str]:
+    def _summarize_experiment(self, exp_manager: Any, exp_id: str) -> str | None:
         if exp_id not in exp_manager.experiments:
             return None
 
@@ -1781,8 +1773,8 @@ class MessageEffectivenessTracker:
         return variant_stats
 
     @staticmethod
-    def _pick_best_variant(variant_stats: dict[str, dict[str, float]]) -> tuple[Optional[str], float]:
-        best_variant: Optional[str] = None
+    def _pick_best_variant(variant_stats: dict[str, dict[str, float]]) -> tuple[str | None, float]:
+        best_variant: str | None = None
         best_rate = 0.0
 
         for vname, stats in variant_stats.items():
@@ -1893,9 +1885,22 @@ def _test_personalizer_initialization() -> bool:
     personalizer = MessagePersonalizer()
 
     assert personalizer is not None, "Personalizer should be created"
-    assert hasattr(personalizer, 'templates'), "Should have templates"
-    assert hasattr(personalizer, 'personalization_config'), "Should have config"
-    assert hasattr(personalizer, 'effectiveness_tracker'), "Should have tracker"
+    # Verify attribute types, not just existence
+    assert isinstance(personalizer.templates, dict), (
+        f"templates should be dict, got {type(personalizer.templates)}"
+    )
+    assert isinstance(personalizer.personalization_config, dict), (
+        f"personalization_config should be dict, got {type(personalizer.personalization_config)}"
+    )
+    assert isinstance(personalizer.effectiveness_tracker, MessageEffectivenessTracker), (
+        f"effectiveness_tracker should be MessageEffectivenessTracker, got {type(personalizer.effectiveness_tracker)}"
+    )
+    assert isinstance(personalizer.personalization_functions_registry, dict), (
+        f"personalization_functions_registry should be dict, got {type(personalizer.personalization_functions_registry)}"
+    )
+    assert len(personalizer.personalization_functions_registry) > 0, (
+        "personalization_functions_registry should not be empty"
+    )
 
     logger.info("✓ MessagePersonalizer initialized correctly")
     return True
@@ -1934,8 +1939,19 @@ def _test_effectiveness_tracker_initialization() -> bool:
     tracker = MessageEffectivenessTracker()
 
     assert tracker is not None, "Tracker should be created"
-    assert hasattr(tracker, 'effectiveness_data'), "Should have effectiveness_data"
-    assert hasattr(tracker, 'response_categories'), "Should have response_categories"
+    # Verify attribute types, not just existence
+    assert isinstance(tracker.effectiveness_data, dict), (
+        f"effectiveness_data should be dict, got {type(tracker.effectiveness_data)}"
+    )
+    assert isinstance(tracker.response_categories, dict), (
+        f"response_categories should be dict, got {type(tracker.response_categories)}"
+    )
+    # Verify response_categories has expected entries with numeric scores
+    assert len(tracker.response_categories) > 0, "response_categories should not be empty"
+    assert "PRODUCTIVE" in tracker.response_categories, "response_categories should contain PRODUCTIVE"
+    assert isinstance(tracker.response_categories["PRODUCTIVE"], int), (
+        f"PRODUCTIVE score should be int, got {type(tracker.response_categories['PRODUCTIVE'])}"
+    )
 
     logger.info("✓ MessageEffectivenessTracker initialized correctly")
     return True
@@ -1950,8 +1966,8 @@ def _test_ab_testing_integration() -> bool:
 
     # Verify experiments were created
     exp_manager = MessagePersonalizer._experiment_manager
-    assert "personalization_strategy_dna" in exp_manager.experiments or len(exp_manager.experiments) >= 0, (
-        "DNA strategy experiment should exist or be creatable"
+    assert len(exp_manager.experiments) > 0, (
+        "Experiment manager should have at least one registered experiment"
     )
 
     # Test variant assignment consistency (same person_id = same variant)

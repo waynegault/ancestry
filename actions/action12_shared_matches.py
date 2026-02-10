@@ -9,7 +9,7 @@ Stores the relationships in the SharedMatch table.
 import json
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, cast
 from urllib.parse import urlencode, urljoin
 
@@ -85,7 +85,7 @@ def _process_shared_matches(session_manager: SessionManager) -> None:
                     stmt = (
                         update(DnaMatch)
                         .where(DnaMatch.id == match_id)
-                        .values(shared_matches_fetched=True, shared_matches_fetched_date=datetime.now(timezone.utc))
+                        .values(shared_matches_fetched=True, shared_matches_fetched_date=datetime.now(UTC))
                     )
                     session.execute(stmt)
                     session.commit()

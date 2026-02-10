@@ -1,14 +1,14 @@
 """Prometheus ingestion smoke tests for Grafana readiness."""
 
-from __future__ import annotations
 
 import os
 import socketserver
 import sys
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Optional, cast
+from typing import Any, cast
 
 # Allow running as a script without -m by adding project root to sys.path
 if __package__ in {None, ""}:
@@ -107,7 +107,7 @@ def _sum_prom_result(data: Any) -> float:
     return total
 
 
-def _request_samples(window: str = "5m") -> Optional[float]:
+def _request_samples(window: str = "5m") -> float | None:
     """Return ancestry_api_requests_total activity; fallback to raw counter snapshot."""
 
     queries = [
@@ -115,7 +115,7 @@ def _request_samples(window: str = "5m") -> Optional[float]:
         ("sum by(job)(ancestry_api_requests_total)", "counter snapshot"),
     ]
 
-    last_total: Optional[float] = None
+    last_total: float | None = None
     for prom_query, reason in queries:
         data = _safe_call(
             lambda pq=prom_query: _get_json("/api/v1/query", params={"query": pq}),
@@ -131,7 +131,7 @@ def _request_samples(window: str = "5m") -> Optional[float]:
     return last_total if last_total is not None else 0.0
 
 
-def _start_static_metrics_server() -> Optional[socketserver.TCPServer]:
+def _start_static_metrics_server() -> socketserver.TCPServer | None:
     """Start the lightweight static metrics server on port 9001."""
 
     try:
@@ -147,7 +147,7 @@ def _start_static_metrics_server() -> Optional[socketserver.TCPServer]:
 def _prime_fake_samples() -> bool:
     """Ensure Prometheus has at least one ancestry_api_requests_total sample."""
 
-    server: Optional[socketserver.TCPServer] = None
+    server: socketserver.TCPServer | None = None
     try:
         # If a metrics endpoint is already responding, use it; otherwise start our stub.
         try:

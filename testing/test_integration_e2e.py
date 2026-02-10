@@ -137,7 +137,27 @@ def test_fact_extraction_pipeline() -> bool:
     }
 
     facts = extract_facts_from_ai_response(mock_ai_response)
-    return len(facts) >= 0  # Facts may or may not be extracted depending on format
+    # The mock response uses the raw format; wrap in extracted_data for the parser
+    wrapped_response = {
+        "extracted_data": {
+            "mentioned_people": [
+                {"name": "Mary Smith", "birth_year": 1895, "birth_place": "Scotland"},
+                {"name": "John Wilson", "birth_year": 1920},
+            ],
+            "relationships": [
+                {"person1": "User", "relationship": "great-grandmother", "person2": "Mary Smith"},
+            ],
+            "locations": ["Scotland", "Ohio"],
+        }
+    }
+    facts = extract_facts_from_ai_response(wrapped_response)
+    assert len(facts) > 0, f"Expected at least 1 extracted fact from structured response, got {len(facts)}"
+    # Verify at least one fact references a known person
+    fact_texts = [str(f) for f in facts]
+    assert any("Mary Smith" in t or "John Wilson" in t for t in fact_texts), (
+        f"Expected a fact mentioning Mary Smith or John Wilson, got: {fact_texts}"
+    )
+    return True
 
 
 def test_review_queue_pipeline() -> bool:
@@ -192,9 +212,10 @@ def test_ab_testing_pipeline() -> bool:
     v1 = manager.assign_variant("test_integration", "subject_123")
     v2 = manager.assign_variant("test_integration", "subject_123")
 
-    if v1 and v2:
-        return v1.name == v2.name
-    return True  # No experiment = OK
+    assert v1 is not None, "Variant assignment should not be None for registered experiment"
+    assert v2 is not None, "Variant assignment should not be None for registered experiment"
+    assert v1.name == v2.name, f"Same subject should get same variant, got {v1.name} vs {v2.name}"
+    return True
 
 
 def test_tree_query_service_integration() -> bool:

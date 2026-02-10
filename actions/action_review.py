@@ -12,15 +12,14 @@ Features:
 - Summary statistics for review queue
 """
 
-from __future__ import annotations
 
 import logging
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional, cast
+from typing import Any, cast
 
 from sqlalchemy.orm import Session
 
@@ -60,10 +59,10 @@ class ReviewItem:
     person_id: int
     person_name: str
     field_name: str
-    current_value: Optional[str]
+    current_value: str | None
     proposed_value: str
     source: str
-    confidence_score: Optional[int]
+    confidence_score: int | None
     created_at: datetime
 
     @property
@@ -82,7 +81,7 @@ class ReviewSummary:
     data_conflicts: int
     by_field: dict[str, int]
     oldest_item_age_days: float
-    avg_confidence_score: Optional[float]
+    avg_confidence_score: float | None
 
 
 class ReviewQueue:
@@ -245,7 +244,7 @@ class ReviewQueue:
 
         age_days = 0.0
         if oldest_date:
-            age_days = (datetime.now(timezone.utc) - oldest_date).total_seconds() / 86400
+            age_days = (datetime.now(UTC) - oldest_date).total_seconds() / 86400
 
         # Average confidence score
         avg_confidence = (
@@ -271,7 +270,7 @@ class ReviewQueue:
         db_session: Session,
         update_id: int,
         reviewer: str = "user",
-        notes: Optional[str] = None,
+        notes: str | None = None,
     ) -> bool:
         """
         Approve a staged update and apply changes to the Person record.
@@ -310,7 +309,7 @@ class ReviewQueue:
             )
 
         # Update the staged update record
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         update.status = UpdateStatusEnum.APPROVED
         update.reviewed_by = reviewer
         update.reviewer_notes = notes
@@ -324,7 +323,7 @@ class ReviewQueue:
         db_session: Session,
         update_id: int,
         reviewer: str = "user",
-        notes: Optional[str] = None,
+        notes: str | None = None,
     ) -> bool:
         """
         Reject a staged update without applying changes.
@@ -352,7 +351,7 @@ class ReviewQueue:
         update.status = UpdateStatusEnum.REJECTED
         update.reviewed_by = reviewer
         update.reviewer_notes = notes
-        update.reviewed_at = datetime.now(timezone.utc)
+        update.reviewed_at = datetime.now(UTC)
 
         logger.info(f"Rejected staged update {update_id} for person {update.people_id}")
         return True
@@ -363,7 +362,7 @@ class ReviewQueue:
         conflict_id: int,
         accept_new: bool,
         reviewer: str = "user",
-        notes: Optional[str] = None,
+        notes: str | None = None,
     ) -> bool:
         """
         Resolve a data conflict by accepting or rejecting the new value.
@@ -403,7 +402,7 @@ class ReviewQueue:
         conflict.status = ConflictStatusEnum.RESOLVED if accept_new else ConflictStatusEnum.REJECTED
         conflict.resolved_by = reviewer
         conflict.resolution_notes = notes
-        conflict.resolved_at = datetime.now(timezone.utc)
+        conflict.resolved_at = datetime.now(UTC)
 
         return True
 
@@ -424,7 +423,7 @@ class ReviewQueue:
         """
         from sqlalchemy import func
 
-        cutoff = datetime.now(timezone.utc)
+        cutoff = datetime.now(UTC)
         cutoff = cutoff.replace(day=cutoff.day - max_age_days) if cutoff.day > max_age_days else cutoff
 
         # Expire old staged updates
@@ -519,9 +518,9 @@ class ReviewQueue:
         fact_id: int,
         reviewer: str = "user",  # noqa: ARG004 Reserved for audit logging
         apply_to_tree: bool = False,
-        tree_id: Optional[str] = None,
-        session_manager: Optional[object] = None,
-    ) -> tuple[bool, Optional[str]]:
+        tree_id: str | None = None,
+        session_manager: object | None = None,
+    ) -> tuple[bool, str | None]:
         """
         Approve a suggested fact and optionally apply to Ancestry tree.
 
@@ -548,7 +547,7 @@ class ReviewQueue:
 
         # Update status to APPROVED
         fact.status = FactStatusEnum.APPROVED
-        fact.updated_at = datetime.now(timezone.utc)
+        fact.updated_at = datetime.now(UTC)
 
         logger.info(f"Approved suggested fact {fact_id} for person {fact.people_id}")
 
@@ -575,8 +574,8 @@ class ReviewQueue:
         db_session: Session,
         fact_id: int,
         reviewer: str = "user",  # noqa: ARG004 Reserved for audit logging
-        reason: Optional[str] = None,
-    ) -> tuple[bool, Optional[str]]:
+        reason: str | None = None,
+    ) -> tuple[bool, str | None]:
         """
         Reject a suggested fact without applying.
 
@@ -600,7 +599,7 @@ class ReviewQueue:
             return False, f"SuggestedFact {fact_id} is not pending (status: {fact.status.value})"
 
         fact.status = FactStatusEnum.REJECTED
-        fact.updated_at = datetime.now(timezone.utc)
+        fact.updated_at = datetime.now(UTC)
 
         logger.info(f"Rejected suggested fact {fact_id} for person {fact.people_id}: {reason or 'no reason'}")
         return True, None
@@ -664,7 +663,7 @@ def _test_review_item_display_diff() -> None:
         proposed_value="1852",
         source="conversation",
         confidence_score=85,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     diff = item.display_diff
     assert "1850" in diff, "Should show current value"
@@ -683,7 +682,7 @@ def _test_review_item_display_diff_empty() -> None:
         proposed_value="1920",
         source="conversation",
         confidence_score=90,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     diff = item.display_diff
     assert "(empty)" in diff, "Should show (empty) for None value"
@@ -723,7 +722,7 @@ def _test_display_item_format() -> None:
         proposed_value="1852",
         source="conversation",
         confidence_score=85,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     display = queue.display_item(item)
     assert "[1]" in display, "Should show item ID"
@@ -745,7 +744,7 @@ def _test_display_item_conflict() -> None:
         proposed_value="1st Cousin Once Removed",
         source="gedcom_import",
         confidence_score=None,
-        created_at=datetime.now(timezone.utc),
+        created_at=datetime.now(UTC),
     )
     display = queue.display_item(item)
     assert "⚠️" in display, "Should show conflict icon"

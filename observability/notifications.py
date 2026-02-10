@@ -15,11 +15,11 @@ import logging
 import smtplib
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -113,7 +113,7 @@ class Notification:
     subject: str
     body: str
     priority: NotificationPriority = NotificationPriority.NORMAL
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -150,7 +150,8 @@ class NotificationChannel(ABC):
 class ConsoleNotificationChannel(NotificationChannel):
     """Console-based notification channel (logging)."""
 
-    def send(self, notification: Notification) -> bool:  # noqa: PLR6301
+    @staticmethod
+    def send(notification: Notification) -> bool:
         """Log notification to console."""
         if notification.priority == NotificationPriority.CRITICAL:
             logger.critical(f"🚨 NOTIFICATION: {notification.subject}")
@@ -162,7 +163,8 @@ class ConsoleNotificationChannel(NotificationChannel):
             logger.info(f"📬 NOTIFICATION: {notification.subject}")
         return True
 
-    def is_available(self) -> bool:  # noqa: PLR6301
+    @staticmethod
+    def is_available() -> bool:
         """Console is always available."""
         return True
 
@@ -274,7 +276,7 @@ class NotificationManager:
     priority and configuration.
     """
 
-    def __init__(self, config: Optional[NotificationConfig] = None) -> None:
+    def __init__(self, config: NotificationConfig | None = None) -> None:
         """Initialize with configuration."""
         self.config = config or NotificationConfig.from_environment()
         self._channels: dict[NotificationChannelType, NotificationChannel] = {}
@@ -290,7 +292,7 @@ class NotificationManager:
         if NotificationChannelType.SMS in self.config.enabled_channels:
             self._channels[NotificationChannelType.SMS] = SmsNotificationChannel(self.config)
 
-    def notify(self, notification: Notification, channels: Optional[list[NotificationChannelType]] = None) -> int:
+    def notify(self, notification: Notification, channels: list[NotificationChannelType] | None = None) -> int:
         """
         Send notification through specified channels.
 
@@ -316,7 +318,7 @@ class NotificationManager:
 
         return successes
 
-    def notify_critical_alert(self, alert_type: str, message: str, details: Optional[dict[str, Any]] = None) -> int:
+    def notify_critical_alert(self, alert_type: str, message: str, details: dict[str, Any] | None = None) -> int:
         """
         Send a critical alert notification through all channels.
 
@@ -353,7 +355,7 @@ def generate_daily_digest(session: Session) -> DigestSummary:
     Returns:
         DigestSummary with counts and categories
     """
-    window_end = datetime.now(timezone.utc)
+    window_end = datetime.now(UTC)
     window_start = window_end - timedelta(hours=24)
 
     summary = DigestSummary(
@@ -446,7 +448,7 @@ def format_digest_notification(summary: DigestSummary) -> Notification:
     )
 
 
-def send_daily_digest(session: Session, manager: Optional[NotificationManager] = None) -> bool:
+def send_daily_digest(session: Session, manager: NotificationManager | None = None) -> bool:
     """
     Generate and send the daily digest.
 
@@ -477,7 +479,7 @@ def send_daily_digest(session: Session, manager: Optional[NotificationManager] =
 class _NotificationManagerSingleton:
     """Thread-safe singleton holder for NotificationManager."""
 
-    _instance: Optional[NotificationManager] = None
+    _instance: NotificationManager | None = None
 
     @classmethod
     def get(cls) -> NotificationManager:
@@ -648,7 +650,7 @@ def module_tests() -> bool:
 
     # Test: DigestSummary dataclass
     def test_digest_summary() -> None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         summary = DigestSummary(
             date_range_start=now - timedelta(hours=24),
             date_range_end=now,
@@ -672,7 +674,7 @@ def module_tests() -> bool:
 
     # Test: format_digest_notification
     def test_format_digest_notification() -> None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         summary = DigestSummary(
             date_range_start=now - timedelta(hours=24),
             date_range_end=now,
@@ -698,7 +700,7 @@ def module_tests() -> bool:
 
     # Test: High priority digest when threshold exceeded
     def test_digest_high_priority() -> None:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         summary = DigestSummary(
             date_range_start=now - timedelta(hours=24),
             date_range_end=now,

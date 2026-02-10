@@ -2,7 +2,7 @@ import logging
 import time
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from config import config_schema
 from genealogy.gedcom.gedcom_cache import load_gedcom_with_aggressive_caching
@@ -21,9 +21,9 @@ class ResearchService:
     and relationship pathfinding.
     """
 
-    def __init__(self, gedcom_path: Optional[str] = None):
-        self.gedcom_data: Optional[GedcomData] = None
-        self._cached_root_id: Optional[str] = None
+    def __init__(self, gedcom_path: str | None = None):
+        self.gedcom_data: GedcomData | None = None
+        self._cached_root_id: str | None = None
         if gedcom_path:
             self.load_gedcom(gedcom_path)
 
@@ -41,7 +41,7 @@ class ResearchService:
         else:
             logger.error(f"GEDCOM file not found at {path}")
 
-    def _resolve_root_id(self) -> Optional[str]:
+    def _resolve_root_id(self) -> str | None:
         """Resolve 'ROOT' to the user's GEDCOM ID based on configured user name."""
         if self._cached_root_id:
             return self._cached_root_id
@@ -130,7 +130,7 @@ class ResearchService:
 
         return sorted(scored_matches, key=lambda x: x["total_score"], reverse=True)
 
-    def get_relationship_path(self, start_id: str, end_id: str) -> Optional[list[dict[str, Any]]]:
+    def get_relationship_path(self, start_id: str, end_id: str) -> list[dict[str, Any]] | None:
         """
         Calculate the relationship path between two individuals.
         Handles 'ROOT' as start_id by resolving it to the user's GEDCOM ID.
@@ -179,7 +179,7 @@ class ResearchService:
         date_flex: dict[str, Any],
         year_range: int,
         score_cache: dict[CacheKey, MatchScoreResult],
-    ) -> Optional[dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         """Process a single individual for filtering and scoring."""
         try:
             extracted_data = ResearchService._extract_individual_data(indi_data)
@@ -279,7 +279,7 @@ class ResearchService:
     def _matches_year_criterion(
         criterion_name: str,
         filter_criteria: dict[str, Any],
-        candidate_value: Optional[int],
+        candidate_value: int | None,
         year_range: int,
     ) -> bool:
         """Check if a candidate year matches a year criterion within range."""
@@ -292,7 +292,7 @@ class ResearchService:
         candidate_data: dict[str, Any],
         scoring_weights: Mapping[str, int | float],
         date_flex: dict[str, Any],
-        cache: Optional[dict[CacheKey, MatchScoreResult]] = None,
+        cache: dict[CacheKey, MatchScoreResult] | None = None,
     ) -> MatchScoreResult:
         """Calculate match score with caching for performance."""
         if cache is None:
@@ -348,7 +348,83 @@ from testing.test_utilities import create_standard_test_runner
 
 def _test_module_integrity() -> bool:
     "Test that module can be imported and definitions are valid."
-    return True
+    from testing.test_framework import TestSuite
+
+    suite = TestSuite("Research Service", "genealogy/research_service.py")
+    suite.start_suite()
+
+    def test_research_service_instantiation_no_args():
+        svc = ResearchService()
+        assert svc.gedcom_data is None
+        assert svc._cached_root_id is None
+        return True
+
+    suite.run_test("ResearchService instantiates without arguments", test_research_service_instantiation_no_args)
+
+    def test_research_service_instantiation_with_bad_path():
+        svc = ResearchService(gedcom_path="/nonexistent/path/file.ged")
+        assert svc.gedcom_data is None
+        return True
+
+    suite.run_test("ResearchService handles nonexistent GEDCOM path gracefully", test_research_service_instantiation_with_bad_path)
+
+    def test_research_service_methods_exist():
+        assert hasattr(ResearchService, 'load_gedcom')
+        assert hasattr(ResearchService, 'search_people')
+        assert hasattr(ResearchService, 'get_relationship_path')
+        assert hasattr(ResearchService, '_resolve_root_id')
+        assert hasattr(ResearchService, '_process_individual')
+        assert hasattr(ResearchService, '_extract_individual_data')
+        assert hasattr(ResearchService, '_evaluate_filter_criteria')
+        assert hasattr(ResearchService, '_matches_criterion')
+        assert hasattr(ResearchService, '_matches_year_criterion')
+        assert callable(ResearchService.load_gedcom)
+        assert callable(ResearchService.search_people)
+        assert callable(ResearchService.get_relationship_path)
+        return True
+
+    suite.run_test("ResearchService methods exist and are callable", test_research_service_methods_exist)
+
+    def test_search_people_returns_empty_without_gedcom():
+        svc = ResearchService()
+        result = svc.search_people(
+            filter_criteria={"first_name": "John"},
+            scoring_criteria={"first_name": "John"},
+            scoring_weights={"first_name": 1.0},
+            date_flex={"year_match_range": 10},
+        )
+        assert result == []
+        return True
+
+    suite.run_test("search_people returns [] without loaded GEDCOM", test_search_people_returns_empty_without_gedcom)
+
+    def test_get_relationship_path_returns_none_without_gedcom():
+        svc = ResearchService()
+        result = svc.get_relationship_path("I1", "I2")
+        assert result is None
+        return True
+
+    suite.run_test("get_relationship_path returns None without loaded GEDCOM", test_get_relationship_path_returns_none_without_gedcom)
+
+    def test_matches_criterion_static():
+        assert ResearchService._matches_criterion("first_name", {"first_name": "john"}, "john doe") is True
+        assert ResearchService._matches_criterion("first_name", {"first_name": "john"}, "jane doe") is False
+        assert ResearchService._matches_criterion("first_name", {}, "john") is False
+        assert ResearchService._matches_criterion("first_name", {"first_name": "john"}, None) is False
+        return True
+
+    suite.run_test("_matches_criterion static method works correctly", test_matches_criterion_static)
+
+    def test_matches_year_criterion_static():
+        assert ResearchService._matches_year_criterion("birth_year", {"birth_year": 1900}, 1905, 10) is True
+        assert ResearchService._matches_year_criterion("birth_year", {"birth_year": 1900}, 1920, 10) is False
+        assert ResearchService._matches_year_criterion("birth_year", {"birth_year": 1900}, None, 10) is False
+        assert ResearchService._matches_year_criterion("birth_year", {}, 1900, 10) is False
+        return True
+
+    suite.run_test("_matches_year_criterion static method works correctly", test_matches_year_criterion_static)
+
+    return suite.finish_suite()
 
 
 run_comprehensive_tests = create_standard_test_runner(_test_module_integrity)

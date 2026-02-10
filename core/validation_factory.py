@@ -31,8 +31,9 @@ Usage:
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar
 
 # === CORE INFRASTRUCTURE ===
 # Add project root to path for direct script execution
@@ -139,7 +140,7 @@ def create_type_validator(
 
 
 def create_range_validator(
-    field_ranges: dict[str, tuple[Optional[float], Optional[float]]],
+    field_ranges: dict[str, tuple[float | None, float | None]],
     error_prefix: str = "Range validation",
 ) -> Callable[[dict[str, Any]], tuple[bool, str]]:
     """
@@ -185,7 +186,7 @@ def create_range_validator(
 
 
 def validate_session_manager(
-    session_manager: Optional[SessionManager],
+    session_manager: SessionManager | None,
     context: str = "Operation",
     require_driver: bool = False,
     require_db: bool = False,
@@ -234,7 +235,7 @@ def validate_session_manager(
 
 
 def validate_driver_session(
-    driver: Optional[WebDriver],
+    driver: WebDriver | None,
     context: str = "Operation",
     check_responsive: bool = True,
 ) -> bool:
@@ -268,7 +269,7 @@ def validate_driver_session(
 
 
 def validate_api_prerequisites(
-    session_manager: Optional[SessionManager],
+    session_manager: SessionManager | None,
     context: str = "API request",
     require_config: bool = True,
 ) -> bool:

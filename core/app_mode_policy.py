@@ -10,17 +10,16 @@ The goal is to keep user-facing configuration simple (APP_MODE), while still
 allowing optional TEST_* overrides when present.
 """
 
-from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any, Optional
+from typing import Any
 
 from config import config_schema
 
 
-def _normalize_identifier(value: Optional[str]) -> str:
+def _normalize_identifier(value: str | None) -> str:
     if not value:
         return ""
     return "".join(ch for ch in str(value).strip().lower() if ch.isalnum())
@@ -51,7 +50,7 @@ def _iter_testing_allowed_identifiers() -> Iterable[str]:
 
 def _decide_testing_mode(
     *,
-    testing_profile_id: Optional[str],
+    testing_profile_id: str | None,
     person_profile_id: Any,
     normalized_username: str,
 ) -> OutboundPolicyDecision:
@@ -74,7 +73,7 @@ def _decide_testing_mode(
 
 def _decide_production_mode(
     *,
-    testing_profile_id: Optional[str],
+    testing_profile_id: str | None,
     person_profile_id: Any,
 ) -> OutboundPolicyDecision:
     allowed = True
@@ -88,7 +87,7 @@ def _decide_production_mode(
 def should_allow_outbound_to_person(
     person: Any,
     *,
-    app_mode: Optional[str] = None,
+    app_mode: str | None = None,
 ) -> OutboundPolicyDecision:
     """Return whether outbound actions should proceed for this person.
 

@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Repository guard that fails if any `type: ignore` directives are present."""
 
-from __future__ import annotations
 
 import os
 import sys

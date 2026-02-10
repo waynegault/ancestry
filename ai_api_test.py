@@ -6,7 +6,6 @@ validates the configured endpoint, and attempts a simple completion request.
 Currently supports Moonshot, DeepSeek, Google Gemini, Local LLM, Inception Mercury, and Grok (xAI).
 """
 
-from __future__ import annotations
 
 import argparse
 import io
@@ -16,13 +15,13 @@ import subprocess
 import sys
 import textwrap
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from contextlib import contextmanager, redirect_stdout
 from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import SimpleNamespace
-from typing import Any, Callable, cast
+from typing import Any, cast
 
 from testing.test_framework import TestSuite, create_standard_test_runner
 

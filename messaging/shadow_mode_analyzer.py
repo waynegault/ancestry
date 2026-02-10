@@ -17,9 +17,9 @@ import json
 import logging
 import sys
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
 
 from testing.test_framework import TestSuite
 from testing.test_utilities import create_standard_test_runner
@@ -45,10 +45,10 @@ class LegacyDecision:
 
     action_name: str
     should_send: bool
-    block_reason: Optional[str] = None
-    person_id: Optional[int] = None
-    trigger_type: Optional[str] = None
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    block_reason: str | None = None
+    person_id: int | None = None
+    trigger_type: str | None = None
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -64,12 +64,12 @@ class ShadowComparison:
     person_id: int
     action_name: str
     legacy_should_send: bool
-    legacy_block_reason: Optional[str]
+    legacy_block_reason: str | None
     orchestrator_should_send: bool
-    orchestrator_block_reason: Optional[str]
+    orchestrator_block_reason: str | None
     is_match: bool
-    discrepancy_type: Optional[str] = None
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    discrepancy_type: str | None = None
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
@@ -93,7 +93,7 @@ class ShadowModeAnalyzer:
     3. Decisions are compared and discrepancies logged
     """
 
-    def __init__(self, session_manager: Optional[SessionManager] = None) -> None:
+    def __init__(self, session_manager: SessionManager | None = None) -> None:
         """Initialize analyzer."""
         self._session_manager = session_manager
         self._logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")

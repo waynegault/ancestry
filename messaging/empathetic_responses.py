@@ -23,9 +23,9 @@ review queue with HUMAN_REVIEW status for mandatory human editing.
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ class EscalationDraft:
     draft_text: str
     guidance_notes: str
     requires_review: bool = True
-    generated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    generated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -364,7 +364,7 @@ CATEGORY_KEYWORDS: dict[EscalationCategory, list[str]] = {
 # === FUNCTIONS ===
 
 
-def detect_escalation_category(message_text: str) -> Optional[EscalationCategory]:
+def detect_escalation_category(message_text: str) -> EscalationCategory | None:
     """
     Detect the escalation category from message content.
 
@@ -387,8 +387,8 @@ def detect_escalation_category(message_text: str) -> Optional[EscalationCategory
 
 
 def get_template_for_category(
-    category: EscalationCategory, template_id: Optional[str] = None
-) -> Optional[EmpatheticTemplate]:
+    category: EscalationCategory, template_id: str | None = None
+) -> EmpatheticTemplate | None:
     """
     Get a template for the given escalation category.
 
@@ -412,7 +412,7 @@ def get_template_for_category(
     return templates[0]
 
 
-def format_template(template: EmpatheticTemplate, variables: Optional[dict[str, str]] = None) -> str:
+def format_template(template: EmpatheticTemplate, variables: dict[str, str] | None = None) -> str:
     """
     Format a template with personalization variables.
 
@@ -434,10 +434,10 @@ def format_template(template: EmpatheticTemplate, variables: Optional[dict[str, 
 
 def generate_empathetic_draft(
     category: EscalationCategory,
-    match_name: Optional[str] = None,
-    context: Optional[dict[str, Any]] = None,
-    template_id: Optional[str] = None,
-) -> Optional[EscalationDraft]:
+    match_name: str | None = None,
+    context: dict[str, Any] | None = None,
+    template_id: str | None = None,
+) -> EscalationDraft | None:
     """
     Generate an empathetic draft response for human review.
 
@@ -495,7 +495,7 @@ def generate_empathetic_draft(
 
 def map_safety_category_to_escalation(
     safety_category_value: str,
-) -> Optional[EscalationCategory]:
+) -> EscalationCategory | None:
     """
     Map a CriticalAlertCategory value to an EscalationCategory.
 

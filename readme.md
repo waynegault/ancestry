@@ -46,7 +46,7 @@ The system provides a suite of actions to automate various aspects of genealogic
 This platform automates complex genealogical research workflows on Ancestry.com with enterprise-grade architecture:
 
 - **DNA Match Collection** - Automated gathering with checkpoint resume, ethnicity comparison, relationship analysis
-- **AI-Powered Analysis** - Multi-provider AI integration (Google Gemini, DeepSeek, Local LLM) with quality gates
+- **AI-Powered Analysis** - Multi-provider AI integration (Gemini, DeepSeek, Local LLM, Moonshot, Grok, Inception) with quality gates
 - **Intelligent Messaging** - Context-aware automated responses with personalization
 - **Task Generation** - Convert productive conversations into actionable research tasks
 - **Family Tree Search** - GEDCOM parsing and API-based person search with unified scoring
@@ -83,7 +83,7 @@ This platform automates complex genealogical research workflows on Ancestry.com 
 - **Enterprise Design**: SQLAlchemy ORM, Selenium WebDriver, connection pooling, circuit breakers
 - **Zero-Tolerance Rate Limiting**: Thread-safe token bucket algorithm (0.3 RPS), validated across 800+ pages
 - **Production Quality**: 0 linting errors (Ruff), 0 type errors (Pyright), 0 type: ignore directives, 100% test pass rate
-- **Comprehensive Testing**: 191 standardized test modules, 1333 tests, 100% quality scores—all validate real behavior
+- **Comprehensive Testing**: 200 standardized test modules, 408 tests, 100% quality scores—all validate real behavior
 - **Smart Caching**: Test runner skips unchanged modules for rapid feedback loops
 - **Health Monitoring**: Integrated system health tracking with auto-recovery for stale sessions
 - **CI/CD Integration**: Automated testing, linting, and quality gates via GitHub Actions
@@ -732,7 +732,10 @@ python main.py
 
 #### Multi-Provider Architecture (`ai/ai_interface.py`)
 
-Unified interface with automatic failover across multiple AI providers.
+Unified interface with automatic failover across multiple AI providers. OpenAI-compatible
+providers (DeepSeek, Moonshot, Local LLM) share a common `OpenAICompatibleProvider` base
+class (`ai/providers/base.py`) using template method pattern, reducing per-provider code to
+thin configuration subclasses.
 
 **Supported Providers**:
 
@@ -804,13 +807,13 @@ Comprehensive telemetry system tracks AI performance.
 
 ```bash
 # View statistics
-python prompt_telemetry.py --stats
+python -m ai.prompt_telemetry --stats
 
 # Generate new baseline (after prompt improvements)
-python prompt_telemetry.py --baseline
+python -m ai.prompt_telemetry --baseline
 
 # Check for quality regression
-python quality_regression_gate.py
+python -m ai.quality_regression_gate
 # Exit 1 if median score drops >5 points from baseline
 ```
 
@@ -819,7 +822,7 @@ Prevents deployment if AI quality degrades—integrate into CI/CD pipeline.
 
 ```bash
 # In CI/CD pipeline
-python quality_regression_gate.py || exit 1
+python -m ai.quality_regression_gate || exit 1
 ```
 
 #### Local LLM Setup (LM Studio)
@@ -1038,7 +1041,7 @@ print(f"Open conflicts: {summary['total_open']}, by field: {summary['conflicts_b
 
 #### Test Framework (`testing/test_framework.py`)
 
-Standardized testing pattern used across all 188 modules.
+Standardized testing pattern used across all 200 modules.
 
 **Standard Pattern**:
 
@@ -1356,7 +1359,7 @@ python scripts/deploy_dashboards.py --test
 #### Running Tests
 
 ```bash
-# Run all 188 test modules (sequential)
+# Run all 200 test modules (sequential)
 python run_all_tests.py
 
 # Parallel execution for speed
@@ -1377,7 +1380,7 @@ SKIP_LIVE_API_TESTS=true python run_all_tests.py
 
 **Expected Results**:
 
-- All 188 modules should pass with 100/100 quality scores
+- All 200 modules should pass with 100/100 quality scores
 - 1314+ tests passing at 100% success rate
 - Zero complexity warnings, zero linting errors, zero type errors
 
@@ -1660,7 +1663,7 @@ pyright
 **Requirements**:
 
 - Type hints required for all new functions
-- Use `Optional[Type]` not `Type | None` for Python 3.9 compatibility
+- Use modern PEP 604 syntax: `X | None` instead of `Optional[X]`
 - Nullable types must be explicit
 
 #### Logging Discipline
@@ -1691,16 +1694,16 @@ Get-Content Logs\app.log -Wait | Select-String "429|rate|worker"
 
 ```bash
 # Check telemetry statistics
-python prompt_telemetry.py --stats
+python -m ai.prompt_telemetry --stats
 
 # Review recent AI responses (last 20)
 Get-Content Logs\prompt_experiments.jsonl -Tail 20
 
 # Test specific prompt in isolation
-python -c "from ai_interface import call_ai; print(call_ai('intent_classification', {'message': 'Test message'}))"
+python -c "from ai.ai_interface import call_ai; print(call_ai('intent_classification', {'message': 'Test message'}))"
 
 # Regenerate baseline after prompt improvements
-python prompt_telemetry.py --baseline
+python -m ai.prompt_telemetry --baseline
 ```
 
 #### Database Issues
@@ -1799,7 +1802,7 @@ session.expire_all()  # Force DB refresh
 **Diagnosis**:
 
 ```bash
-python prompt_telemetry.py --stats  # Check median scores
+python -m ai.prompt_telemetry --stats  # Check median scores
 Get-Content Logs\prompt_experiments.jsonl -Tail 20  # Review recent extractions
 ```
 
@@ -1807,7 +1810,7 @@ Get-Content Logs\prompt_experiments.jsonl -Tail 20  # Review recent extractions
 
 1. Review/update prompts in `ai_prompts.json`
 2. Add variants for A/B testing
-3. Run `python quality_regression_gate.py` before deployment
+3. Run `python -m ai.quality_regression_gate` before deployment
 
 #### Session Expiry During Long Operations
 
@@ -1963,8 +1966,28 @@ Select-String -Path Logs\app.log -Pattern "correlation_id=" |
 5. **Test Provider**: Run `python ai_api_test.py --provider gemini` to verify connectivity.
 6. **Fallback**: Set `AI_PROVIDER_FALLBACKS` in `.env` for redundancy.
 
-## Recent Changes (November 2025)
+## Recent Changes (January 2026)
 
+- ✅ **Production Code Quality Sweep** (Jan 2026) - Comprehensive codebase polish
+  - AI provider refactoring: `OpenAICompatibleProvider` base class in `ai/providers/base.py` — DeepSeek, Moonshot, Local LLM now thin subclasses (~170 lines saved)
+  - Grafana scripts consolidated: `performance/grafana_checker.py` now handles health checks, password resets, and datasource cleanup (3 standalone scripts deleted)
+  - API constants deduplication: 13 duplicate path constants in `api_utils.py` replaced with imports from `api_constants.py`
+  - Vital event extraction dedup: Identical `_extract_birth_event`/`_extract_death_event` merged into `_extract_vital_event`
+  - Quality baseline path unified: `quality_regression_gate.py` now shares baseline path with `prompt_telemetry.py`
+  - `_ensure_venv()` consolidated from 5 files into `core/venv_bootstrap.py`
+  - Dead code removal: commented-out functions, dead constants, duplicate imports, unreachable code
+  - All 38 fake/smoke tests replaced with real behavioral tests across 18 files
+  - 20 PLR6301 `noqa` suppressions eliminated by converting methods to `@staticmethod`
+  - Module-level `unittest.mock` / `tempfile` imports moved inside test functions (4 core files)
+  - Unused `Optional` and `Union` imports removed project-wide
+  - Duplicate utility consolidation: `_get_gedcom_utils_module`, lazy-loaders, field accessors, observability validators, metrics guards
+  - New helpers: `@_requires_metrics` decorator, `_get_field()` accessor, `_ensure_component()` pattern
+  - `ai/prompts.py` converted to thin re-export shim (imports redirect to `ai/ai_prompt_utils.py`)
+  - 12 new substantive tests added to `api/tree_update.py` (payload construction, vital fact routing)
+  - Circular mock tests in `test_integration_workflow.py` rewritten to exercise real logic
+  - Conditional `winreg` import in `browser/diagnose_chrome.py` (Windows-only)
+  - Missing `super().__init__()` added in `caching/cache_manager.py`
+  - All ruff and Pylance issues resolved without suppression
 - ✅ **Safety & Engagement Sprint** (Dec 2025) - Human-in-the-loop review queue, A/B testing framework, opt-out detection
   - `core/approval_queue.py` - Message draft approval with configurable auto-approve thresholds
   - `ai/ab_testing.py` - Experiment variants with statistical analysis and winner selection
@@ -1976,7 +1999,7 @@ Select-String -Path Logs\app.log -Pattern "correlation_id=" |
 - ✅ **Correlation ID System** (Nov 27) - Full request tracking with `core/correlation.py`
 - ✅ **Test Utility Framework** (Nov 26) - Decorators and fixture factories in `test_utilities.py`
 - ✅ **Developer Experience** (Nov 26) - `requirements-dev.txt`, `SECURITY.md`, `.editorconfig`, fast test runner
-- ✅ **Test Standardization** (Nov 25) - All 188 modules use consistent `TestSuite` pattern
+- ✅ **Test Standardization** (Nov 25) - All 200 modules use consistent `TestSuite` pattern
 - ✅ **API Consolidation** (Oct 29) - Removed action11.py, unified into api_search_core.py
 - ✅ **Rate Limit Hardening** (Oct 28) - Thread-safe RateLimiter with zero 429 errors
 - ✅ **Quality Gates** (Oct 27) - Added quality_regression_gate.py for CI/CD integration
@@ -2104,8 +2127,7 @@ All reserved functions are fully tested and maintain 100% code quality scores.
 ### AI Providers
 
 - **google-generativeai 0.8.4** - Google Gemini AI provider
-- **openai 1.0.0+** - OpenAI-compatible client (Local LLM, Grok fallback)
-- **requests** - HTTP client for DeepSeek, Moonshot, Inception
+- **openai 1.0.0+** - OpenAI-compatible client (DeepSeek, Moonshot, Local LLM, Grok via `OpenAICompatibleProvider` base class)
 
 ### Development Dependencies (requirements-dev.txt)
 
@@ -2118,34 +2140,46 @@ All reserved functions are fully tested and maintain 100% code quality scores.
 
 ```text
 ├── actions/              # Action modules (6-16)
-│   ├── action6_gather.py
-│   ├── action7_inbox.py
-│   ├── action8_messaging.py
-│   ├── action9_process_productive.py
-│   ├── action10.py
-│   ├── action16_unified_send.py  # Unified outbound messaging
-│   └── gather/          # Action 6 sub-modules
+│   ├── action6_gather.py         # DNA match gathering
+│   ├── action7_inbox.py          # Inbox processing
+│   ├── action8_messaging.py      # Automated messaging
+│   ├── action9_process_productive.py  # Task generation
+│   ├── action10.py               # Family tree search
+│   ├── action11_send_approved_drafts.py
+│   ├── action12_shared_matches.py
+│   ├── action13_triangulation.py  # DNA triangulation
+│   ├── action14_research_tools.py
+│   ├── action15_tree_updates.py
+│   ├── action16_unified_send.py   # Unified outbound messaging
+│   ├── action_review.py          # Match review
+│   └── gather/                   # Action 6 sub-modules
 │       ├── checkpoint.py
 │       ├── fetch.py
 │       ├── metrics.py
 │       ├── orchestrator.py
 │       └── persistence.py
 ├── ai/                  # AI integration
-│   ├── ai_interface.py
-│   ├── ai_prompts.json
-│   ├── prompt_telemetry.py
-│   ├── quality_regression_gate.py
-│   ├── ab_testing.py           # A/B testing framework
-│   └── providers/       # Provider adapters
-│       ├── base.py
-│       ├── gemini.py
-│       ├── deepseek.py
-│       └── local_llm.py
+│   ├── ai_interface.py           # Multi-provider abstraction
+│   ├── ai_prompts.json           # Versioned prompt library
+│   ├── ai_prompt_utils.py        # Prompt helpers
+│   ├── ab_testing.py             # A/B testing framework
+│   ├── context_builder.py        # AI context assembly
+│   ├── draft_moderator.py        # Draft quality moderation
+│   ├── prompt_telemetry.py       # Extraction telemetry & quality baseline
+│   ├── quality_regression_gate.py  # CI/CD quality gate
+│   ├── sentiment_adaptation.py   # Dynamic tone adaptation
+│   └── providers/                # Provider adapters
+│       ├── base.py               # OpenAICompatibleProvider base class
+│       ├── gemini.py             # Google Gemini
+│       ├── deepseek.py           # DeepSeek
+│       ├── local_llm.py          # LM Studio
+│       └── moonshot.py           # Moonshot/Kimi
 ├── api/                 # API utilities
-│   ├── api_constants.py
+│   ├── api_constants.py          # Shared endpoint constants
 │   ├── api_search_core.py
 │   ├── api_search_utils.py
-│   └── api_utils.py
+│   ├── api_utils.py
+│   └── tree_update.py
 ├── browser/             # Browser automation
 │   ├── chromedriver.py
 │   ├── css_selectors.py
@@ -2155,69 +2189,93 @@ All reserved functions are fully tested and maintain 100% code quality scores.
 │   ├── cache.py
 │   ├── cache_manager.py
 │   └── cache_retention.py
+├── cli/                 # CLI tools
+│   ├── facts_queue.py
+│   ├── maintenance.py
+│   ├── research_tools.py
+│   └── review_queue.py
 ├── config/              # Configuration
-│   ├── config_schema.py
-│   ├── config_manager.py
+│   ├── config_schema.py          # Type-safe dataclass definitions
+│   ├── config_manager.py         # .env loading and validation
 │   └── validator.py
 ├── core/                # Core infrastructure
-│   ├── session_manager.py      # Central orchestrator
+│   ├── session_manager.py        # Central orchestrator
 │   ├── browser_manager.py
 │   ├── api_manager.py
 │   ├── database_manager.py
-│   ├── error_handling.py       # Exception hierarchy
-│   ├── rate_limiter.py         # Token bucket algorithm
+│   ├── database.py               # SQLAlchemy ORM models
+│   ├── error_handling.py         # Exception hierarchy & retry decorators
+│   ├── rate_limiter.py           # Token bucket algorithm
 │   ├── circuit_breaker.py
-│   ├── correlation.py          # Request tracking
+│   ├── correlation.py            # Request tracking
 │   ├── logging_config.py
 │   ├── metrics_collector.py
-│   ├── approval_queue.py       # Human-in-the-loop review
-│   └── opt_out_detection.py    # Multi-layer opt-out safeguards
-├── genealogy/           # Genealogical utilities
-│   ├── gedcom_search_utils.py
-│   ├── gedcom_utils.py
-│   ├── relationship_utils.py
-│   └── universal_scoring.py
+│   ├── approval_queue.py         # Human-in-the-loop review
+│   ├── opt_out_detection.py      # Multi-layer opt-out safeguards
+│   ├── action_registry.py        # Action function registry
+│   ├── action_runner.py          # Action execution engine
+│   ├── app_mode_policy.py        # Application mode policies
+│   ├── cancellation.py           # Graceful cancellation tokens
+│   ├── dependency_injection.py   # DI container
+│   ├── feature_flags.py          # Feature flag system
+│   ├── health_check.py           # Health check endpoints
+│   ├── pii_redaction.py          # PII filtering
+│   ├── utils.py                  # Utility functions
+│   └── venv_bootstrap.py         # Shared venv initialization
+├── integrations/        # Third-party integrations
+│   └── ms_graph_utils.py         # Microsoft Graph API (To-Do)
 ├── messaging/           # Messaging system
+│   ├── inbound.py                # Inbound message orchestrator
 │   ├── message_personalization.py
-│   ├── person_eligibility.py    # Person eligibility checks
-│   ├── template_selector.py     # Template selection logic
-│   ├── send_orchestrator.py     # Unified message send pipeline
-│   ├── shadow_mode_analyzer.py  # Shadow mode decision comparison
-│   ├── send_metrics.py          # Prometheus metrics for send operations
-│   ├── send_audit.py            # Audit trail for send decisions
-│   └── templates/       # Message templates
-├── observability/       # Monitoring
-│   ├── prometheus_exporter.py
-│   └── grafana/         # Dashboard configs
+│   ├── person_eligibility.py
+│   ├── template_selector.py
+│   ├── send_orchestrator.py      # Unified message send pipeline
+│   ├── send_audit.py             # Audit trail for send decisions
+│   ├── send_metrics.py           # Prometheus metrics for sends
+│   ├── shadow_mode_analyzer.py   # Shadow mode decision comparison
+│   ├── safety.py                 # Safety checks & guardrails
+│   └── empathetic_responses.py   # Empathetic tone templates
+├── observability/       # Monitoring & analytics
+│   ├── metrics_registry.py       # Prometheus metrics registry
+│   ├── metrics_exporter.py       # Metrics export endpoint
+│   ├── analytics.py              # Usage analytics
+│   ├── conversation_analytics.py
+│   ├── alerts.py                 # Alert definitions
+│   └── apm.py                    # Application performance monitoring
+├── performance/         # Performance tooling
+│   ├── grafana_checker.py        # Grafana health, password reset, datasource cleanup
+│   ├── health_monitor.py
+│   ├── performance_monitor.py
+│   ├── performance_profiling.py
+│   └── connection_resilience.py
 ├── research/            # Research utilities
 │   ├── dna_ethnicity_utils.py
 │   ├── genealogical_task_templates.py
 │   └── universal_scoring.py
 ├── testing/             # Test infrastructure
-│   ├── test_framework.py
-│   ├── test_utilities.py
-│   ├── run_tests_fast.py
-│   ├── code_quality_checker.py
-│   └── test_integration_e2e.py  # End-to-end tests
+│   ├── test_framework.py         # TestSuite class & assertion utilities
+│   ├── test_utilities.py         # Centralized test helpers
+│   ├── run_tests_fast.py         # Fast parallel test runner
+│   └── code_quality_checker.py   # Code quality metrics
 ├── scripts/             # Operational scripts
-│   └── dry_run_validation.py    # Pre-deployment validation
+│   ├── dry_run_validation.py     # Pre-deployment validation
+│   ├── static_metrics_server.py  # Static Prometheus server
+│   └── deploy_dashboards.py      # Grafana dashboard deployment
+├── ui/                  # UI components
+│   ├── menu.py                   # Interactive menu system
+│   └── review_server.py          # Web-based review interface
 ├── docs/                # Documentation
-│   └── operator_manual.md       # Review queue operations
 ├── Cache/               # Runtime cache
 ├── Data/                # Database storage
 │   └── ancestry.db
 ├── Logs/                # Application logs
 │   ├── app.log
-│   ├── prompt_experiments.jsonl
-│   └── analytics.jsonl
-├── main.py              # Entry point
-├── database.py          # SQLAlchemy models
-├── utils.py             # Utility functions
+│   └── prompt_experiments.jsonl
+├── main.py              # Entry point with menu & exec_actn()
+├── run_all_tests.py     # Test orchestrator (--fast, --analyze-logs)
 ├── requirements.txt     # Production dependencies
-├── requirements-dev.txt # Development dependencies
-├── run_all_tests.py     # Test orchestrator
 ├── .env                 # Configuration (not in repo)
-├── .env.example         # Configuration template
+└── .env.example         # Configuration template
 └── README.md            # This file
 ```
 
