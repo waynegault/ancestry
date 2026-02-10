@@ -23,7 +23,11 @@ from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Any, cast
 
+from core.person_summary import PersonSummary
 from genealogy.tree_query_service import PersonSearchResult, TreeQueryService
+
+# Backward-compatible alias — CandidatePerson is now PersonSummary
+CandidatePerson = PersonSummary
 
 logger = logging.getLogger(__name__)
 
@@ -66,28 +70,8 @@ class EvidenceBlock:
         }
 
 
-@dataclass(slots=True)
-class CandidatePerson:
-    person_id: str | None
-    name: str
-    birth_year: int | None = None
-    birth_place: str | None = None
-    death_year: int | None = None
-    death_place: str | None = None
-    match_score: int | None = None
-    confidence: str | None = None
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "person_id": self.person_id,
-            "name": self.name,
-            "birth_year": self.birth_year,
-            "birth_place": self.birth_place,
-            "death_year": self.death_year,
-            "death_place": self.death_place,
-            "match_score": self.match_score,
-            "confidence": self.confidence,
-        }
+# CandidatePerson class replaced by PersonSummary (imported above).
+# The alias ``CandidatePerson = PersonSummary`` preserves all call sites.
 
 
 @dataclass(slots=True)

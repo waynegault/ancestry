@@ -52,9 +52,12 @@ if str(_project_root) not in sys.path:
 import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from core.registry_utils import auto_register_module
+
+if TYPE_CHECKING:
+    from core.person_summary import PersonSummary
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -89,6 +92,20 @@ class GedcomPerson:
     parents: list[str] = field(default_factory=list)
     children: list[str] = field(default_factory=list)
     spouses: list[str] = field(default_factory=list)
+
+    def to_person_summary(self) -> "PersonSummary":
+        """Convert to canonical PersonSummary."""
+        from core.person_summary import PersonSummary as PS
+
+        return PS(
+            person_id=self.person_id,
+            name=self.full_name,
+            birth_year=self.birth_year,
+            death_year=self.death_year,
+            birth_place=self.birth_place,
+            death_place=self.death_place,
+            source="gedcom",
+        )
 
 
 @dataclass

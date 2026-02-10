@@ -17,9 +17,12 @@ if str(_project_root) not in sys.path:
 # === STANDARD IMPORTS ===
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from testing.test_utilities import create_standard_test_runner
+
+if TYPE_CHECKING:
+    from core.person_summary import PersonSummary
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +96,28 @@ class PersonLookupResult:
             "notes": self.notes,
             "found": self.found,
         }
+
+    def to_person_summary(self) -> "PersonSummary":
+        """Convert to canonical PersonSummary."""
+        from core.person_summary import PersonSummary as PS
+
+        return PS(
+            person_id=self.person_id,
+            name=self.name,
+            given_name=self.first_name,
+            surname=self.last_name,
+            birth_year=self.birth_year,
+            birth_date=self.birth_date,
+            birth_place=self.birth_place,
+            death_year=self.death_year,
+            death_date=self.death_date,
+            death_place=self.death_place,
+            gender=self.gender,
+            relationship=self.relationship_path,
+            match_score=self.match_score,
+            confidence=self.confidence,
+            source=self.source,
+        )
 
     def _format_birth_info(self) -> str | None:
         """Format birth information."""

@@ -13,7 +13,10 @@ Sprint 1, Task 1: Core Intelligence & Retrieval
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from core.person_summary import PersonSummary
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +56,25 @@ class PersonSearchResult:
             "confidence": self.confidence,
             "alternatives": self.alternatives,
         }
+
+    def to_person_summary(self) -> "PersonSummary":
+        """Convert to canonical PersonSummary."""
+        from core.person_summary import PersonSummary as PS
+
+        return PS(
+            person_id=self.person_id,
+            name=self.name,
+            given_name=self.first_name,
+            surname=self.last_name,
+            birth_year=self.birth_year,
+            birth_place=self.birth_place,
+            death_year=self.death_year,
+            death_place=self.death_place,
+            gender=self.gender,
+            match_score=self.match_score,
+            confidence=self.confidence,
+            source="gedcom",
+        )
 
 
 @dataclass
@@ -164,6 +186,20 @@ class FamilyMember:
             "death_year": self.death_year,
             "birth_place": self.birth_place,
         }
+
+    def to_person_summary(self) -> "PersonSummary":
+        """Convert to canonical PersonSummary."""
+        from core.person_summary import PersonSummary as PS
+
+        return PS(
+            person_id=self.person_id,
+            name=self.name,
+            birth_year=self.birth_year,
+            death_year=self.death_year,
+            birth_place=self.birth_place,
+            relationship=self.relation,
+            source="gedcom",
+        )
 
 
 @dataclass

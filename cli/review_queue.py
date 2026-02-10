@@ -240,3 +240,243 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+
+def module_tests() -> bool:
+    """Embedded tests for review_queue CLI."""
+    from datetime import datetime
+    from io import StringIO
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock, patch
+
+    from testing.test_framework import TestSuite
+
+    suite = TestSuite("Review Queue CLI", "cli/review_queue.py")
+
+    # ── Argument parsing ─────────────────────────────────────────
+
+    def _test_main_no_args() -> bool:
+        """main() with no command prints help and returns 0."""
+        with patch("sys.argv", ["prog"]):
+            result = main()
+        return result == 0
+
+    suite.run_test("main() no args returns 0", _test_main_no_args)
+
+    def _test_parser_list_defaults() -> bool:
+        """'list' subcommand parses with defaults."""
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers(dest="command")
+        lp = subparsers.add_parser("list")
+        lp.add_argument("--limit", type=int, default=50)
+        lp.add_argument("--priority", choices=["normal", "high", "critical"])
+        args = parser.parse_args(["list"])
+        return args.command == "list" and args.limit == 50 and args.priority is None
+
+    suite.run_test("parser list defaults", _test_parser_list_defaults)
+
+    def _test_parser_list_with_options() -> bool:
+        """'list --limit 10 --priority high' parses correctly."""
+        parser = argparse.ArgumentParser()
+        subparsers = parser.add_subparsers(dest="command")
+        lp = subparsers.add_parser("list")
+        lp.add_argument("--limit", type=int, default=50)
+        lp.add_argument("--priority", choices=["normal", "high", "critical"])
+        args = parser.parse_args(["list", "--limit", "10", "--priority", "high"])
+        return args.limit == 10 and args.priority == "high"
+
+    suite.run_test("parser list with options", _test_parser_list_with_options)
+
+    # ── cmd_list ─────────────────────────────────────────────────
+
+    def _test_cmd_list_empty() -> bool:
+        """cmd_list returns 0 when no drafts."""
+        mock_session = MagicMock()
+        mock_service = MagicMock()
+        mock_service.get_pending_queue.return_value = []
+        args = SimpleNamespace(limit=50, priority=None)
+
+        with patch("cli.review_queue._get_db_session", return_value=mock_session), \
+             patch("cli.review_queue._get_queue_service", return_value=mock_service):
+            result = cmd_list(args)
+
+        return result == 0
+
+    suite.run_test("cmd_list empty queue", _test_cmd_list_empty)
+
+    def _test_cmd_list_with_drafts() -> bool:
+        """cmd_list returns 0 and prints drafts."""
+        mock_session = MagicMock()
+        mock_service = MagicMock()
+        draft = SimpleNamespace(
+            id=42,
+            person=SimpleNamespace(display_name="Jane Doe", username="jdoe"),
+            ai_confidence=85,
+            priority="HIGH",
+            created_at=datetime(2025, 1, 15, 10, 30),
+        )
+        mock_service.get_pending_queue.return_value = [draft]
+        args = SimpleNamespace(limit=50, priority=None)
+
+        with patch("cli.review_queue._get_db_session", return_value=mock_session), \
+             patch("cli.review_queue._get_queue_service", return_value=mock_service), \
+             patch("sys.stdout", new_callable=StringIO) as out:
+            result = cmd_list(args)
+
+        return result == 0 and "Jane Doe" in out.getvalue() and "42" in out.getvalue()
+
+    suite.run_test("cmd_list with drafts", _test_cmd_list_with_drafts)
+
+    def _test_cmd_list_priority_filter() -> bool:
+        """cmd_list filters by priority."""
+        mock_session = MagicMock()
+        mock_service = MagicMock()
+        d1 = SimpleNamespace(id=1, person=None, ai_confidence=80, priority="HIGH", created_at=None)
+        d2 = SimpleNamespace(id=2, person=None, ai_confidence=60, priority="NORMAL", created_at=None)
+        mock_service.get_pending_queue.return_value = [d1, d2]
+        args = SimpleNamespace(limit=50, priority="high")
+
+        with patch("cli.review_queue._get_db_session", return_value=mock_session), \
+             patch("cli.review_queue._get_queue_service", return_value=mock_service), \
+             patch("sys.stdout", new_callable=StringIO) as out:
+            result = cmd_list(args)
+
+        output = out.getvalue()
+        # Should show 1 draft (HIGH only), not the NORMAL one
+        return result == 0 and "1 Pending" in output
+
+    suite.run_test("cmd_list priority filter", _test_cmd_list_priority_filter)
+
+    # ── cmd_view ─────────────────────────────────────────────────
+
+    def _test_cmd_view_found() -> bool:
+        """cmd_view returns 0 when draft exists."""
+        mock_session = MagicMock()
+        mock_service = MagicMock()
+        draft = SimpleNamespace(
+            id=7,
+            person=SimpleNamespace(display_name="Bob", username="bob"),
+            created_at="2025-01-01",
+            ai_confidence=90,
+            priority="NORMAL",
+            status="PENDING",
+            content="Hello, I noticed we share DNA...",
+        )
+        mock_service.get_draft_by_id.return_value = draft
+        args = SimpleNamespace(id=7)
+
+        with patch("cli.review_queue._get_db_session", return_value=mock_session), \
+             patch("cli.review_queue._get_queue_service", return_value=mock_service), \
+             patch("sys.stdout", new_callable=StringIO) as out:
+            result = cmd_view(args)
+
+        return result == 0 and "Bob" in out.getvalue() and "share DNA" in out.getvalue()
+
+    suite.run_test("cmd_view found", _test_cmd_view_found)
+
+    def _test_cmd_view_not_found() -> bool:
+        """cmd_view returns 1 when draft missing."""
+        mock_session = MagicMock()
+        mock_service = MagicMock()
+        mock_service.get_draft_by_id.return_value = None
+        args = SimpleNamespace(id=999)
+
+        with patch("cli.review_queue._get_db_session", return_value=mock_session), \
+             patch("cli.review_queue._get_queue_service", return_value=mock_service):
+            result = cmd_view(args)
+
+        return result == 1
+
+    suite.run_test("cmd_view not found", _test_cmd_view_not_found)
+
+    # ── cmd_approve / cmd_reject ─────────────────────────────────
+
+    def _test_cmd_approve_success() -> bool:
+        """cmd_approve returns 0 on success."""
+        mock_session = MagicMock()
+        mock_service = MagicMock()
+        mock_service.approve_draft.return_value = True
+        args = SimpleNamespace(id=10)
+
+        with patch("cli.review_queue._get_db_session", return_value=mock_session), \
+             patch("cli.review_queue._get_queue_service", return_value=mock_service):
+            result = cmd_approve(args)
+
+        return result == 0
+
+    suite.run_test("cmd_approve success", _test_cmd_approve_success)
+
+    def _test_cmd_approve_failure() -> bool:
+        """cmd_approve returns 1 on failure."""
+        mock_session = MagicMock()
+        mock_service = MagicMock()
+        mock_service.approve_draft.return_value = False
+        args = SimpleNamespace(id=10)
+
+        with patch("cli.review_queue._get_db_session", return_value=mock_session), \
+             patch("cli.review_queue._get_queue_service", return_value=mock_service):
+            result = cmd_approve(args)
+
+        return result == 1
+
+    suite.run_test("cmd_approve failure", _test_cmd_approve_failure)
+
+    def _test_cmd_reject_success() -> bool:
+        """cmd_reject returns 0 on success."""
+        mock_session = MagicMock()
+        mock_service = MagicMock()
+        mock_service.reject_draft.return_value = True
+        args = SimpleNamespace(id=10, reason="Not relevant")
+
+        with patch("cli.review_queue._get_db_session", return_value=mock_session), \
+             patch("cli.review_queue._get_queue_service", return_value=mock_service):
+            result = cmd_reject(args)
+
+        return result == 0
+
+    suite.run_test("cmd_reject success", _test_cmd_reject_success)
+
+    # ── cmd_stats ────────────────────────────────────────────────
+
+    def _test_cmd_stats() -> bool:
+        """cmd_stats returns 0 and prints statistics."""
+        mock_session = MagicMock()
+        mock_service = MagicMock()
+        stats = SimpleNamespace(
+            pending_count=5,
+            auto_approved_count=12,
+            approved_today=3,
+            rejected_today=1,
+            expired_count=0,
+            total_approved=100,
+            total_rejected=20,
+            acceptance_rate=83.3,
+            by_priority={"HIGH": 2, "NORMAL": 3},
+        )
+        mock_service.get_queue_stats.return_value = stats
+        args = SimpleNamespace()
+
+        with patch("cli.review_queue._get_db_session", return_value=mock_session), \
+             patch("cli.review_queue._get_queue_service", return_value=mock_service), \
+             patch("sys.stdout", new_callable=StringIO) as out:
+            result = cmd_stats(args)
+
+        output = out.getvalue()
+        return result == 0 and "83.3" in output and "HIGH" in output
+
+    suite.run_test("cmd_stats display", _test_cmd_stats)
+
+    return suite.finish_suite()
+
+
+def run_comprehensive_tests() -> bool:
+    """Standard test runner entry point."""
+    from testing.test_framework import create_standard_test_runner
+
+    runner = create_standard_test_runner(module_tests)
+    return runner()
