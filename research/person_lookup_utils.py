@@ -99,9 +99,9 @@ class PersonLookupResult:
 
     def to_person_summary(self) -> "PersonSummary":
         """Convert to canonical PersonSummary."""
-        from core.person_summary import PersonSummary as PS
+        from core.person_summary import PersonSummary
 
-        return PS(
+        return PersonSummary(
             person_id=self.person_id,
             name=self.name,
             given_name=self.first_name,
@@ -341,6 +341,16 @@ def person_lookup_utils_module_tests() -> bool:
             expected_outcome="Correct confidence levels for different score ranges",
         )
 
+        # Test 7: PersonLookupResult.to_person_summary
+        suite.run_test(
+            "to_person_summary conversion",
+            _test_to_person_summary,
+            test_summary="Verify PersonLookupResult converts to canonical PersonSummary",
+            functions_tested="PersonLookupResult.to_person_summary()",
+            method_description="Convert lookup result to PersonSummary and verify field mapping",
+            expected_outcome="PersonSummary fields match PersonLookupResult fields",
+        )
+
     return suite.finish_suite()
 
 
@@ -545,6 +555,40 @@ def _test_confidence_scoring() -> bool:
     low_api = create_result_from_api({"name": "Test"}, match_score=100)
     assert low_api.confidence == "low"
 
+    return True
+
+
+def _test_to_person_summary() -> bool:
+    """Test PersonLookupResult.to_person_summary converts correctly."""
+    from core.person_summary import PersonSummary
+
+    result = PersonLookupResult(
+        person_id="I123",
+        name="Jane Smith",
+        first_name="Jane",
+        last_name="Smith",
+        birth_year=1900,
+        birth_place="Chicago, IL",
+        death_year=1980,
+        gender="F",
+        relationship_path="2nd cousin",
+        match_score=90,
+        confidence="high",
+        source="gedcom",
+        found=True,
+    )
+    ps = result.to_person_summary()
+    assert isinstance(ps, PersonSummary)
+    assert ps.person_id == "I123"
+    assert ps.name == "Jane Smith"
+    assert ps.given_name == "Jane"
+    assert ps.surname == "Smith"
+    assert ps.birth_year == 1900
+    assert ps.birth_place == "Chicago, IL"
+    assert ps.death_year == 1980
+    assert ps.gender == "F"
+    assert ps.relationship == "2nd cousin"
+    assert ps.source == "gedcom"
     return True
 
 

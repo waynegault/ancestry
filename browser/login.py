@@ -32,7 +32,7 @@ from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.wait import WebDriverWait
 
 # === LOCAL IMPORTS ===
-from browser.cookie_utils import _save_login_cookies
+from browser.cookie_utils import save_login_cookies
 from browser.css_selectors import (
     CONFIRMED_LOGGED_IN_SELECTOR,
     CONSENT_ACCEPT_BUTTON_SELECTOR,
@@ -237,7 +237,7 @@ def _verify_2fa_completion(session_manager: "SessionManager") -> bool:
     if final_status is True:
         logger.info("User completed 2FA successfully (login confirmed after page change).")
         # Save cookies after successful 2FA login
-        _save_login_cookies(session_manager)
+        save_login_cookies(session_manager)
         return True
     logger.error("2FA page disappeared, but final login status check failed or returned False.")
     return False
@@ -983,7 +983,7 @@ def _verify_login_no_2fa(driver: Any, session_manager: "SessionManager", signin_
     if login_check_result is True:
         print("\n✓ Login successful!")
         # Save cookies after successful login
-        _save_login_cookies(session_manager)
+        save_login_cookies(session_manager)
         # CRITICAL FIX: Sync browser cookies to API requests session
         session_manager.sync_cookies_to_requests()
         return "LOGIN_SUCCEEDED"

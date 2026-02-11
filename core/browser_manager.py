@@ -52,7 +52,7 @@ def _get_utils_module() -> ModuleType:
 
 
 def _load_login_cookies_if_available(session_like: Any) -> bool:
-    loader = getattr(_get_utils_module(), "_load_login_cookies", None)
+    loader = getattr(_get_utils_module(), "load_login_cookies_impl", None)
     if not callable(loader):
         return False
     return bool(loader(session_like))

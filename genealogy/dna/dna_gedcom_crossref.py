@@ -95,9 +95,9 @@ class GedcomPerson:
 
     def to_person_summary(self) -> "PersonSummary":
         """Convert to canonical PersonSummary."""
-        from core.person_summary import PersonSummary as PS
+        from core.person_summary import PersonSummary
 
-        return PS(
+        return PersonSummary(
             person_id=self.person_id,
             name=self.full_name,
             birth_year=self.birth_year,
@@ -645,6 +645,32 @@ class DNAGedcomCrossReferencer:
 
 
 # Test functions
+
+
+def _test_gedcom_person_to_person_summary() -> bool:
+    """Test GedcomPerson.to_person_summary converts correctly."""
+    from core.person_summary import PersonSummary
+
+    gp = GedcomPerson(
+        person_id="I042",
+        full_name="John Smith",
+        birth_year=1850,
+        death_year=1920,
+        birth_place="London, England",
+        death_place="New York, NY",
+    )
+    ps = gp.to_person_summary()
+    assert isinstance(ps, PersonSummary)
+    assert ps.person_id == "I042"
+    assert ps.name == "John Smith"
+    assert ps.birth_year == 1850
+    assert ps.death_year == 1920
+    assert ps.birth_place == "London, England"
+    assert ps.death_place == "New York, NY"
+    assert ps.source == "gedcom"
+    return True
+
+
 def test_dna_gedcom_crossref() -> bool:
     """Test the DNA-GEDCOM cross-reference system."""
     logger.info("Testing DNA-GEDCOM cross-reference system...")
@@ -767,6 +793,13 @@ def dna_gedcom_crossref_module_tests() -> bool:
     suite.start_suite()
 
     with suppress_logging():
+        suite.run_test(
+            "GedcomPerson.to_person_summary",
+            _test_gedcom_person_to_person_summary,
+            "Verify GedcomPerson converts to canonical PersonSummary",
+            "Create GedcomPerson and call to_person_summary",
+            "Validate PersonSummary fields match GedcomPerson fields",
+        )
         suite.run_test(
             "Cross-reference basic flow",
             test_dna_gedcom_crossref,

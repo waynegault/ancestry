@@ -1229,7 +1229,7 @@ def relationship_formatting_module_tests() -> bool:
         assert _format_years_display("1900", "1980") == " (1900-1980)"
         assert _format_years_display("1900", None) == " (b. 1900)"
         assert _format_years_display(None, "1980") == " (d. 1980)"
-        assert _format_years_display(None, None) == ""
+        assert _format_years_display(None, None) == ""  # noqa: PLC1901
 
     suite.run_test("API path conversion", test_api_path_conversion)
     suite.run_test("Relationship terms", test_relationship_terms)

@@ -1935,10 +1935,10 @@ class _FakeIndividualRecord:
         self.tag = TAG_INDI
         self.xref_id = xref_id
 
-    def sub_tag(self, tag: str) -> Any:
+    def sub_tag(self, _tag: str) -> Any:  # noqa: PLR6301
         return None
 
-    def sub_tag_value(self, tag: str) -> Any:
+    def sub_tag_value(self, _tag: str) -> Any:  # noqa: PLR6301
         return None
 
 

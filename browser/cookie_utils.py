@@ -66,12 +66,12 @@ def parse_cookie(cookie_string: str) -> dict[str, str]:
 # ------------------------------------------------------------------------------------
 
 
-def _get_cookie_file_path() -> Path:
+def get_cookie_file_path() -> Path:
     """Get the path to the cookie file."""
     return Path("ancestry_cookies.json")
 
 
-def _save_login_cookies(session_manager: SessionManager) -> bool:
+def save_login_cookies(session_manager: SessionManager) -> bool:
     """Save login cookies to file for session persistence."""
     try:
         driver = session_manager.browser_manager.driver
@@ -86,7 +86,7 @@ def _save_login_cookies(session_manager: SessionManager) -> bool:
             logger.debug("No cookies to save")
             return False
 
-        cookies_file = _get_cookie_file_path()
+        cookies_file = get_cookie_file_path()
 
         with cookies_file.open("w", encoding="utf-8") as f:
             json.dump(cookies, f, indent=2)
@@ -99,7 +99,7 @@ def _save_login_cookies(session_manager: SessionManager) -> bool:
         return False
 
 
-def _load_login_cookies(session_manager: SessionManager) -> bool:
+def load_login_cookies_impl(session_manager: SessionManager) -> bool:
     """Load saved login cookies from file."""
     try:
         driver = session_manager.browser_manager.driver
@@ -110,7 +110,7 @@ def _load_login_cookies(session_manager: SessionManager) -> bool:
         # Cast to Protocol to ensure types
         driver_proto = cast(DriverProtocol, driver)
 
-        cookies_file = _get_cookie_file_path()
+        cookies_file = get_cookie_file_path()
 
         if not cookies_file.exists():
             logger.debug(f"No saved cookies file found at: {cookies_file}")
@@ -128,9 +128,8 @@ def _load_login_cookies(session_manager: SessionManager) -> bool:
         for cookie in cookies:
             try:
                 # Remove expiry if it's in the past (causes Selenium errors)
-                if "expiry" in cookie:
-                    if cookie["expiry"] < time.time():
-                        del cookie["expiry"]
+                if "expiry" in cookie and cookie["expiry"] < time.time():
+                    del cookie["expiry"]
 
                 # Cast cookie values to object to match Protocol
                 cookie_obj: dict[str, object] = cast(dict[str, object], cookie)
@@ -149,8 +148,8 @@ def _load_login_cookies(session_manager: SessionManager) -> bool:
 
 
 def load_login_cookies(session_manager: SessionManager) -> bool:
-    """Public alias so static analysers see the loader being referenced."""
-    return _load_login_cookies(session_manager)
+    """Public alias for load_login_cookies_impl."""
+    return load_login_cookies_impl(session_manager)
 
 
 # End of cookie persistence functions
@@ -161,10 +160,10 @@ def load_login_cookies(session_manager: SessionManager) -> bool:
 # ------------------------------------------------------------------------------------
 
 # Cookie cache to reduce excessive synchronization
-_cookie_sync_cache: dict[str, float] = {"last_sync_time": 0.0, "sync_interval": 30.0}  # Sync every 30 seconds max
+cookie_sync_cache: dict[str, float] = {"last_sync_time": 0.0, "sync_interval": 30.0}  # Sync every 30 seconds max
 
 
-def _should_skip_cookie_sync(force_sync: bool, time_since_last_sync: float) -> bool:
+def should_skip_cookie_sync(force_sync: bool, time_since_last_sync: float) -> bool:
     """
     Determine if cookie sync can be skipped based on cache.
 
@@ -175,10 +174,10 @@ def _should_skip_cookie_sync(force_sync: bool, time_since_last_sync: float) -> b
     Returns:
         bool: True if sync can be skipped, False otherwise
     """
-    return not force_sync and time_since_last_sync < _cookie_sync_cache["sync_interval"]
+    return not force_sync and time_since_last_sync < cookie_sync_cache["sync_interval"]
 
 
-def _validate_driver_for_sync(
+def validate_driver_for_sync(
     driver: DriverType, session_manager: SessionManager, api_description: str, attempt: int
 ) -> bool:
     """
@@ -202,7 +201,7 @@ def _validate_driver_for_sync(
     return bool(driver_is_valid)
 
 
-def _perform_cookie_sync(
+def perform_cookie_sync(
     session_manager: SessionManager,
     api_description: str,
     attempt: int,
@@ -252,7 +251,7 @@ def _perform_cookie_sync(
 
     if sync_success:
         # Update cache timestamp
-        _cookie_sync_cache["last_sync_time"] = current_time
+        cookie_sync_cache["last_sync_time"] = current_time
         if attempt == 1 or force_sync:
             logger.debug(f"[{api_description}] Cookie sync successful")
         return True
@@ -261,7 +260,7 @@ def _perform_cookie_sync(
     return False
 
 
-def _sync_cookies_for_request(
+def sync_cookies_for_request(
     session_manager: SessionManager,
     driver: DriverType,
     api_description: str,
@@ -288,18 +287,18 @@ def _sync_cookies_for_request(
     """
     # Check if we can skip cookie sync (use cached cookies)
     current_time = time.time()
-    time_since_last_sync = current_time - _cookie_sync_cache["last_sync_time"]
+    time_since_last_sync = current_time - cookie_sync_cache["last_sync_time"]
 
-    if _should_skip_cookie_sync(force_sync, time_since_last_sync):
+    if should_skip_cookie_sync(force_sync, time_since_last_sync):
         return True
 
     # Validate driver
-    if not _validate_driver_for_sync(driver, session_manager, api_description, attempt):
+    if not validate_driver_for_sync(driver, session_manager, api_description, attempt):
         return False
 
     # Perform cookie synchronization
     try:
-        return _perform_cookie_sync(
+        return perform_cookie_sync(
             session_manager, api_description, attempt, force_sync, time_since_last_sync, current_time
         )
     except Exception as e:
@@ -315,7 +314,7 @@ def _sync_cookies_for_request(
 # ------------------------------------------------------------------------------------
 
 
-def _validate_driver_session(driver: DriverType) -> bool:
+def validate_driver_session(driver: DriverType) -> bool:
     """Validate that driver session is active."""
     if not driver:
         return False
@@ -327,7 +326,7 @@ def _validate_driver_session(driver: DriverType) -> bool:
         return False
 
 
-def _extract_cookie_value(cookie_obj: Mapping[str, Any] | None) -> str | None:
+def extract_cookie_value(cookie_obj: Mapping[str, Any] | None) -> str | None:
     """Return cookie value when available."""
     if not isinstance(cookie_obj, Mapping):
         return None
@@ -335,7 +334,7 @@ def _extract_cookie_value(cookie_obj: Mapping[str, Any] | None) -> str | None:
     return str(value) if value is not None else None
 
 
-def _build_cookie_lookup(driver: WebDriver) -> dict[str, str]:
+def build_cookie_lookup(driver: WebDriver) -> dict[str, str]:
     """Create a name->value mapping for all cookies in the driver."""
     # Cast to Protocol to ensure types
     driver_proto = cast(DriverProtocol, driver)
@@ -349,18 +348,18 @@ def _build_cookie_lookup(driver: WebDriver) -> dict[str, str]:
     return cookies_dict
 
 
-def _get_ancsessionid_cookie(driver: DriverType) -> str | None:
+def get_ancsessionid_cookie(driver: DriverType) -> str | None:
     """Get ANCSESSIONID cookie value from driver."""
     if not driver:
         return None
     try:
         # Cast to Protocol to ensure types
         driver_proto = cast(DriverProtocol, driver)
-        direct_value = _extract_cookie_value(driver_proto.get_cookie("ANCSESSIONID"))
+        direct_value = extract_cookie_value(driver_proto.get_cookie("ANCSESSIONID"))
         if direct_value:
             return direct_value
 
-        cookies_dict = _build_cookie_lookup(driver)
+        cookies_dict = build_cookie_lookup(driver)
         ancsessionid = cookies_dict.get("ANCSESSIONID")
         if not ancsessionid:
             logger.warning("ANCSESSIONID cookie not found. Cannot generate UBE header.")
@@ -374,7 +373,7 @@ def _get_ancsessionid_cookie(driver: DriverType) -> str | None:
         return None
 
 
-def _build_ube_payload(ancsessionid: str) -> dict[str, str]:
+def build_ube_payload(ancsessionid: str) -> dict[str, str]:
     """Build UBE data payload."""
     event_id = "00000000-0000-0000-0000-000000000000"
     correlated_id = str(uuid.uuid4())
@@ -396,7 +395,7 @@ def _build_ube_payload(ancsessionid: str) -> dict[str, str]:
     }
 
 
-def _encode_ube_payload(ube_data: dict[str, str]) -> str | None:
+def encode_ube_payload(ube_data: dict[str, str]) -> str | None:
     """Encode UBE payload to base64."""
     try:
         json_payload = json.dumps(ube_data, separators=(",", ":")).encode("utf-8")
@@ -411,15 +410,15 @@ def _encode_ube_payload(ube_data: dict[str, str]) -> str | None:
 
 def make_ube(driver: DriverType) -> str | None:
     """Generate UBE header for Ancestry API requests."""
-    if not _validate_driver_session(driver):
+    if not validate_driver_session(driver):
         return None
 
-    ancsessionid = _get_ancsessionid_cookie(driver)
+    ancsessionid = get_ancsessionid_cookie(driver)
     if not ancsessionid:
         return None
 
-    ube_data = _build_ube_payload(ancsessionid)
-    return _encode_ube_payload(ube_data)
+    ube_data = build_ube_payload(ancsessionid)
+    return encode_ube_payload(ube_data)
 
 
 # ------------------------------------------------------------------------------------
@@ -471,11 +470,300 @@ def _test_parse_cookie() -> None:
 
 def module_tests() -> bool:
     """Run cookie_utils tests using standardized TestSuite format."""
+    from unittest.mock import MagicMock, PropertyMock, patch
+
     from testing.test_framework import TestSuite
 
     suite = TestSuite("Cookie Utilities", "cookie_utils.py")
 
     suite.run_test("Cookie Parsing", _test_parse_cookie, "Parse cookie strings with various formats")
+
+    # ── get_cookie_file_path ──────────────────────────────────────
+
+    def _test_get_cookie_file_path() -> bool:
+        """get_cookie_file_path returns a Path to ancestry_cookies.json."""
+        result = get_cookie_file_path()
+        return result == Path("ancestry_cookies.json")
+
+    suite.run_test("get_cookie_file_path", _test_get_cookie_file_path)
+
+    # ── save_login_cookies ────────────────────────────────────────
+
+    def _test_save_login_cookies_no_driver() -> bool:
+        """save_login_cookies returns False when driver is None."""
+        sm = MagicMock()
+        sm.browser_manager.driver = None
+        return save_login_cookies(sm) is False
+
+    suite.run_test("save_login_cookies no driver", _test_save_login_cookies_no_driver)
+
+    def _test_save_login_cookies_success() -> bool:
+        """save_login_cookies writes cookies JSON and returns True."""
+        sm = MagicMock()
+        mock_driver = MagicMock()
+        mock_driver.get_cookies.return_value = [{"name": "sid", "value": "abc"}]
+        sm.browser_manager.driver = mock_driver
+
+        mock_path = MagicMock()
+
+        with patch("browser.cookie_utils.get_cookie_file_path", return_value=mock_path), \
+             patch("json.dump") as mock_dump:
+            result = save_login_cookies(sm)
+
+        if not result:
+            return False
+        mock_dump.assert_called_once()
+        cookies_arg = mock_dump.call_args[0][0]
+        return len(cookies_arg) == 1 and cookies_arg[0]["name"] == "sid"
+
+    suite.run_test("save_login_cookies success", _test_save_login_cookies_success)
+
+    # ── load_login_cookies_impl ───────────────────────────────────
+
+    def _test_load_cookies_no_driver() -> bool:
+        """load_login_cookies_impl returns False when driver is None."""
+        sm = MagicMock()
+        sm.browser_manager.driver = None
+        return load_login_cookies_impl(sm) is False
+
+    suite.run_test("load_cookies_impl no driver", _test_load_cookies_no_driver)
+
+    def _test_load_cookies_no_file() -> bool:
+        """load_login_cookies_impl returns False when file missing."""
+        sm = MagicMock()
+        sm.browser_manager.driver = MagicMock()
+        with patch("browser.cookie_utils.get_cookie_file_path", return_value=Path("/nonexistent/cookies.json")):
+            return load_login_cookies_impl(sm) is False
+
+    suite.run_test("load_cookies_impl no file", _test_load_cookies_no_file)
+
+    def _test_load_cookies_success() -> bool:
+        """load_login_cookies_impl loads cookies from file into driver."""
+        from io import StringIO
+
+        sm = MagicMock()
+        mock_driver = MagicMock()
+        sm.browser_manager.driver = mock_driver
+
+        cookie_data = json.dumps([{"name": "sid", "value": "abc"}])
+        mock_path = MagicMock(spec=Path)
+        mock_path.exists.return_value = True
+        mock_path.open.return_value.__enter__ = lambda _self: StringIO(cookie_data)
+        mock_path.open.return_value.__exit__ = MagicMock(return_value=False)
+
+        with patch("browser.cookie_utils.get_cookie_file_path", return_value=mock_path):
+            result = load_login_cookies_impl(sm)
+        return result is True and mock_driver.add_cookie.call_count == 1
+
+    suite.run_test("load_cookies_impl success", _test_load_cookies_success)
+
+    # ── load_login_cookies (wrapper) ──────────────────────────────
+
+    def _test_load_login_cookies_delegates() -> bool:
+        """load_login_cookies delegates to load_login_cookies_impl."""
+        sm = MagicMock()
+        with patch("browser.cookie_utils.load_login_cookies_impl", return_value=True) as mock_impl:
+            result = load_login_cookies(sm)
+        return result is True and mock_impl.called
+
+    suite.run_test("load_login_cookies delegates", _test_load_login_cookies_delegates)
+
+    # ── should_skip_cookie_sync ───────────────────────────────────
+
+    def _test_should_skip_sync_forced() -> bool:
+        """should_skip_cookie_sync returns False when force_sync is True."""
+        return should_skip_cookie_sync(force_sync=True, time_since_last_sync=1.0) is False
+
+    suite.run_test("should_skip_sync forced", _test_should_skip_sync_forced)
+
+    def _test_should_skip_sync_recent() -> bool:
+        """should_skip_cookie_sync returns True when synced recently."""
+        return should_skip_cookie_sync(force_sync=False, time_since_last_sync=5.0) is True
+
+    suite.run_test("should_skip_sync recent", _test_should_skip_sync_recent)
+
+    def _test_should_skip_sync_stale() -> bool:
+        """should_skip_cookie_sync returns False when cache is stale."""
+        return should_skip_cookie_sync(force_sync=False, time_since_last_sync=60.0) is False
+
+    suite.run_test("should_skip_sync stale", _test_should_skip_sync_stale)
+
+    # ── validate_driver_for_sync ──────────────────────────────────
+
+    def _test_validate_driver_none() -> bool:
+        """validate_driver_for_sync returns False when driver is None."""
+        sm = MagicMock()
+        sm.browser_manager.driver = None
+        return validate_driver_for_sync(None, sm, "test", attempt=1) is False
+
+    suite.run_test("validate_driver_for_sync None", _test_validate_driver_none)
+
+    def _test_validate_driver_valid() -> bool:
+        """validate_driver_for_sync returns True with valid driver."""
+        sm = MagicMock()
+        sm.browser_manager.driver = MagicMock()
+        return validate_driver_for_sync(MagicMock(), sm, "test", attempt=1) is True
+
+    suite.run_test("validate_driver_for_sync valid", _test_validate_driver_valid)
+
+    # ── perform_cookie_sync ───────────────────────────────────────
+
+    def _test_perform_cookie_sync_success() -> bool:
+        """perform_cookie_sync returns True on successful sync."""
+        sm = MagicMock()
+        sm.sync_browser_cookies.return_value = None  # No exception
+        result = perform_cookie_sync(sm, "test", 1, False, 60.0, time.time())
+        return result is True
+
+    suite.run_test("perform_cookie_sync success", _test_perform_cookie_sync_success)
+
+    def _test_perform_cookie_sync_failure() -> bool:
+        """perform_cookie_sync returns False when sync raises."""
+        sm = MagicMock()
+        sm.sync_browser_cookies.side_effect = RuntimeError("sync fail")
+        result = perform_cookie_sync(sm, "test", 1, False, 60.0, time.time())
+        return result is False
+
+    suite.run_test("perform_cookie_sync failure", _test_perform_cookie_sync_failure)
+
+    # ── sync_cookies_for_request ──────────────────────────────────
+
+    def _test_sync_cookies_skips_recent() -> bool:
+        """sync_cookies_for_request skips when recently synced."""
+        sm = MagicMock()
+        # Set last sync to now so it should skip
+        original = cookie_sync_cache["last_sync_time"]
+        cookie_sync_cache["last_sync_time"] = time.time()
+        try:
+            result = sync_cookies_for_request(sm, MagicMock(), "test", attempt=1, force_sync=False)
+            return result is True
+        finally:
+            cookie_sync_cache["last_sync_time"] = original
+
+    suite.run_test("sync_cookies skips recent", _test_sync_cookies_skips_recent)
+
+    # ── validate_driver_session ───────────────────────────────────
+
+    def _test_validate_driver_session_none() -> bool:
+        """validate_driver_session returns False for None driver."""
+        return validate_driver_session(None) is False
+
+    suite.run_test("validate_driver_session None", _test_validate_driver_session_none)
+
+    def _test_validate_driver_session_valid() -> bool:
+        """validate_driver_session returns True for valid driver."""
+        mock_driver = MagicMock()
+        type(mock_driver).title = PropertyMock(return_value="Test Page")
+        return validate_driver_session(mock_driver) is True
+
+    suite.run_test("validate_driver_session valid", _test_validate_driver_session_valid)
+
+    def _test_validate_driver_session_dead() -> bool:
+        """validate_driver_session returns False for dead session."""
+        mock_driver = MagicMock()
+        type(mock_driver).title = PropertyMock(side_effect=WebDriverException("dead"))
+        return validate_driver_session(mock_driver) is False
+
+    suite.run_test("validate_driver_session dead", _test_validate_driver_session_dead)
+
+    # ── extract_cookie_value ──────────────────────────────────────
+
+    def _test_extract_cookie_value_valid() -> bool:
+        """extract_cookie_value returns string value from cookie dict."""
+        return extract_cookie_value({"value": "abc123"}) == "abc123"
+
+    suite.run_test("extract_cookie_value valid", _test_extract_cookie_value_valid)
+
+    def _test_extract_cookie_value_none() -> bool:
+        """extract_cookie_value returns None for non-Mapping input."""
+        return extract_cookie_value(None) is None
+
+    suite.run_test("extract_cookie_value None", _test_extract_cookie_value_none)
+
+    def _test_extract_cookie_value_no_key() -> bool:
+        """extract_cookie_value returns None when 'value' key missing."""
+        return extract_cookie_value({"name": "sid"}) is None
+
+    suite.run_test("extract_cookie_value no key", _test_extract_cookie_value_no_key)
+
+    # ── build_cookie_lookup ───────────────────────────────────────
+
+    def _test_build_cookie_lookup() -> bool:
+        """build_cookie_lookup creates name->value dict from driver cookies."""
+        mock_driver = MagicMock()
+        mock_driver.get_cookies.return_value = [
+            {"name": "a", "value": "1"},
+            {"name": "b", "value": "2"},
+        ]
+        result = build_cookie_lookup(mock_driver)
+        return result == {"a": "1", "b": "2"}
+
+    suite.run_test("build_cookie_lookup", _test_build_cookie_lookup)
+
+    # ── get_ancsessionid_cookie ───────────────────────────────────
+
+    def _test_get_ancsessionid_none_driver() -> bool:
+        """get_ancsessionid_cookie returns None for None driver."""
+        return get_ancsessionid_cookie(None) is None
+
+    suite.run_test("get_ancsessionid None driver", _test_get_ancsessionid_none_driver)
+
+    def _test_get_ancsessionid_found() -> bool:
+        """get_ancsessionid_cookie returns value when cookie exists."""
+        mock_driver = MagicMock()
+        mock_driver.get_cookie.return_value = {"value": "sess-xyz"}
+        return get_ancsessionid_cookie(mock_driver) == "sess-xyz"
+
+    suite.run_test("get_ancsessionid found", _test_get_ancsessionid_found)
+
+    # ── build_ube_payload ─────────────────────────────────────────
+
+    def _test_build_ube_payload() -> bool:
+        """build_ube_payload returns dict with expected keys."""
+        result = build_ube_payload("test-session-id")
+        expected_keys = {
+            "eventId", "correlatedScreenViewedId", "correlatedSessionId",
+            "screenNameStandard", "screenNameLegacy", "userConsent",
+            "vendors", "vendorConfigurations",
+        }
+        return set(result.keys()) == expected_keys and result["correlatedSessionId"] == "test-session-id"
+
+    suite.run_test("build_ube_payload", _test_build_ube_payload)
+
+    # ── encode_ube_payload ────────────────────────────────────────
+
+    def _test_encode_ube_payload_roundtrip() -> bool:
+        """encode_ube_payload produces valid base64 that decodes back."""
+        payload = {"key": "value", "num": "42"}
+        encoded = encode_ube_payload(payload)
+        if encoded is None:
+            return False
+        decoded = json.loads(base64.b64decode(encoded).decode("utf-8"))
+        return decoded == payload
+
+    suite.run_test("encode_ube_payload roundtrip", _test_encode_ube_payload_roundtrip)
+
+    # ── make_ube ──────────────────────────────────────────────────
+
+    def _test_make_ube_none_driver() -> bool:
+        """make_ube returns None when driver is None."""
+        return make_ube(None) is None
+
+    suite.run_test("make_ube None driver", _test_make_ube_none_driver)
+
+    def _test_make_ube_success() -> bool:
+        """make_ube returns base64 string for valid driver with session cookie."""
+        mock_driver = MagicMock()
+        type(mock_driver).title = PropertyMock(return_value="Ancestry")
+        mock_driver.get_cookie.return_value = {"value": "sess-abc"}
+        result = make_ube(mock_driver)
+        if result is None:
+            return False
+        # Should decode to valid JSON with the session id
+        decoded = json.loads(base64.b64decode(result).decode("utf-8"))
+        return decoded.get("correlatedSessionId") == "sess-abc"
+
+    suite.run_test("make_ube success", _test_make_ube_success)
 
     return suite.finish_suite()
 

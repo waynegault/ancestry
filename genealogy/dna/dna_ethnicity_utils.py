@@ -588,7 +588,7 @@ def _setup_test_session(sm: SessionManager) -> bool:
         logger.error("Failed to start session")
         return False
 
-    load_login_cookies = _get_utils_attr("_load_login_cookies")
+    load_login_cookies = _get_utils_attr("load_login_cookies_impl")
     perform_login = _get_utils_attr("log_in")
     login_status_check = _get_utils_attr("login_status")
 

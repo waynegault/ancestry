@@ -827,8 +827,8 @@ def module_tests() -> bool:
     """Run comprehensive unit tests for the InboundOrchestrator."""
     import unittest
 
-    from messaging.test_inbound import TestInboundOrchestrator
     from testing.test_framework import TestSuite
+    from tests.test_inbound import TestInboundOrchestrator
 
     def _run_unittest_case(case_cls: type[unittest.TestCase], case_name: str) -> None:
         """Execute a unittest.TestCase method and raise on failure for standardized reporting."""

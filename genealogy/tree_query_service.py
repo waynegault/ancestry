@@ -59,9 +59,9 @@ class PersonSearchResult:
 
     def to_person_summary(self) -> "PersonSummary":
         """Convert to canonical PersonSummary."""
-        from core.person_summary import PersonSummary as PS
+        from core.person_summary import PersonSummary
 
-        return PS(
+        return PersonSummary(
             person_id=self.person_id,
             name=self.name,
             given_name=self.first_name,
@@ -189,9 +189,9 @@ class FamilyMember:
 
     def to_person_summary(self) -> "PersonSummary":
         """Convert to canonical PersonSummary."""
-        from core.person_summary import PersonSummary as PS
+        from core.person_summary import PersonSummary
 
-        return PS(
+        return PersonSummary(
             person_id=self.person_id,
             name=self.name,
             birth_year=self.birth_year,
@@ -1002,6 +1002,135 @@ def module_tests() -> bool:
         "RelationshipResult.to_prompt_string",
         test_relationship_prompt_string,
         test_summary="Verify to_prompt_string formats relationship for AI prompts",
+    )
+
+    # Test 10: PersonSearchResult.to_person_summary
+    def test_person_search_to_person_summary():
+        from core.person_summary import PersonSummary
+
+        result = PersonSearchResult(
+            found=True,
+            person_id="I001",
+            name="John Smith",
+            first_name="John",
+            last_name="Smith",
+            birth_year=1850,
+            birth_place="London",
+            match_score=90,
+            confidence="high",
+        )
+        ps = result.to_person_summary()
+        assert isinstance(ps, PersonSummary)
+        assert ps.name == "John Smith"
+        assert ps.given_name == "John"
+        assert ps.surname == "Smith"
+        assert ps.birth_year == 1850
+        assert ps.source == "gedcom"
+
+    suite.run_test(
+        "PersonSearchResult.to_person_summary",
+        test_person_search_to_person_summary,
+        test_summary="Verify PersonSearchResult converts to PersonSummary",
+    )
+
+    # Test 11: FamilyMember.to_person_summary
+    def test_family_member_to_person_summary():
+        from core.person_summary import PersonSummary
+
+        member = FamilyMember(
+            person_id="I002",
+            name="Jane Doe",
+            relation="parent",
+            birth_year=1950,
+            death_year=2020,
+            birth_place="Boston, MA",
+        )
+        ps = member.to_person_summary()
+        assert isinstance(ps, PersonSummary)
+        assert ps.name == "Jane Doe"
+        assert ps.birth_year == 1950
+        assert ps.death_year == 2020
+        assert ps.relationship == "parent"
+        assert ps.source == "gedcom"
+
+    suite.run_test(
+        "FamilyMember.to_person_summary",
+        test_family_member_to_person_summary,
+        test_summary="Verify FamilyMember converts to PersonSummary",
+    )
+
+    # Test 12: _generate_relationship_label
+    def test_generate_relationship_label():
+        # Empty path
+        assert TreeQueryService._generate_relationship_label([]) == "Unknown"
+
+        # Self (0 generations)
+        assert TreeQueryService._generate_relationship_label([{"name": "A"}]) == "Self"
+
+        # Parent (1 generation)
+        path_parent = [
+            {"name": "A", "relation_to_next": "parent"},
+            {"name": "B"},
+        ]
+        assert TreeQueryService._generate_relationship_label(path_parent) == "Parent"
+
+        # 5+ generations → cousin
+        path_5 = [{"name": f"P{i}"} for i in range(6)]
+        label = TreeQueryService._generate_relationship_label(path_5)
+        assert "Cousin" in label
+
+    suite.run_test(
+        "_generate_relationship_label",
+        test_generate_relationship_label,
+        test_summary="Verify relationship labels for various path lengths",
+    )
+
+    # Test 13: _generate_relationship_description
+    def test_generate_relationship_description():
+        # Empty path
+        assert "No relationship" in TreeQueryService._generate_relationship_description([])
+
+        # Single person
+        desc = TreeQueryService._generate_relationship_description([{"name": "Alice"}])
+        assert "Alice" in desc
+
+        # Multi-step path
+        path = [
+            {"name": "Alice", "birth_year": 1970, "relation_to_next": "parent"},
+            {"name": "Bob", "birth_year": 1940, "relation_to_next": ""},
+        ]
+        desc = TreeQueryService._generate_relationship_description(path)
+        assert "Alice" in desc
+        assert "(b. 1970)" in desc
+
+    suite.run_test(
+        "_generate_relationship_description",
+        test_generate_relationship_description,
+        test_summary="Verify natural language relationship description",
+    )
+
+    # Test 14: find_person without GEDCOM returns not-found
+    def test_find_person_no_gedcom():
+        service = TreeQueryService()  # No GEDCOM loaded
+        result = service.find_person(name="Anyone")
+        assert result.found is False
+
+    suite.run_test(
+        "find_person without GEDCOM",
+        test_find_person_no_gedcom,
+        test_summary="Verify find_person returns not-found without GEDCOM",
+    )
+
+    # Test 15: explain_relationship without GEDCOM
+    def test_explain_relationship_no_gedcom():
+        service = TreeQueryService()
+        result = service.explain_relationship("I001", "I002")
+        assert result.found is False
+
+    suite.run_test(
+        "explain_relationship without GEDCOM",
+        test_explain_relationship_no_gedcom,
+        test_summary="Verify explain_relationship returns not-found without GEDCOM",
     )
 
     return suite.finish_suite()

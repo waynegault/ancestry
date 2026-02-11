@@ -782,38 +782,29 @@ def facts_queue_module_tests() -> bool:
             assert result == "Unknown"
 
         def test_get_person_display_name_with_display_name():
-            from unittest.mock import MagicMock
+            from types import SimpleNamespace
 
-            person = MagicMock()
-            person.display_name = "John Doe"
-            person.username = "johndoe"
-            person.id = 123
+            person = SimpleNamespace(display_name="John Doe", username="johndoe", id=123)
             result = _get_person_display_name(person)
             assert result == "John Doe"
 
         def test_get_person_display_name_fallback_to_username():
-            from unittest.mock import MagicMock
+            from types import SimpleNamespace
 
-            person = MagicMock()
-            person.display_name = None
-            person.username = "johndoe"
-            person.id = 123
+            person = SimpleNamespace(display_name=None, username="johndoe", id=123)
             result = _get_person_display_name(person)
             assert result == "johndoe"
 
         # Test _format_conflict_task_body helper (Phase 3.4)
         def test_format_conflict_task_body():
-            from unittest.mock import MagicMock
+            from types import SimpleNamespace
 
-            conflict = MagicMock()
-            conflict.id = 42
-            conflict.field_name = "birth_year"
-            conflict.existing_value = "1850"
-            conflict.new_value = "1855"
-            conflict.severity = ConflictSeverityEnum.HIGH
-            conflict.source = "conversation"
-            conflict.confidence_score = 85
-            conflict.created_at = "2025-12-15 10:30:00"
+            conflict = SimpleNamespace(
+                id=42, field_name="birth_year", existing_value="1850",
+                new_value="1855", severity=ConflictSeverityEnum.HIGH,
+                source="conversation", confidence_score=85,
+                created_at="2025-12-15 10:30:00",
+            )
 
             result = _format_conflict_task_body(conflict, "John Doe")
             assert "John Doe" in result
@@ -864,6 +855,215 @@ def facts_queue_module_tests() -> bool:
             test_format_conflict_task_body,
             "Should format conflict details for MS To-Do task",
         )
+
+        # ── FactsQueueService tests ──────────────────────────────
+
+        def test_service_get_pending_facts():
+            from unittest.mock import MagicMock
+            mock_session = MagicMock()
+            mock_query = MagicMock()
+            mock_session.query.return_value = mock_query
+            mock_query.filter.return_value = mock_query
+            mock_query.order_by.return_value = mock_query
+            mock_query.limit.return_value = mock_query
+            mock_query.all.return_value = []
+            svc = FactsQueueService(mock_session)
+            result = svc.get_pending_facts(limit=10)
+            assert result == []
+
+        suite.run_test("Service get_pending_facts empty", test_service_get_pending_facts)
+
+        def test_service_get_facts_by_status():
+            from unittest.mock import MagicMock
+            mock_session = MagicMock()
+            mock_query = MagicMock()
+            mock_session.query.return_value = mock_query
+            mock_query.filter.return_value = mock_query
+            mock_query.order_by.return_value = mock_query
+            mock_query.limit.return_value = mock_query
+            mock_query.all.return_value = ["fact1"]
+            svc = FactsQueueService(mock_session)
+            result = svc.get_facts_by_status(FactStatusEnum.APPROVED, limit=5)
+            assert len(result) == 1
+
+        suite.run_test("Service get_facts_by_status", test_service_get_facts_by_status)
+
+        def test_service_get_fact_by_id():
+            from unittest.mock import MagicMock
+            mock_session = MagicMock()
+            mock_query = MagicMock()
+            mock_session.query.return_value = mock_query
+            mock_query.filter.return_value = mock_query
+            mock_fact = MagicMock()
+            mock_fact.id = 42
+            mock_query.first.return_value = mock_fact
+            svc = FactsQueueService(mock_session)
+            result = svc.get_fact_by_id(42)
+            assert result is not None and result.id == 42
+
+        suite.run_test("Service get_fact_by_id found", test_service_get_fact_by_id)
+
+        def test_service_get_fact_by_id_not_found():
+            from unittest.mock import MagicMock
+            mock_session = MagicMock()
+            mock_query = MagicMock()
+            mock_session.query.return_value = mock_query
+            mock_query.filter.return_value = mock_query
+            mock_query.first.return_value = None
+            svc = FactsQueueService(mock_session)
+            result = svc.get_fact_by_id(999)
+            assert result is None
+
+        suite.run_test("Service get_fact_by_id not found", test_service_get_fact_by_id_not_found)
+
+        def test_service_approve_fact():
+            from unittest.mock import MagicMock, patch as _patch
+            mock_session = MagicMock()
+            mock_fact = MagicMock()
+            mock_fact.status = FactStatusEnum.PENDING
+            mock_query = MagicMock()
+            mock_session.query.return_value = mock_query
+            mock_query.filter.return_value = mock_query
+            mock_query.first.return_value = mock_fact
+            svc = FactsQueueService(mock_session)
+            result = svc.approve_fact(1)
+            assert result is True
+            assert mock_fact.status == FactStatusEnum.APPROVED
+            mock_session.commit.assert_called_once()
+
+        suite.run_test("Service approve_fact", test_service_approve_fact)
+
+        def test_service_reject_fact():
+            from unittest.mock import MagicMock
+            mock_session = MagicMock()
+            mock_fact = MagicMock()
+            mock_fact.status = FactStatusEnum.PENDING
+            mock_query = MagicMock()
+            mock_session.query.return_value = mock_query
+            mock_query.filter.return_value = mock_query
+            mock_query.first.return_value = mock_fact
+            svc = FactsQueueService(mock_session)
+            result = svc.reject_fact(1, reason="Incorrect")
+            assert result is True
+            assert mock_fact.status == FactStatusEnum.REJECTED
+            mock_session.commit.assert_called_once()
+
+        suite.run_test("Service reject_fact", test_service_reject_fact)
+
+        def test_service_reject_not_pending():
+            from unittest.mock import MagicMock
+            mock_session = MagicMock()
+            mock_fact = MagicMock()
+            mock_fact.status = FactStatusEnum.APPROVED  # Already approved
+            mock_query = MagicMock()
+            mock_session.query.return_value = mock_query
+            mock_query.filter.return_value = mock_query
+            mock_query.first.return_value = mock_fact
+            svc = FactsQueueService(mock_session)
+            result = svc.reject_fact(1)
+            assert result is False
+
+        suite.run_test("Service reject non-pending fails", test_service_reject_not_pending)
+
+        # ── CLI command tests ────────────────────────────────────
+        # Use __name__ for patch targets so patches work both when
+        # imported as "cli.facts_queue" and when run as "__main__".
+        mod = __name__
+
+        def test_cmd_list_empty():
+            from types import SimpleNamespace
+            from unittest.mock import MagicMock, patch as _patch
+            mock_session = MagicMock()
+            mock_svc = MagicMock()
+            mock_svc.get_pending_facts.return_value = []
+            args = SimpleNamespace(limit=50, type=None, status=None)
+            with _patch(f"{mod}._get_db_session", return_value=mock_session), \
+                 _patch(f"{mod}.FactsQueueService", return_value=mock_svc):
+                    result = cmd_list(args)
+            assert result == 0
+
+        suite.run_test("cmd_list empty queue", test_cmd_list_empty)
+
+        def test_cmd_view_not_found():
+            from types import SimpleNamespace
+            from unittest.mock import MagicMock, patch as _patch
+            mock_session = MagicMock()
+            mock_svc = MagicMock()
+            mock_svc.get_fact_by_id.return_value = None
+            args = SimpleNamespace(id=999)
+            with _patch(f"{mod}._get_db_session", return_value=mock_session), \
+                 _patch(f"{mod}.FactsQueueService", return_value=mock_svc):
+                    result = cmd_view(args)
+            assert result == 1
+
+        suite.run_test("cmd_view not found", test_cmd_view_not_found)
+
+        def test_cmd_approve_success():
+            from types import SimpleNamespace
+            from unittest.mock import MagicMock, patch as _patch
+            mock_session = MagicMock()
+            mock_svc = MagicMock()
+            mock_svc.approve_fact.return_value = True
+            args = SimpleNamespace(id=1)
+            with _patch(f"{mod}._get_db_session", return_value=mock_session), \
+                 _patch(f"{mod}.FactsQueueService", return_value=mock_svc):
+                    result = cmd_approve(args)
+            assert result == 0
+
+        suite.run_test("cmd_approve success", test_cmd_approve_success)
+
+        def test_cmd_reject_success():
+            from types import SimpleNamespace
+            from unittest.mock import MagicMock, patch as _patch
+            mock_session = MagicMock()
+            mock_svc = MagicMock()
+            mock_svc.reject_fact.return_value = True
+            args = SimpleNamespace(id=1, reason="Wrong data")
+            with _patch(f"{mod}._get_db_session", return_value=mock_session), \
+                 _patch(f"{mod}.FactsQueueService", return_value=mock_svc):
+                    result = cmd_reject(args)
+            assert result == 0
+
+        suite.run_test("cmd_reject success", test_cmd_reject_success)
+
+        def test_cmd_stats_returns_0():
+            from types import SimpleNamespace
+            from unittest.mock import MagicMock, patch as _patch
+            mock_session = MagicMock()
+            mock_svc = MagicMock()
+            mock_svc.get_queue_stats.return_value = FactsQueueStats(
+                pending_count=5, approved_count=10, rejected_count=2,
+                avg_confidence=80.0, approval_rate=83.3,
+            )
+            args = SimpleNamespace()
+            with _patch(f"{mod}._get_db_session", return_value=mock_session), \
+                 _patch(f"{mod}.FactsQueueService", return_value=mock_svc):
+                    result = cmd_stats(args)
+            assert result == 0
+
+        suite.run_test("cmd_stats returns 0", test_cmd_stats_returns_0)
+
+        def test_cmd_conflicts_empty():
+            from types import SimpleNamespace
+            from unittest.mock import MagicMock, patch as _patch
+            mock_session = MagicMock()
+            mock_svc = MagicMock()
+            mock_svc.get_open_conflicts.return_value = []
+            args = SimpleNamespace(limit=50, severity=None)
+            with _patch(f"{mod}._get_db_session", return_value=mock_session), \
+                 _patch(f"{mod}.FactsQueueService", return_value=mock_svc):
+                    result = cmd_conflicts(args)
+            assert result == 0
+
+        suite.run_test("cmd_conflicts empty", test_cmd_conflicts_empty)
+
+        def test_main_no_args():
+            from unittest.mock import patch as _patch
+            with _patch("sys.argv", ["prog"]):
+                result = main()
+            assert result == 0
+
+        suite.run_test("main() no args returns 0", test_main_no_args)
 
         return suite.finish_suite()
 
