@@ -816,6 +816,52 @@ def test_chrome_options_creation() -> None:
         raise AssertionError(f"undetected_chromedriver ChromeOptions creation failed: {e}") from e
 
 
+def test_chrome_version_detection() -> None:
+    """Test that Chrome version auto-detection works and matches the installed Chrome.
+
+    This prevents regressions where a hardcoded version_main falls out of sync
+    with the actual installed Chrome (e.g. Chrome auto-updates from 142→144 but
+    the code still requests ChromeDriver 142, causing 'cannot connect' errors).
+    """
+    if platform.system() != "Windows":
+        return  # Skip on non-Windows (detection uses Windows Registry)
+
+    # 1. _detect_chrome_major_version() must return a value on a machine with Chrome
+    detected = _detect_chrome_major_version()
+    assert detected is not None, (
+        "Chrome version detection returned None - Chrome may not be installed, "
+        "or the registry key is missing. Run 'python browser/diagnose_chrome.py' to investigate."
+    )
+    assert isinstance(detected, int), f"Expected int, got {type(detected)}"
+    assert detected >= 100, f"Detected Chrome major version {detected} seems too old (expected ≥100)"
+
+    # 2. Cross-validate against the Chrome executable on disk
+    chrome_exe = Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe")
+    if chrome_exe.exists():
+        try:
+            # Use win32api-style version extraction via ctypes
+            import ctypes
+            size = ctypes.windll.version.GetFileVersionInfoSizeW(str(chrome_exe), None)  # type: ignore[union-attr]
+            if size:
+                data = ctypes.create_string_buffer(size)
+                ctypes.windll.version.GetFileVersionInfoW(str(chrome_exe), 0, size, data)  # type: ignore[union-attr]
+                # Extract VS_FIXEDFILEINFO for the major version
+                p = ctypes.c_void_p()
+                l = ctypes.c_uint()
+                ctypes.windll.version.VerQueryValueW(data, r"\\" , ctypes.byref(p), ctypes.byref(l))  # type: ignore[union-attr]
+                # VS_FIXEDFILEINFO: dwFileVersionMS at offset 8 (DWORD)
+                ms = ctypes.c_uint32.from_address(p.value + 8).value  # type: ignore[arg-type]
+                exe_major = ms >> 16  # High word = major version
+                assert detected == exe_major, (
+                    f"Registry reports Chrome {detected} but chrome.exe is {exe_major}. "
+                    f"Version detection is stale or incorrect."
+                )
+        except (OSError, ValueError, AttributeError) as exc:
+            logger.warning(f"Could not cross-validate Chrome exe version: {exc}")
+    else:
+        logger.debug("Chrome exe not at default path; skipping cross-validation")
+
+
 def chromedriver_module_tests() -> bool:
     """
     Chrome Driver Management module test suite.
@@ -854,6 +900,12 @@ def chromedriver_module_tests() -> bool:
         "undetected_chromedriver ChromeOptions Creation",
         test_chrome_options_creation,
         "undetected_chromedriver ChromeOptions can be created without NameError (tests for missing imports)",
+    )
+
+    suite.run_test(
+        "Chrome Version Detection",
+        test_chrome_version_detection,
+        "Auto-detected Chrome version matches installed Chrome (prevents hardcoded version_main drift)",
     )
 
     return suite.finish_suite()
