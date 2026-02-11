@@ -176,6 +176,30 @@ class ReviewQueue:
         return items[:limit]
 
     @staticmethod
+    def _compute_oldest_age_days(
+        oldest_staged: datetime | None,
+        oldest_conflict: datetime | None,
+    ) -> float:
+        """Compute age in days of the oldest pending item across staged updates and conflicts."""
+        # SQLite returns naive datetimes; normalise both to UTC-aware before comparing
+        if oldest_staged and oldest_staged.tzinfo is None:
+            oldest_staged = oldest_staged.replace(tzinfo=UTC)
+        if oldest_conflict and oldest_conflict.tzinfo is None:
+            oldest_conflict = oldest_conflict.replace(tzinfo=UTC)
+
+        oldest_date = None
+        if oldest_staged and oldest_conflict:
+            oldest_date = min(oldest_staged, oldest_conflict)
+        elif oldest_staged:
+            oldest_date = oldest_staged
+        elif oldest_conflict:
+            oldest_date = oldest_conflict
+
+        if oldest_date:
+            return (datetime.now(UTC) - oldest_date).total_seconds() / 86400
+        return 0.0
+
+    @staticmethod
     def get_summary(db_session: Session) -> ReviewSummary:
         """
         Get summary statistics for the review queue.
@@ -237,23 +261,7 @@ class ReviewQueue:
             .scalar()
         )
 
-        # SQLite returns naive datetimes; normalise both to UTC-aware before comparing
-        if oldest_staged and oldest_staged.tzinfo is None:
-            oldest_staged = oldest_staged.replace(tzinfo=UTC)
-        if oldest_conflict and oldest_conflict.tzinfo is None:
-            oldest_conflict = oldest_conflict.replace(tzinfo=UTC)
-
-        oldest_date = None
-        if oldest_staged and oldest_conflict:
-            oldest_date = min(oldest_staged, oldest_conflict)
-        elif oldest_staged:
-            oldest_date = oldest_staged
-        elif oldest_conflict:
-            oldest_date = oldest_conflict
-
-        age_days = 0.0
-        if oldest_date:
-            age_days = (datetime.now(UTC) - oldest_date).total_seconds() / 86400
+        age_days = ReviewQueue._compute_oldest_age_days(oldest_staged, oldest_conflict)
 
         # Average confidence score
         avg_confidence = (

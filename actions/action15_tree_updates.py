@@ -20,6 +20,7 @@ Features:
 
 import logging
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -608,7 +609,7 @@ def _test_run_tree_updates_empty_pending() -> None:
     mock_db.query.return_value = mock_query
 
     @contextmanager
-    def fake_session_ctx():
+    def fake_session_ctx() -> Iterator[MagicMock]:
         yield mock_db
 
     mock_sm.db_manager.get_session_context = fake_session_ctx
@@ -659,7 +660,7 @@ def _test_run_tree_updates_dry_run_processes_facts() -> None:
     mock_db.query.return_value.filter.return_value.first.return_value = mock_person
 
     @contextmanager
-    def fake_session_ctx():
+    def fake_session_ctx() -> Iterator[MagicMock]:
         yield mock_db
 
     mock_sm.db_manager.get_session_context = fake_session_ctx
