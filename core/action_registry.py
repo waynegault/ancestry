@@ -577,6 +577,18 @@ class ActionRegistry:
         )
         self.register(
             ActionMetadata(
+                id="s",
+                name="Start MCP Server",
+                description="Start the Model Context Protocol server for AI assistant integration",
+                function=None,
+                category=ActionCategory.UTILITY,
+                browser_requirement=ActionRequirement.NONE,
+                is_meta_action=True,
+                menu_order=205,
+            )
+        )
+        self.register(
+            ActionMetadata(
                 id="k",
                 name="Apply Schema Migrations",
                 description="Run pending database schema migrations and show status",

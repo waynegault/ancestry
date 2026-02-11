@@ -1,38 +1,29 @@
 # Ancestry MCP Server
 
-An MCP (Model Context Protocol) server that wraps the waynegault/ancestry toolkit, enabling AI assistants to interact with your DNA matching, GEDCOM parsing, and messaging capabilities.
+An MCP (Model Context Protocol) server that wraps the Ancestry research toolkit, enabling AI assistants to query your DNA match database, search matches, review pending drafts, and explore genealogical data.
 
 ## Prerequisites
 
-1. The main ancestry repository must be set up and working
+1. The main Ancestry repository must be set up and working
 2. Python 3.10+
-3. MCP library (`pip install mcp`)
-
-## Installation
-
-```bash
-# From the ancestry repo root
-cd mcp_server
-pip install -r requirements.txt
-```
-
-## Configuration
-
-Set the `ANCESTRY_ROOT` environment variable to point to your ancestry repo:
-
-```bash
-export ANCESTRY_ROOT=/path/to/waynegault/ancestry
-```
-
-Or on Windows:
-```cmd
-set ANCESTRY_ROOT=C:\path\to\waynegault\ancestry
-```
+3. MCP library (already in `requirements.txt`: `mcp>=1.0.0`)
 
 ## Running the Server
 
+### From main.py menu
+```
+python main.py
+# Select option 's' - Start MCP Server
+```
+
+### As a Python module
 ```bash
-python server.py
+python -m mcp_server
+```
+
+### Directly
+```bash
+python mcp_server/server.py
 ```
 
 ## Claude Desktop Integration
@@ -44,10 +35,8 @@ Add this to your `claude_desktop_config.json`:
   "mcpServers": {
     "ancestry": {
       "command": "python",
-      "args": ["/path/to/ancestry/mcp_server/server.py"],
-      "env": {
-        "ANCESTRY_ROOT": "/path/to/ancestry"
-      }
+      "args": ["-m", "mcp_server"],
+      "cwd": "C:\\path\\to\\ancestry"
     }
   }
 }
@@ -57,26 +46,29 @@ Add this to your `claude_desktop_config.json`:
 
 | Tool | Description |
 |------|-------------|
-| `gather_dna_matches` | Fetch DNA matches with checkpoint support |
-| `search_inbox` | Process inbox messages with AI classification |
-| `search_gedcom` | Search GEDCOM files with API fallback |
-| `get_shared_matches` | Find shared matches for triangulation |
-| `run_triangulation` | Cluster analysis on DNA matches |
-| `get_match_details` | Get detailed info on a specific match |
-| `draft_message` | AI-generate messages (saved to review queue) |
-| `list_pending_drafts` | View pending message drafts |
-| `query_local_database` | Read-only SQL queries |
-| `get_database_schema` | Explore database structure |
+| `query_database` | Run read-only SQL queries against the local SQLite database |
+| `get_database_schema` | Explore database structure (tables, columns, indexes) |
+| `get_match_summary` | Statistical summary: totals, averages, relationship distribution, top matches |
+| `get_match_details` | Detailed info on a specific match by ID or UUID |
+| `search_matches` | Search matches by name, cM range, status |
+| `list_pending_drafts` | View pending message drafts awaiting review |
+| `get_shared_matches` | Find shared matches between you and a specific person |
+| `get_conversation_history` | View message history for a person |
 
 ## Safety Features
 
-- **Messages are never auto-sent** - All drafted messages go to a review queue
-- **Database queries are read-only** - Only SELECT statements allowed
-- **Checkpointing** - Long operations can be resumed if interrupted
+- **Messages are never auto-sent** — All drafted messages go to a review queue
+- **Database queries are read-only** — Only SELECT/WITH statements allowed; INSERT/UPDATE/DELETE/DROP are blocked
+- **No browser automation** — The MCP server only accesses the local SQLite database
 
-## Troubleshooting
+## Testing
 
-If you see "module not available" errors:
-1. Verify `ANCESTRY_ROOT` is set correctly
-2. Ensure the ancestry repo is fully configured
-3. Check that all ancestry dependencies are installed
+Tests follow the codebase convention and are discovered automatically by `run_all_tests.py`:
+
+```bash
+# Run MCP server tests only
+python -m mcp_server.server
+
+# Run all project tests (includes MCP server)
+python run_all_tests.py
+```
