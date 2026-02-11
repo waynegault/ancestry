@@ -65,9 +65,11 @@ import contextlib
 import importlib
 import json
 import os
+import platform
 import random
 import subprocess
 import time
+import winreg
 from typing import Any, cast
 
 try:
@@ -98,6 +100,29 @@ from testing.test_framework import (
 # Define constants dependent on the CHROME_CONFIG values
 # Handle the case where selenium_config might be None
 CHROME_USER_DATA_DIR = config_schema.selenium.chrome_user_data_dir if config_schema.selenium else None
+
+
+def _detect_chrome_major_version() -> int | None:
+    """Auto-detect installed Chrome major version from the Windows Registry.
+
+    Returns the major version integer (e.g. 144) or None if detection fails.
+    """
+    if platform.system() != "Windows":
+        return None
+    for hive, subkey in [
+        (winreg.HKEY_CURRENT_USER, r"Software\Google\Chrome\BLBeacon"),
+        (winreg.HKEY_LOCAL_MACHINE, r"Software\Google\Chrome\BLBeacon"),
+    ]:
+        try:
+            with winreg.OpenKey(hive, subkey) as key:
+                version_str, _ = winreg.QueryValueEx(key, "version")
+                major = int(str(version_str).split(".")[0])
+                logger.debug(f"[init_webdvr] Detected Chrome major version {major} from registry")
+                return major
+        except (FileNotFoundError, OSError, ValueError):
+            continue
+    logger.warning("[init_webdvr] Could not detect Chrome version from registry")
+    return None
 # Get the profile directory from config (respects PROFILE_DIR from .env)
 PROFILE_DIR = config_schema.selenium.profile_dir if config_schema.selenium else "Default"
 # Handle the case where CHROME_USER_DATA_DIR might be None
@@ -233,20 +258,30 @@ def _create_chrome_driver(attempt_num: int) -> WebDriver | None:
         else:
             logger.warning("[init_webdvr] chrome_user_data_dir not configured - using temporary profile")
 
-        # Additional stability options for Chrome 142+
+        # Additional stability options
         minimal_options.add_argument("--disable-gpu")
         minimal_options.add_argument("--disable-software-rasterizer")
         minimal_options.add_argument("--disable-extensions")
         minimal_options.add_argument("--no-first-run")
         minimal_options.add_argument("--no-default-browser-check")
 
+        # Auto-detect Chrome version instead of hardcoding
+        chrome_major = _detect_chrome_major_version()
+        if chrome_major:
+            logger.debug(f"[init_webdvr] Using detected Chrome major version: {chrome_major}")
+        else:
+            logger.warning("[init_webdvr] Chrome version detection failed; letting UC auto-detect")
+
         logger.debug("[init_webdvr] Creating Chrome instance with enhanced stability options...")
-        driver = uc.Chrome(
-            options=minimal_options,
-            version_main=142,
-            use_subprocess=False,
-            suppress_welcome=True,
-        )
+        uc_kwargs: dict[str, Any] = {
+            "options": minimal_options,
+            "use_subprocess": False,
+            "suppress_welcome": True,
+        }
+        if chrome_major:
+            uc_kwargs["version_main"] = chrome_major
+
+        driver = uc.Chrome(**uc_kwargs)
 
         # Verify driver is valid before proceeding
         if not driver:
