@@ -7,7 +7,7 @@ import sys
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import create_engine, text

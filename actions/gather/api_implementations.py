@@ -3,7 +3,7 @@ import contextlib
 import logging
 import time
 from collections.abc import Sequence
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, cast
 from urllib.parse import urljoin
 

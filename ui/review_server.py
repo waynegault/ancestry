@@ -10,7 +10,7 @@ import json
 import logging
 import os
 import webbrowser
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from threading import Timer
 from typing import Any
 
@@ -24,7 +24,7 @@ from core.session_manager import SessionManager
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.secret_key = "ancestry-review-queue-secret"  # For flash messages
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24).hex())
 
 # HTML Template with embedded CSS and JS
 HTML_TEMPLATE = """

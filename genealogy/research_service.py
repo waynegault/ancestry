@@ -368,22 +368,148 @@ def _test_module_integrity() -> bool:
 
     suite.run_test("ResearchService handles nonexistent GEDCOM path gracefully", test_research_service_instantiation_with_bad_path)
 
-    def test_research_service_methods_exist():
-        assert hasattr(ResearchService, 'load_gedcom')
-        assert hasattr(ResearchService, 'search_people')
-        assert hasattr(ResearchService, 'get_relationship_path')
-        assert hasattr(ResearchService, '_resolve_root_id')
-        assert hasattr(ResearchService, '_process_individual')
-        assert hasattr(ResearchService, '_extract_individual_data')
-        assert hasattr(ResearchService, '_evaluate_filter_criteria')
-        assert hasattr(ResearchService, '_matches_criterion')
-        assert hasattr(ResearchService, '_matches_year_criterion')
-        assert callable(ResearchService.load_gedcom)
-        assert callable(ResearchService.search_people)
-        assert callable(ResearchService.get_relationship_path)
+    def test_extract_individual_data():
+        indi = {
+            "first_name": "John",
+            "surname": "Smith",
+            "gender_norm": "m",
+            "birth_year": 1880,
+            "birth_place_disp": "London, England",
+            "death_place_disp": "New York, USA",
+            "death_date_obj": None,
+        }
+        result = ResearchService._extract_individual_data(indi)
+        assert result["givn_lower"] == "john"
+        assert result["surn_lower"] == "smith"
+        assert result["sex_lower"] == "m"
+        assert result["birth_year"] == 1880
+        assert result["birth_place_lower"] == "london, england"
+        assert result["death_place_lower"] == "new york, usa"
+        assert result["death_date_obj"] is None
+        # Verify missing fields default gracefully
+        empty_result = ResearchService._extract_individual_data({})
+        assert empty_result["givn_lower"] == ""  # noqa: PLC1901
+        assert empty_result["surn_lower"] == ""  # noqa: PLC1901
+        assert empty_result["birth_year"] is None
+        assert empty_result["birth_place_lower"] is None
         return True
 
-    suite.run_test("ResearchService methods exist and are callable", test_research_service_methods_exist)
+    suite.run_test("_extract_individual_data extracts and lowercases fields correctly", test_extract_individual_data)
+
+    def test_evaluate_filter_criteria_name_match():
+        extracted = {
+            "givn_lower": "john", "surn_lower": "smith", "sex_lower": "m",
+            "birth_year": 1880, "birth_place_lower": "london", "death_place_lower": None,
+            "death_date_obj": None,
+        }
+        # Both names provided and matching
+        assert ResearchService._evaluate_filter_criteria(
+            extracted, {"first_name": "john", "surname": "smith"}, 10
+        ) is True
+        # Surname mismatch with both names required
+        assert ResearchService._evaluate_filter_criteria(
+            extracted, {"first_name": "john", "surname": "jones"}, 10
+        ) is False
+        # Only first name provided, matching
+        assert ResearchService._evaluate_filter_criteria(
+            extracted, {"first_name": "john"}, 10
+        ) is True
+        # Only first name provided, not matching
+        assert ResearchService._evaluate_filter_criteria(
+            extracted, {"first_name": "jane"}, 10
+        ) is False
+        return True
+
+    suite.run_test("_evaluate_filter_criteria enforces mandatory name matching", test_evaluate_filter_criteria_name_match)
+
+    def test_evaluate_filter_criteria_place_filter():
+        extracted = {
+            "givn_lower": "mary", "surn_lower": "doe", "sex_lower": "f",
+            "birth_year": 1900, "birth_place_lower": "paris, france",
+            "death_place_lower": "lyon, france", "death_date_obj": None,
+        }
+        # Birth place criterion present and matching
+        assert ResearchService._evaluate_filter_criteria(
+            extracted, {"birth_place": "paris"}, 10
+        ) is True
+        # Birth place criterion present but not matching -> rejected before OR
+        assert ResearchService._evaluate_filter_criteria(
+            extracted, {"birth_place": "berlin"}, 10
+        ) is False
+        return True
+
+    suite.run_test("_evaluate_filter_criteria enforces place criteria", test_evaluate_filter_criteria_place_filter)
+
+    def test_evaluate_filter_criteria_broad_or():
+        # No names provided -> falls through to broad OR (birth place, death place, birth year, alive)
+        extracted_alive = {
+            "givn_lower": "", "surn_lower": "", "sex_lower": None,
+            "birth_year": None, "birth_place_lower": None, "death_place_lower": None,
+            "death_date_obj": None,  # alive
+        }
+        # alive_match is True so broad OR passes
+        assert ResearchService._evaluate_filter_criteria(extracted_alive, {}, 10) is True
+
+        extracted_dead_no_data = {
+            "givn_lower": "", "surn_lower": "", "sex_lower": None,
+            "birth_year": None, "birth_place_lower": None, "death_place_lower": None,
+            "death_date_obj": "1950-01-01",  # not alive
+        }
+        # No matching criteria and not alive -> broad OR fails
+        assert ResearchService._evaluate_filter_criteria(extracted_dead_no_data, {}, 10) is False
+        return True
+
+    suite.run_test("_evaluate_filter_criteria broad OR logic for no-name searches", test_evaluate_filter_criteria_broad_or)
+
+    def test_create_match_data():
+        indi_data = {
+            "display_id": "I0042",
+            "full_name_disp": "Jane Doe",
+            "gender_raw": "F",
+            "birth_date_disp": "15 Mar 1885",
+            "birth_place_disp": "Boston, MA",
+            "death_date_disp": "10 Jan 1960",
+            "death_place_disp": "Hartford, CT",
+        }
+        result = ResearchService._create_match_data(
+            "I42", indi_data, 85.5, {"first_name": 40.0, "surname": 45.5}, ["name match"]
+        )
+        assert result["id"] == "I42"
+        assert result["display_id"] == "I0042"
+        assert result["full_name_disp"] == "Jane Doe"
+        assert result["total_score"] == 85.5
+        assert result["field_scores"] == {"first_name": 40.0, "surname": 45.5}
+        assert result["reasons"] == ["name match"]
+        assert result["gender"] == "F"
+        assert result["birth_date"] == "15 Mar 1885"
+        assert result["birth_place"] == "Boston, MA"
+        assert result["death_date"] == "10 Jan 1960"
+        assert result["death_place"] == "Hartford, CT"
+        assert result["raw_data"] is indi_data
+        return True
+
+    suite.run_test("_create_match_data builds correct output structure", test_create_match_data)
+
+    def test_create_match_data_missing_fields():
+        # Verify defaults when optional display fields are absent
+        result = ResearchService._create_match_data("I1", {}, 0.0, {}, [])
+        assert result["display_id"] == "I1"  # falls back to indi_id_norm
+        assert result["full_name_disp"] == "N/A"
+        assert result["gender"] == "N/A"
+        assert result["birth_date"] == "N/A"
+        assert result["birth_place"] is None
+        assert result["death_date"] is None
+        assert result["death_place"] is None
+        return True
+
+    suite.run_test("_create_match_data handles missing fields with defaults", test_create_match_data_missing_fields)
+
+    def test_resolve_root_id_without_gedcom():
+        svc = ResearchService()
+        assert svc._resolve_root_id() is None
+        return True
+
+    suite.run_test("_resolve_root_id returns None without GEDCOM data", test_resolve_root_id_without_gedcom)
 
     def test_search_people_returns_empty_without_gedcom():
         svc = ResearchService()

@@ -409,15 +409,7 @@ def module_tests() -> bool:
     suite.start_suite()
 
     # Mock Person class
-    @dc
-    class MockPerson:
-        id: int = 1
-        username: str = "test_user"
-        status: str = "ACTIVE"
-        profile_id: str | None = "12345"
-        administrator_profile_id: str | None = None
-        in_my_tree: bool = False
-        family_tree: object | None = None
+    from testing.protocol_mocks import MockPerson
 
     def _get_mock_person(**kwargs: Any) -> Person:
         """Create a mock Person with proper type cast."""

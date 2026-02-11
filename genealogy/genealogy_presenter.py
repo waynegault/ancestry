@@ -32,16 +32,8 @@ from unittest import mock
 
 logger = logging.getLogger(__name__)
 
-
-def _format_years_display(birth_year: int | None, death_year: int | None) -> str:
-    """Format birth and death years for display."""
-    if birth_year and death_year:
-        return f" ({birth_year}-{death_year})"
-    if birth_year:
-        return f" (b. {birth_year})"
-    if death_year:
-        return f" (d. {death_year})"
-    return ""
+# Canonical implementation lives in research.relationship_formatting
+from research.relationship_formatting import format_years_display
 
 
 def _print_section_header(label: str, is_first: bool) -> None:
@@ -57,7 +49,7 @@ def _print_family_member(member: dict[str, Any]) -> None:
     name = member.get("name", "Unknown")
     birth_year = member.get("birth_year")
     death_year = member.get("death_year")
-    years_display = _format_years_display(birth_year, death_year)
+    years_display = format_years_display(birth_year, death_year)
     print(f"   - {name}{years_display}")
 
 
@@ -146,7 +138,7 @@ def present_post_selection(
         unified_path: Optional unified path list to format via relationship_utils
         formatted_path: Optional preformatted relationship text (takes precedence)
     """
-    years_display = _format_years_display(birth_year, death_year)
+    years_display = format_years_display(birth_year, death_year)
 
     # 1) Top match header
     print(f"=== {display_name}{years_display} ===\n")

@@ -16,7 +16,7 @@ Features:
 import logging
 import sys
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import Any, cast
@@ -31,12 +31,15 @@ if __package__ in {None, ""}:
 from core.database import (
     ConflictStatusEnum,
     DataConflict,
+    FactStatusEnum,
+    FactTypeEnum,
     Person,
     StagedUpdate,
+    SuggestedFact,
     UpdateStatusEnum,
 )
 from testing.test_framework import TestSuite
-from testing.test_utilities import create_standard_test_runner
+from testing.test_utilities import create_standard_test_runner, create_test_database
 
 logger = logging.getLogger(__name__)
 
@@ -233,6 +236,12 @@ class ReviewQueue:
             .filter(DataConflict.status == ConflictStatusEnum.OPEN)
             .scalar()
         )
+
+        # SQLite returns naive datetimes; normalise both to UTC-aware before comparing
+        if oldest_staged and oldest_staged.tzinfo is None:
+            oldest_staged = oldest_staged.replace(tzinfo=UTC)
+        if oldest_conflict and oldest_conflict.tzinfo is None:
+            oldest_conflict = oldest_conflict.replace(tzinfo=UTC)
 
         oldest_date = None
         if oldest_staged and oldest_conflict:
@@ -688,24 +697,481 @@ def _test_review_item_display_diff_empty() -> None:
     assert "1920" in diff, "Should show proposed value"
 
 
-def _test_review_summary_creation() -> None:
-    """Test ReviewSummary dataclass creation."""
-    summary = ReviewSummary(
-        total_pending=15,
-        staged_updates=10,
-        data_conflicts=5,
-        by_field={"birth_year": 8, "birth_place": 7},
-        oldest_item_age_days=3.5,
-        avg_confidence_score=82.5,
+def _test_approve_staged_update_db() -> None:
+    """Test approving a staged update applies changes to Person record."""
+    session = create_test_database()
+    person = Person(username="John Smith", first_name="John", birth_year=1850)
+    session.add(person)
+    session.commit()
+
+    update = StagedUpdate(
+        people_id=person.id,
+        field_name="birth_year",
+        current_value="1850",
+        proposed_value="1852",
+        source="conversation",
+        confidence_score=85,
+        status=UpdateStatusEnum.PENDING,
     )
-    assert summary.total_pending == 15, "Should have correct total"
-    assert len(summary.by_field) == 2, "Should have 2 fields"
+    session.add(update)
+    session.commit()
+    update_id = update.id
 
-
-def _test_review_queue_init() -> None:
-    """Test ReviewQueue initialization."""
     queue = ReviewQueue()
-    assert queue.batch_size == 20, "Should have default batch size"
+    result = queue.approve_staged_update(session, update_id, reviewer="tester", notes="Verified")
+    session.commit()
+
+    assert result is True, "Approval should succeed"
+    refreshed_update = session.query(StagedUpdate).filter(StagedUpdate.id == update_id).first()
+    assert refreshed_update.status == UpdateStatusEnum.APPROVED, "Status should be APPROVED"
+    assert refreshed_update.reviewed_by == "tester", "Reviewer should be recorded"
+    assert refreshed_update.reviewer_notes == "Verified", "Notes should be recorded"
+    assert refreshed_update.reviewed_at is not None, "Reviewed timestamp should be set"
+    assert refreshed_update.applied_at is not None, "Applied timestamp should be set"
+
+    refreshed_person = session.query(Person).filter(Person.id == person.id).first()
+    assert str(refreshed_person.birth_year) == "1852" or refreshed_person.birth_year == "1852", \
+        "Person birth_year should be updated to proposed value"
+    session.close()
+
+
+def _test_approve_staged_update_not_found() -> None:
+    """Test approving a non-existent staged update returns False."""
+    session = create_test_database()
+    queue = ReviewQueue()
+    result = queue.approve_staged_update(session, 9999)
+    assert result is False, "Should return False for non-existent update"
+    session.close()
+
+
+def _test_approve_already_approved() -> None:
+    """Test approving an already-approved staged update returns False."""
+    session = create_test_database()
+    person = Person(username="Already Done")
+    session.add(person)
+    session.commit()
+
+    update = StagedUpdate(
+        people_id=person.id,
+        field_name="first_name",
+        current_value=None,
+        proposed_value="Jane",
+        source="conversation",
+        status=UpdateStatusEnum.APPROVED,
+    )
+    session.add(update)
+    session.commit()
+
+    queue = ReviewQueue()
+    result = queue.approve_staged_update(session, update.id)
+    assert result is False, "Should return False for non-PENDING update"
+    session.close()
+
+
+def _test_reject_staged_update_db() -> None:
+    """Test rejecting a staged update sets status without applying changes."""
+    session = create_test_database()
+    person = Person(username="Bob Jones", first_name="Bob", birth_year=1900)
+    session.add(person)
+    session.commit()
+
+    update = StagedUpdate(
+        people_id=person.id,
+        field_name="birth_year",
+        current_value="1900",
+        proposed_value="1905",
+        source="conversation",
+        confidence_score=60,
+        status=UpdateStatusEnum.PENDING,
+    )
+    session.add(update)
+    session.commit()
+    update_id = update.id
+
+    queue = ReviewQueue()
+    result = queue.reject_staged_update(session, update_id, reviewer="reviewer1", notes="Incorrect")
+    session.commit()
+
+    assert result is True, "Rejection should succeed"
+    refreshed = session.query(StagedUpdate).filter(StagedUpdate.id == update_id).first()
+    assert refreshed.status == UpdateStatusEnum.REJECTED, "Status should be REJECTED"
+    assert refreshed.reviewed_by == "reviewer1", "Reviewer should be recorded"
+    assert refreshed.reviewer_notes == "Incorrect", "Notes should be recorded"
+    assert refreshed.reviewed_at is not None, "Reviewed timestamp should be set"
+
+    refreshed_person = session.query(Person).filter(Person.id == person.id).first()
+    assert refreshed_person.birth_year == 1900, "Person birth_year should NOT change on rejection"
+    session.close()
+
+
+def _test_reject_staged_update_not_found() -> None:
+    """Test rejecting a non-existent staged update returns False."""
+    session = create_test_database()
+    queue = ReviewQueue()
+    result = queue.reject_staged_update(session, 9999)
+    assert result is False, "Should return False for non-existent update"
+    session.close()
+
+
+def _test_resolve_conflict_accept() -> None:
+    """Test resolving a conflict by accepting the new value."""
+    session = create_test_database()
+    person = Person(username="Conflict Test", first_name="Alice")
+    session.add(person)
+    session.commit()
+
+    conflict = DataConflict(
+        people_id=person.id,
+        field_name="first_name",
+        existing_value="Alice",
+        new_value="Alicia",
+        source="gedcom_import",
+        status=ConflictStatusEnum.OPEN,
+    )
+    session.add(conflict)
+    session.commit()
+    conflict_id = conflict.id
+
+    queue = ReviewQueue()
+    result = queue.resolve_conflict(session, conflict_id, accept_new=True, reviewer="tester")
+    session.commit()
+
+    assert result is True, "Resolve should succeed"
+    refreshed_conflict = session.query(DataConflict).filter(DataConflict.id == conflict_id).first()
+    assert refreshed_conflict.status == ConflictStatusEnum.RESOLVED, "Status should be RESOLVED"
+    assert refreshed_conflict.resolved_by == "tester", "Resolver should be recorded"
+    assert refreshed_conflict.resolved_at is not None, "Resolved timestamp should be set"
+
+    refreshed_person = session.query(Person).filter(Person.id == person.id).first()
+    assert refreshed_person.first_name == "Alicia", "Person first_name should be updated to new value"
+    session.close()
+
+
+def _test_resolve_conflict_reject() -> None:
+    """Test resolving a conflict by rejecting the new value keeps existing."""
+    session = create_test_database()
+    person = Person(username="Conflict Test 2", first_name="Bob")
+    session.add(person)
+    session.commit()
+
+    conflict = DataConflict(
+        people_id=person.id,
+        field_name="first_name",
+        existing_value="Bob",
+        new_value="Robert",
+        source="api_sync",
+        status=ConflictStatusEnum.OPEN,
+    )
+    session.add(conflict)
+    session.commit()
+    conflict_id = conflict.id
+
+    queue = ReviewQueue()
+    result = queue.resolve_conflict(session, conflict_id, accept_new=False, reviewer="tester")
+    session.commit()
+
+    assert result is True, "Resolve should succeed"
+    refreshed_conflict = session.query(DataConflict).filter(DataConflict.id == conflict_id).first()
+    assert refreshed_conflict.status == ConflictStatusEnum.REJECTED, "Status should be REJECTED"
+
+    refreshed_person = session.query(Person).filter(Person.id == person.id).first()
+    assert refreshed_person.first_name == "Bob", "Person first_name should remain unchanged"
+    session.close()
+
+
+def _test_get_pending_items_db() -> None:
+    """Test get_pending_items returns staged updates and conflicts from DB."""
+    session = create_test_database()
+    person = Person(username="PendingTest", first_name="Charlie")
+    session.add(person)
+    session.commit()
+
+    update = StagedUpdate(
+        people_id=person.id,
+        field_name="birth_year",
+        current_value=None,
+        proposed_value="1880",
+        source="conversation",
+        confidence_score=90,
+        status=UpdateStatusEnum.PENDING,
+    )
+    conflict = DataConflict(
+        people_id=person.id,
+        field_name="first_name",
+        existing_value="Charlie",
+        new_value="Charles",
+        source="gedcom_import",
+        status=ConflictStatusEnum.OPEN,
+    )
+    session.add_all([update, conflict])
+    session.commit()
+
+    queue = ReviewQueue()
+    items = queue.get_pending_items(session)
+
+    assert len(items) == 2, f"Should have 2 pending items, got {len(items)}"
+    item_types = {i.item_type for i in items}
+    assert "staged_update" in item_types, "Should include staged_update"
+    assert "data_conflict" in item_types, "Should include data_conflict"
+    session.close()
+
+
+def _test_get_pending_items_excludes_non_pending() -> None:
+    """Test get_pending_items excludes approved/rejected items."""
+    session = create_test_database()
+    person = Person(username="FilterTest", first_name="Diana")
+    session.add(person)
+    session.commit()
+
+    pending = StagedUpdate(
+        people_id=person.id,
+        field_name="birth_year",
+        proposed_value="1870",
+        source="conversation",
+        status=UpdateStatusEnum.PENDING,
+    )
+    approved = StagedUpdate(
+        people_id=person.id,
+        field_name="first_name",
+        proposed_value="Diane",
+        source="conversation",
+        status=UpdateStatusEnum.APPROVED,
+    )
+    session.add_all([pending, approved])
+    session.commit()
+
+    queue = ReviewQueue()
+    items = queue.get_pending_items(session, include_conflicts=False)
+
+    assert len(items) == 1, f"Should only have 1 pending item, got {len(items)}"
+    assert items[0].field_name == "birth_year", "Should only return the PENDING update"
+    session.close()
+
+
+def _test_get_summary_db() -> None:
+    """Test get_summary returns correct counts from DB."""
+    session = create_test_database()
+    person = Person(username="SummaryTest", first_name="Eve")
+    session.add(person)
+    session.commit()
+
+    updates = [
+        StagedUpdate(
+            people_id=person.id, field_name="birth_year", proposed_value="1870",
+            source="conversation", confidence_score=80, status=UpdateStatusEnum.PENDING,
+        ),
+        StagedUpdate(
+            people_id=person.id, field_name="birth_year", proposed_value="1871",
+            source="conversation", confidence_score=90, status=UpdateStatusEnum.PENDING,
+        ),
+    ]
+    conflict = DataConflict(
+        people_id=person.id, field_name="first_name",
+        existing_value="Eve", new_value="Eva",
+        source="gedcom_import", status=ConflictStatusEnum.OPEN,
+    )
+    session.add_all([*updates, conflict])
+    session.commit()
+
+    queue = ReviewQueue()
+    summary = queue.get_summary(session)
+
+    assert summary.staged_updates == 2, f"Should have 2 staged updates, got {summary.staged_updates}"
+    assert summary.data_conflicts == 1, f"Should have 1 data conflict, got {summary.data_conflicts}"
+    assert summary.total_pending == 3, f"Should have 3 total pending, got {summary.total_pending}"
+    assert "birth_year" in summary.by_field, "Should have birth_year in field breakdown"
+    assert summary.by_field["birth_year"] == 2, "Should count 2 birth_year updates"
+    assert summary.avg_confidence_score is not None, "Should compute avg confidence"
+    assert 84.0 <= summary.avg_confidence_score <= 86.0, "Avg confidence should be ~85"
+    session.close()
+
+
+def _test_approve_suggested_fact_db() -> None:
+    """Test approving a SuggestedFact sets status to APPROVED."""
+    session = create_test_database()
+    person = Person(username="FactTest", first_name="Frank")
+    session.add(person)
+    session.commit()
+
+    fact = SuggestedFact(
+        people_id=person.id,
+        fact_type=FactTypeEnum.BIRTH,
+        original_value="born about 1850",
+        new_value="1850",
+        confidence_score=75,
+        status=FactStatusEnum.PENDING,
+    )
+    session.add(fact)
+    session.commit()
+    fact_id = fact.id
+
+    queue = ReviewQueue()
+    success, error = queue.approve_suggested_fact(session, fact_id, reviewer="tester")
+    session.commit()
+
+    assert success is True, f"Approval should succeed, got error: {error}"
+    assert error is None, "Error should be None on success"
+    refreshed = session.query(SuggestedFact).filter(SuggestedFact.id == fact_id).first()
+    assert refreshed.status == FactStatusEnum.APPROVED, "Status should be APPROVED"
+    assert refreshed.updated_at is not None, "Updated timestamp should be set"
+    session.close()
+
+
+def _test_approve_suggested_fact_not_found() -> None:
+    """Test approving a non-existent SuggestedFact returns failure."""
+    session = create_test_database()
+    queue = ReviewQueue()
+    success, error = queue.approve_suggested_fact(session, 9999)
+    assert success is False, "Should fail for non-existent fact"
+    assert error is not None, "Should return error message"
+    assert "not found" in error.lower(), "Error should mention not found"
+    session.close()
+
+
+def _test_reject_suggested_fact_db() -> None:
+    """Test rejecting a SuggestedFact sets status to REJECTED."""
+    session = create_test_database()
+    person = Person(username="RejectFactTest", first_name="Grace")
+    session.add(person)
+    session.commit()
+
+    fact = SuggestedFact(
+        people_id=person.id,
+        fact_type=FactTypeEnum.DEATH,
+        original_value="died 1920",
+        new_value="1920",
+        confidence_score=65,
+        status=FactStatusEnum.PENDING,
+    )
+    session.add(fact)
+    session.commit()
+    fact_id = fact.id
+
+    queue = ReviewQueue()
+    success, error = queue.reject_suggested_fact(session, fact_id, reviewer="tester", reason="Unverified")
+    session.commit()
+
+    assert success is True, f"Rejection should succeed, got error: {error}"
+    refreshed = session.query(SuggestedFact).filter(SuggestedFact.id == fact_id).first()
+    assert refreshed.status == FactStatusEnum.REJECTED, "Status should be REJECTED"
+    session.close()
+
+
+def _test_reject_suggested_fact_already_approved() -> None:
+    """Test rejecting an already-approved SuggestedFact returns failure."""
+    session = create_test_database()
+    person = Person(username="AlreadyApproved")
+    session.add(person)
+    session.commit()
+
+    fact = SuggestedFact(
+        people_id=person.id,
+        fact_type=FactTypeEnum.LOCATION,
+        original_value="New York",
+        new_value="New York, NY",
+        status=FactStatusEnum.APPROVED,
+    )
+    session.add(fact)
+    session.commit()
+
+    queue = ReviewQueue()
+    success, error = queue.reject_suggested_fact(session, fact.id)
+    assert success is False, "Should fail for non-PENDING fact"
+    assert error is not None and "not pending" in error.lower(), "Error should mention not pending"
+    session.close()
+
+
+def _test_list_pending_suggested_facts_db() -> None:
+    """Test list_pending_suggested_facts returns only PENDING facts."""
+    session = create_test_database()
+    person = Person(username="ListTest", first_name="Hank")
+    session.add(person)
+    session.commit()
+
+    pending_fact = SuggestedFact(
+        people_id=person.id,
+        fact_type=FactTypeEnum.BIRTH,
+        original_value="born 1860",
+        new_value="1860",
+        confidence_score=80,
+        status=FactStatusEnum.PENDING,
+    )
+    approved_fact = SuggestedFact(
+        people_id=person.id,
+        fact_type=FactTypeEnum.DEATH,
+        original_value="died 1930",
+        new_value="1930",
+        confidence_score=90,
+        status=FactStatusEnum.APPROVED,
+    )
+    session.add_all([pending_fact, approved_fact])
+    session.commit()
+
+    queue = ReviewQueue()
+    results = queue.list_pending_suggested_facts(session)
+
+    assert len(results) == 1, f"Should have 1 pending fact, got {len(results)}"
+    assert results[0]["person_name"] == "Hank", "Should show person display name"
+    assert results[0]["fact_type"] == "BIRTH", "Should show fact type"
+    assert results[0]["new_value"] == "1860", "Should show new value"
+    assert results[0]["confidence_score"] == 80, "Should show confidence score"
+    session.close()
+
+
+def _test_batch_expire_old_items_db() -> None:
+    """Test batch_expire_old_items expires items older than cutoff."""
+    session = create_test_database()
+    person = Person(username="ExpireTest", first_name="Iris")
+    session.add(person)
+    session.commit()
+
+    old_date = datetime.now(UTC) - timedelta(days=45)
+    recent_date = datetime.now(UTC) - timedelta(days=5)
+
+    old_update = StagedUpdate(
+        people_id=person.id,
+        field_name="birth_year",
+        proposed_value="1860",
+        source="conversation",
+        status=UpdateStatusEnum.PENDING,
+        created_at=old_date,
+    )
+    recent_update = StagedUpdate(
+        people_id=person.id,
+        field_name="first_name",
+        proposed_value="Iris May",
+        source="conversation",
+        status=UpdateStatusEnum.PENDING,
+        created_at=recent_date,
+    )
+    old_conflict = DataConflict(
+        people_id=person.id,
+        field_name="first_name",
+        existing_value="Iris",
+        new_value="Iris May",
+        source="gedcom_import",
+        status=ConflictStatusEnum.OPEN,
+        created_at=old_date,
+    )
+    session.add_all([old_update, recent_update, old_conflict])
+    session.commit()
+
+    queue = ReviewQueue()
+    expired_updates, expired_conflicts = queue.batch_expire_old_items(session, max_age_days=30)
+    session.commit()
+
+    assert expired_updates == 1, f"Should expire 1 old update, got {expired_updates}"
+    assert expired_conflicts == 1, f"Should expire 1 old conflict, got {expired_conflicts}"
+
+    # Recent update should still be pending
+    remaining = (
+        session.query(StagedUpdate)
+        .filter(StagedUpdate.status == UpdateStatusEnum.PENDING)
+        .all()
+    )
+    assert len(remaining) == 1, "Recent update should still be PENDING"
+    assert remaining[0].field_name == "first_name", "Recent update should be the first_name one"
+    session.close()
 
 
 def _test_display_item_format() -> None:
@@ -767,14 +1233,6 @@ def _test_format_summary() -> None:
     assert "birth_year" in formatted, "Should show field breakdown"
 
 
-def _test_review_action_enum() -> None:
-    """Test ReviewAction enum values."""
-    assert ReviewAction.APPROVE.value == "approve"
-    assert ReviewAction.REJECT.value == "reject"
-    assert ReviewAction.SKIP.value == "skip"
-    assert ReviewAction.MODIFY.value == "modify"
-
-
 # --- Test Suite Setup ---
 
 
@@ -782,14 +1240,38 @@ def module_tests() -> bool:
     """Run all module tests."""
     suite = TestSuite("Review Queue Action", "actions/action_review.py")
 
+    # Dataclass / formatting tests (kept - test real computation)
     suite.run_test("Review item display diff", _test_review_item_display_diff)
     suite.run_test("Review item display diff empty", _test_review_item_display_diff_empty)
-    suite.run_test("Review summary creation", _test_review_summary_creation)
-    suite.run_test("Review queue initialization", _test_review_queue_init)
     suite.run_test("Display item formatting", _test_display_item_format)
     suite.run_test("Display item conflict type", _test_display_item_conflict)
     suite.run_test("Format summary", _test_format_summary)
-    suite.run_test("Review action enum", _test_review_action_enum)
+
+    # DB-backed staged update tests
+    suite.run_test("Approve staged update (DB)", _test_approve_staged_update_db)
+    suite.run_test("Approve staged update not found", _test_approve_staged_update_not_found)
+    suite.run_test("Approve already-approved update", _test_approve_already_approved)
+    suite.run_test("Reject staged update (DB)", _test_reject_staged_update_db)
+    suite.run_test("Reject staged update not found", _test_reject_staged_update_not_found)
+
+    # DB-backed conflict resolution tests
+    suite.run_test("Resolve conflict accept (DB)", _test_resolve_conflict_accept)
+    suite.run_test("Resolve conflict reject (DB)", _test_resolve_conflict_reject)
+
+    # DB-backed pending items and summary tests
+    suite.run_test("Get pending items (DB)", _test_get_pending_items_db)
+    suite.run_test("Get pending items excludes non-pending", _test_get_pending_items_excludes_non_pending)
+    suite.run_test("Get summary (DB)", _test_get_summary_db)
+
+    # DB-backed SuggestedFact tests
+    suite.run_test("Approve suggested fact (DB)", _test_approve_suggested_fact_db)
+    suite.run_test("Approve suggested fact not found", _test_approve_suggested_fact_not_found)
+    suite.run_test("Reject suggested fact (DB)", _test_reject_suggested_fact_db)
+    suite.run_test("Reject suggested fact already approved", _test_reject_suggested_fact_already_approved)
+    suite.run_test("List pending suggested facts (DB)", _test_list_pending_suggested_facts_db)
+
+    # DB-backed batch expiry tests
+    suite.run_test("Batch expire old items (DB)", _test_batch_expire_old_items_db)
 
     return suite.finish_suite()
 

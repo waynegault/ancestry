@@ -96,7 +96,7 @@ _LAZY_RE_EXPORTS: dict[str, str] = {
     "_extract_years_from_lifespan": "research.relationship_formatting",
     "_format_discovery_api_path": "research.relationship_formatting",
     "_format_path_step": "research.relationship_formatting",
-    "_format_years_display": "research.relationship_formatting",
+    "format_years_display": "research.relationship_formatting",
     "_get_gendered_term": "research.relationship_formatting",
     "_get_relationship_term": "research.relationship_formatting",
     "_infer_gender_from_name": "research.relationship_formatting",

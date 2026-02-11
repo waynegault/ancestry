@@ -288,7 +288,6 @@ from browser.cookie_utils import (
 # from core_imports import auto_register_module, get_function, get_logger, is_function_available, register_function
 # Initialize logger with standardized pattern
 # logger = get_logger(__name__)
-from browser.css_selectors import *
 from browser.selenium_utils import (
     is_browser_open,
     is_elem_there,

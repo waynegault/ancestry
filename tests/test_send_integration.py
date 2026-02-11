@@ -15,10 +15,11 @@ from __future__ import annotations
 import logging
 import sys
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 from unittest.mock import MagicMock
 
+from testing.protocol_mocks import MockConversationLog, MockConversationState, MockPerson
 from testing.test_framework import TestSuite
 from testing.test_utilities import create_standard_test_runner
 
@@ -34,51 +35,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 
-@dataclass
-class MockPerson:
-    """Mock Person object for integration testing."""
-
-    id: int = 1
-    username: str = "integration_test_user"
-    profile_id: str = "PROFILE_INT_123"
-    status: Any = None
-    in_my_tree: bool = False
-    contactable: bool = True
-    automation_enabled: bool = True
-    administrator_profile_id: str | None = None
-    conversation_state: Any | None = None
-    dna_match: Any | None = None
-    family_tree: Any | None = None
-
-
-@dataclass
-class MockConversationLog:
-    """Mock ConversationLog for integration testing."""
-
-    id: int = 1
-    conversation_id: str = "conv_int_123"
-    people_id: int = 1
-    direction: str = "OUT"
-    latest_timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
-    message_text: str = "Test message"
-    message_template_id: int | None = None
-    latest_message_content: str | None = None
-    script_message_status: str | None = None
-
-
-@dataclass
-class MockConversationState:
-    """Mock ConversationState for integration testing."""
-
-    people_id: int = 1
-    status: str | None = None
-    state: str | None = None
-    conversation_phase: str = "initial_outreach"
-    last_message_type: str | None = None
-    last_message_time: datetime | None = None
-    safety_flag: bool = False
-    next_action: str | None = None
-    next_action_date: datetime | None = None
+# MockConversationLog and MockConversationState imported from testing.protocol_mocks
 
 
 @dataclass

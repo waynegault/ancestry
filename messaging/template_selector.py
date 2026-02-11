@@ -441,11 +441,7 @@ def module_tests() -> bool:
     }
 
     # Mock Person class
-    @dc
-    class MockPerson:
-        id: int = 1
-        username: str = "test_user"
-        in_my_tree: bool = False
+    from testing.protocol_mocks import MockPerson
 
     # Mock FamilyTree class
     @dc

@@ -17,7 +17,7 @@ import logging
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from types import SimpleNamespace
 from typing import Any

@@ -18,7 +18,7 @@ import logging
 import re
 import sys
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from difflib import SequenceMatcher
 from enum import Enum
 from typing import TYPE_CHECKING, Any

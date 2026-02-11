@@ -887,7 +887,7 @@ def convert_api_path_to_unified_format(
 # === DISPLAY FORMATTING ===
 
 
-def _format_years_display(birth_year: str | None, death_year: str | None) -> str:
+def format_years_display(birth_year: int | str | None, death_year: int | str | None) -> str:
     """Format birth/death years into display string."""
     if birth_year and death_year:
         return f" ({birth_year}-{death_year})"
@@ -1059,7 +1059,7 @@ def _format_path_step(
     # Format years for next person - only if we haven't seen this name before
     next_years = ""
     if next_name_clean.lower() not in seen_names:
-        next_years = _format_years_display(next_person.get("birth_year"), next_person.get("death_year"))
+        next_years = format_years_display(next_person.get("birth_year"), next_person.get("death_year"))
         seen_names.add(next_name_clean.lower())
 
     # Get first name for possessive form
@@ -1107,7 +1107,7 @@ def format_relationship_path_unified(
     # Get first and last person details
     first_person = path_data[0]
     first_name = _clean_name_format(str(first_person.get("name", target_name)))
-    first_years = _format_years_display(first_person.get("birth_year"), first_person.get("death_year"))
+    first_years = format_years_display(first_person.get("birth_year"), first_person.get("death_year"))
 
     # Get owner's first name for possessive
     owner_first_name = owner_name.split(maxsplit=1)[0] if owner_name else "Owner"
@@ -1226,10 +1226,10 @@ def relationship_formatting_module_tests() -> bool:
 
     def test_years_display():
         """Test years display formatting."""
-        assert _format_years_display("1900", "1980") == " (1900-1980)"
-        assert _format_years_display("1900", None) == " (b. 1900)"
-        assert _format_years_display(None, "1980") == " (d. 1980)"
-        assert _format_years_display(None, None) == ""  # noqa: PLC1901
+        assert format_years_display("1900", "1980") == " (1900-1980)"
+        assert format_years_display("1900", None) == " (b. 1900)"
+        assert format_years_display(None, "1980") == " (d. 1980)"
+        assert format_years_display(None, None) == ""  # noqa: PLC1901
 
     suite.run_test("API path conversion", test_api_path_conversion)
     suite.run_test("Relationship terms", test_relationship_terms)

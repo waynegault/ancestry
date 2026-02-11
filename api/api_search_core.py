@@ -22,7 +22,7 @@ import hashlib
 import itertools
 import json
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from api.api_search_utils import get_api_family_details

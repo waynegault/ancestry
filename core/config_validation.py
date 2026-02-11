@@ -143,24 +143,6 @@ def validate_action_config() -> bool:
         return False
 
 
-def print_config_error_message() -> None:
-    """Print detailed configuration error message and exit."""
-    logger.critical("Configuration validation failed - unable to proceed")
-    print("\n❌ CONFIGURATION ERROR:")
-    print("   Critical configuration validation failed.")
-    print("   This usually means missing credentials or configuration files.")
-    print("")
-    print("💡 SOLUTION:")
-    print("   1. Copy .env.example to .env and add your credentials")
-    print("   2. Ensure all required environment variables are set")
-
-    print("\n📚 For detailed instructions:")
-    print("   See ENV_IMPORT_GUIDE.md or readme.md")
-
-    print("\nExiting application...")
-    sys.exit(1)
-
-
 # ---------------------------------------------------------------------------
 # Module Tests
 # ---------------------------------------------------------------------------

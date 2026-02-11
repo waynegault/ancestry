@@ -304,31 +304,140 @@ def _test_triangulation_service_integration() -> None:
     mock_research_service = MagicMock()
 
     service = TriangulationService(mock_session, mock_research_service)
-    assert service is not None
-    assert service.db == mock_session
-    assert service.research_service == mock_research_service
+    assert service.db is mock_session, "DB session should be assigned"
+    assert service.research_service is mock_research_service, "Research service should be assigned"
 
 
 def _test_find_triangulation_groups_no_matches() -> None:
     """Test find_triangulation_opportunities returns empty for unknown person."""
-    from unittest.mock import MagicMock, patch
+    from unittest.mock import MagicMock
 
     mock_session = MagicMock()
     mock_research_service = MagicMock()
-    # Query returns empty list
     mock_session.query.return_value.filter.return_value.all.return_value = []
 
     service = TriangulationService(mock_session, mock_research_service)
-    # Use a non-existent UUID to ensure empty results
     result = service.find_triangulation_opportunities("NONEXISTENT-UUID")
     assert isinstance(result, list), "Should return a list"
     assert len(result) == 0, "Should return empty list for unknown person"
 
 
-def _test_menu_rendering() -> None:
-    """Test menu rendering function produces expected output."""
-    output = _render_triangulation_menu(None, 0)
-    assert output is not None, "Menu should return a choice"
+def _test_export_results_csv() -> None:
+    """Test CSV export produces correct file with expected content."""
+    import tempfile
+    from types import SimpleNamespace
+
+    opportunities = [
+        {
+            "shared_match": SimpleNamespace(name="John Smith", uuid="ABC-123"),
+            "common_ancestor": {"name": "Great-Grandpa Smith"},
+            "hypothesis_message": "Likely 3rd cousin via Smith line",
+            "confidence_score": 0.85,
+        },
+        {
+            "shared_match": SimpleNamespace(name="Jane Doe", uuid="DEF-456"),
+            "common_ancestor": {"name": "Unknown"},
+            "hypothesis_message": "Possible connection via maternal line",
+            "confidence_score": 0.42,
+        },
+    ]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        import os
+
+        orig_dir = Path.cwd()
+        os.chdir(tmpdir)
+        try:
+            _export_results(opportunities, "csv")
+            csv_files = [f.name for f in Path(tmpdir).iterdir() if f.suffix == ".csv"]
+            assert len(csv_files) == 1, f"Expected 1 CSV file, got {len(csv_files)}"
+            content = Path(csv_files[0]).read_text(encoding="utf-8")
+            assert "John Smith" in content, "CSV should contain match name"
+            assert "ABC-123" in content, "CSV should contain UUID"
+            assert "Great-Grandpa Smith" in content, "CSV should contain ancestor"
+            assert "0.85" in content, "CSV should contain confidence score"
+            assert "Jane Doe" in content, "CSV should contain second match"
+        finally:
+            os.chdir(orig_dir)
+
+
+def _test_export_results_html() -> None:
+    """Test HTML export produces valid HTML with expected content."""
+    import tempfile
+    from types import SimpleNamespace
+
+    opportunities = [
+        {
+            "shared_match": SimpleNamespace(name="Test Person", uuid="UUID-789"),
+            "common_ancestor": {"name": "Ancestor Name"},
+            "hypothesis_message": "Test hypothesis",
+            "confidence_score": 0.75,
+        },
+    ]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        import os
+
+        orig_dir = Path.cwd()
+        os.chdir(tmpdir)
+        try:
+            _export_results(opportunities, "html")
+            html_files = [f.name for f in Path(tmpdir).iterdir() if f.suffix == ".html"]
+            assert len(html_files) == 1, f"Expected 1 HTML file, got {len(html_files)}"
+            content = Path(html_files[0]).read_text(encoding="utf-8")
+            assert "<html>" in content, "Should produce valid HTML"
+            assert "Test Person" in content, "HTML should contain match name"
+            assert "UUID-789" in content, "HTML should contain UUID"
+            assert "Ancestor Name" in content, "HTML should contain ancestor"
+        finally:
+            os.chdir(orig_dir)
+
+
+def _test_handle_menu_choice_routing() -> None:
+    """Test menu choice routing returns correct state transitions."""
+    from unittest.mock import MagicMock
+
+    session = MagicMock()
+    service = MagicMock()
+
+    # Test 'x' exits
+    tid, tname, opps, should_exit = _handle_menu_choice("x", session, service, "ID1", "Name1", [])
+    assert should_exit is True, "Choice 'x' should set exit flag"
+    assert tid == "ID1", "Target ID should be preserved"
+    assert tname == "Name1", "Target name should be preserved"
+
+    # Test invalid choice doesn't exit
+    tid, tname, opps, should_exit = _handle_menu_choice("invalid", session, service, "ID1", "Name1", [])
+    assert should_exit is False, "Invalid choice should not exit"
+
+    # Test choice '3' without target returns empty opportunities
+    service.find_triangulation_opportunities.return_value = []
+    tid, tname, opps, should_exit = _handle_menu_choice("3", session, service, None, None, [])
+    assert should_exit is False
+    assert len(opps) == 0, "Analysis without target should return empty"
+
+
+def _test_handle_run_analysis_no_target() -> None:
+    """Test _handle_run_analysis returns empty when no target selected."""
+    from unittest.mock import MagicMock
+
+    service = MagicMock()
+    result = _handle_run_analysis(service, None, None)
+    assert result == [], "Should return empty list when no target"
+    service.find_triangulation_opportunities.assert_not_called()
+
+
+def _test_handle_run_analysis_with_results() -> None:
+    """Test _handle_run_analysis returns opportunities from service."""
+    from unittest.mock import MagicMock
+
+    service = MagicMock()
+    fake_results = [{"shared_match": "m1"}, {"shared_match": "m2"}]
+    service.find_triangulation_opportunities.return_value = fake_results
+
+    result = _handle_run_analysis(service, "TARGET-UUID", "Target Name")
+    assert len(result) == 2, "Should return 2 opportunities"
+    service.find_triangulation_opportunities.assert_called_once_with("TARGET-UUID")
 
 
 def module_tests() -> bool:
@@ -346,6 +455,36 @@ def module_tests() -> bool:
         "find_triangulation_groups empty result",
         _test_find_triangulation_groups_no_matches,
         "Verify empty result for unknown person UUID",
+    )
+
+    suite.run_test(
+        "CSV export produces correct output",
+        _test_export_results_csv,
+        "Verify CSV file content from triangulation results",
+    )
+
+    suite.run_test(
+        "HTML export produces correct output",
+        _test_export_results_html,
+        "Verify HTML file content from triangulation results",
+    )
+
+    suite.run_test(
+        "Menu choice routing",
+        _test_handle_menu_choice_routing,
+        "Verify menu dispatches correctly and tracks state",
+    )
+
+    suite.run_test(
+        "Analysis without target selected",
+        _test_handle_run_analysis_no_target,
+        "Verify graceful handling when no target selected",
+    )
+
+    suite.run_test(
+        "Analysis with results from service",
+        _test_handle_run_analysis_with_results,
+        "Verify analysis delegates to service and returns results",
     )
 
     return suite.finish_suite()

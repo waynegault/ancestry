@@ -759,8 +759,6 @@ class ReviewQueueMixin:
                 print("❌ AI failed to generate a new reply")
                 return False
 
-            from datetime import datetime, timezone
-
             draft.content = new_reply
             draft.created_at = datetime.now(UTC)  # Reset creation time
             db_session.commit()
@@ -1015,8 +1013,6 @@ class ReviewQueueMixin:
     def approve_suggested_fact(self, fact_id: int) -> bool:
         """Approve a SuggestedFact (mark APPROVED)."""
         try:
-            from datetime import datetime, timezone
-
             from core.database import FactStatusEnum, SuggestedFact
             from core.session_manager import SessionManager
 
@@ -1047,8 +1043,6 @@ class ReviewQueueMixin:
     def reject_suggested_fact(self, fact_id: int, reason: str = "") -> bool:
         """Reject a SuggestedFact (mark REJECTED)."""
         try:
-            from datetime import datetime, timezone
-
             from core.database import FactStatusEnum, SuggestedFact
             from core.session_manager import SessionManager
 

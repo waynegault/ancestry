@@ -25,9 +25,32 @@ import logging
 import time
 from typing import Any
 
-from testing.test_framework import Colors
-
 logger = logging.getLogger(__name__)
+
+
+# === ANSI COLOR UTILITIES (local to avoid importing from testing infrastructure) ===
+
+
+class Colors:
+    """Minimal ANSI color codes for terminal output."""
+
+    END = '\033[0m'
+
+    @staticmethod
+    def green(text: str) -> str:
+        return f"\033[92m{text}\033[0m"
+
+    @staticmethod
+    def red(text: str) -> str:
+        return f"\033[91m{text}\033[0m"
+
+    @staticmethod
+    def yellow(text: str) -> str:
+        return f"\033[93m{text}\033[0m"
+
+    @staticmethod
+    def cyan(text: str) -> str:
+        return f"\033[96m{text}\033[0m"
 
 
 # === DISPLAY FORMATTING UTILITIES ===

@@ -9,7 +9,7 @@ Stores the relationships in the SharedMatch table.
 import json
 import logging
 import sys
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, cast
 from urllib.parse import urlencode, urljoin
 

@@ -34,7 +34,7 @@ import random
 import sys
 import time
 from collections import Counter
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Literal
 from urllib.parse import unquote, urlencode, urljoin, urlparse
 
@@ -85,6 +85,8 @@ from actions.gather.performance_logging import (
 from actions.gather.persistence import (
     BatchLookupArtifacts,
     PersistenceHooks,
+    _check_existing_profile_ids,
+    _deduplicate_person_creates,
     needs_ethnicity_refresh as _needs_ethnicity_refresh,
     prepare_and_commit_batch_data as gather_prepare_and_commit_batch_data,
     process_batch_lookups as gather_process_batch_lookups,
@@ -95,7 +97,7 @@ from actions.gather.prefetch import (
     get_prefetched_data_for_match as _get_prefetched_data_for_match,
     perform_api_prefetches as gather_perform_api_prefetches,
 )
-from browser.css_selectors import *  # Import CSS selectors
+from browser.css_selectors import MATCH_ENTRY_SELECTOR
 from browser.selenium_utils import get_driver_cookies
 from config import config_schema
 from core.database import (
@@ -718,67 +720,8 @@ class MemoryOptimizedMatchProcessor:
         return match
 
 
-def _deduplicate_person_creates(person_creates_raw: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """
-    De-duplicate Person creates based on Profile ID before bulk insert.
-
-    Args:
-        person_creates_raw: list of raw person create data dictionaries
-
-    Returns:
-        list of filtered person create data (duplicates removed)
-    """
-    person_creates_filtered: list[dict[str, Any]] = []
-    seen_profile_ids: set[str] = set()
-    skipped_duplicates = 0
-
-    if not person_creates_raw:
-        return person_creates_filtered
-
-    logger.debug(f"De-duplicating {len(person_creates_raw)} raw person creates based on Profile ID...")
-
-    for p_data in person_creates_raw:
-        profile_id = cast(str | None, p_data.get("profile_id"))  # Already uppercase from prep if exists
-        uuid_for_log = cast(str | None, p_data.get("uuid"))  # For logging skipped items
-
-        if profile_id is None:
-            person_creates_filtered.append(p_data)  # Allow creates with null profile ID
-        elif profile_id not in seen_profile_ids:
-            person_creates_filtered.append(p_data)
-            seen_profile_ids.add(profile_id)
-        else:
-            logger.warning(
-                f"Skipping duplicate Person create in batch (ProfileID: {profile_id}, UUID: {uuid_for_log})."
-            )
-            skipped_duplicates += 1
-
-    if skipped_duplicates > 0:
-        logger.info(f"Skipped {skipped_duplicates} duplicate person creates in this batch.")
-    logger.debug(f"Proceeding with {len(person_creates_filtered)} unique person creates.")
-
-    return person_creates_filtered
-
-
-def _check_existing_profile_ids(session: SqlAlchemySession, profile_ids_to_check: set[str]) -> set[str]:
-    """Check database for existing profile IDs."""
-    existing_profile_ids: set[str] = set()
-    if not profile_ids_to_check:
-        return existing_profile_ids
-
-    try:
-        logger.debug(f"Checking database for {len(profile_ids_to_check)} existing profile IDs...")
-        existing_records = (
-            session.query(Person.profile_id)
-            .filter(Person.profile_id.in_(profile_ids_to_check), Person.deleted_at.is_(None))
-            .all()
-        )
-        existing_profile_ids = {record.profile_id for record in existing_records}
-        if existing_profile_ids:
-            logger.info(f"Found {len(existing_profile_ids)} existing profile IDs that will be skipped")
-    except Exception as e:
-        logger.warning(f"Failed to check existing profile IDs: {e}")
-
-    return existing_profile_ids
+# _deduplicate_person_creates and _check_existing_profile_ids imported from
+# actions.gather.persistence (canonical location after gather/ refactor).
 
 
 def _check_existing_uuids(session: SqlAlchemySession, uuids_to_check: set[str]) -> set[str]:

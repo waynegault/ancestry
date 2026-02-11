@@ -469,14 +469,30 @@ def coord(
 
 
 def _test_tree_update_mode_enum() -> None:
-    """Test TreeUpdateMode enum values."""
+    """Test TreeUpdateMode enum values and construction from strings."""
+    # Verify all enum values
     assert TreeUpdateMode.DRY_RUN.value == "dry_run"
     assert TreeUpdateMode.APPLY.value == "apply"
     assert TreeUpdateMode.INTERACTIVE.value == "interactive"
 
+    # Verify enum construction from string values (used by coord())
+    assert TreeUpdateMode("dry_run") is TreeUpdateMode.DRY_RUN
+    assert TreeUpdateMode("apply") is TreeUpdateMode.APPLY
+    assert TreeUpdateMode("interactive") is TreeUpdateMode.INTERACTIVE
 
-def _test_tree_update_summary_creation() -> None:
-    """Test TreeUpdateSummary dataclass."""
+    # Verify invalid mode string raises ValueError (coord() relies on this)
+    try:
+        TreeUpdateMode("invalid_mode")
+        raise AssertionError("Expected ValueError for invalid mode string")
+    except ValueError:
+        pass
+
+    # Verify all members are accounted for
+    assert len(TreeUpdateMode) == 3, f"Expected 3 modes, got {len(TreeUpdateMode)}"
+
+
+def _test_tree_update_summary_tracking() -> None:
+    """Test TreeUpdateSummary tracks counts and computes correctly."""
     summary = TreeUpdateSummary(
         total_pending=10,
         processed=8,
@@ -488,29 +504,286 @@ def _test_tree_update_summary_creation() -> None:
     assert summary.applied == 6
     assert summary.by_fact_type == {}
 
+    # Verify derived relationships: processed == applied + skipped + failed
+    assert summary.processed == summary.applied + summary.skipped + summary.failed
 
-def _test_tree_update_summary_with_fact_types() -> None:
-    """Test TreeUpdateSummary with fact type tracking."""
+    # Verify unprocessed count
+    unprocessed = summary.total_pending - summary.processed
+    assert unprocessed == 2, f"Expected 2 unprocessed, got {unprocessed}"
+
+    # Verify errors list is mutable and independent per instance
+    summary.errors.append("test error")
+    assert len(summary.errors) == 1
+    other = TreeUpdateSummary()
+    assert len(other.errors) == 0, "Errors list should not be shared between instances"
+
+
+def _test_tree_update_summary_fact_type_aggregation() -> None:
+    """Test TreeUpdateSummary fact type tracking mirrors real processing logic."""
     summary = TreeUpdateSummary()
-    summary.by_fact_type["birth"] = 3
-    summary.by_fact_type["death"] = 2
-    assert sum(summary.by_fact_type.values()) == 5
+
+    # Simulate the processing loop from run_tree_updates
+    fact_types_processed = ["birth", "birth", "death", "birth", "marriage", "death"]
+    for ft in fact_types_processed:
+        summary.by_fact_type[ft] = summary.by_fact_type.get(ft, 0) + 1
+        summary.processed += 1
+
+    assert summary.by_fact_type["birth"] == 3
+    assert summary.by_fact_type["death"] == 2
+    assert summary.by_fact_type["marriage"] == 1
+    assert sum(summary.by_fact_type.values()) == 6
+    assert summary.processed == 6
+
+    # Verify sorted output order (used by _log_summary)
+    sorted_types = sorted(summary.by_fact_type.items())
+    assert sorted_types[0][0] == "birth"
+    assert sorted_types[1][0] == "death"
+    assert sorted_types[2][0] == "marriage"
 
 
-def _test_dry_run_mode_prevents_mutations() -> None:
-    """Test that DRY_RUN mode doesn't apply changes."""
+def _test_dry_run_returns_success_without_mutations() -> None:
+    """Test that _process_single_fact in DRY_RUN mode returns success without calling tree service."""
+    from unittest.mock import MagicMock
+
+    mock_db_session = MagicMock(spec=Session)
+    mock_tree_service = MagicMock(spec=TreeUpdateService)
+    mock_fact = MagicMock(spec=SuggestedFact)
+    mock_fact.id = 42
+    mock_fact.people_id = 100
+    mock_fact.fact_type = FactTypeEnum.BIRTH
+    mock_fact.original_value = "1 Jan 1900"
+    mock_fact.new_value = "1 January 1900"
+
+    # Provide a person lookup result
+    mock_person = MagicMock(spec=Person)
+    mock_person.display_name = "John Smith"
+    mock_db_session.query.return_value.filter.return_value.first.return_value = mock_person
+
+    result = _process_single_fact(
+        db_session=mock_db_session,
+        tree_service=mock_tree_service,
+        fact=mock_fact,
+        tree_id="tree-123",
+        mode=TreeUpdateMode.DRY_RUN,
+    )
+
+    # DRY_RUN should return SUCCESS without calling tree_service.apply_suggested_fact
+    assert result.result == TreeUpdateResult.SUCCESS, f"Expected SUCCESS, got {result.result}"
+    assert "Dry run" in result.message
+    mock_tree_service.apply_suggested_fact.assert_not_called()
+
+
+def _test_run_tree_updates_feature_flag_disabled() -> None:
+    """Test run_tree_updates returns early with error when feature flag is disabled."""
     from unittest.mock import MagicMock, patch
 
     mock_sm = MagicMock()
-    mock_session = MagicMock()
-    mock_sm.db_manager.get_session.return_value = mock_session
-    # Mock no pending facts
-    mock_session.query.return_value.filter.return_value.all.return_value = []
 
-    # Should succeed with zero mutations for empty pending list
-    summary = TreeUpdateSummary()
-    assert summary.applied == 0, "Dry run with no pending facts should apply nothing"
-    assert summary.failed == 0, "Dry run with no pending facts should have no failures"
+    with patch(f"{__name__}.is_feature_enabled", return_value=False):
+        summary = run_tree_updates(
+            session_manager=mock_sm,
+            tree_id="tree-123",
+            mode=TreeUpdateMode.DRY_RUN,
+        )
+
+    assert summary.applied == 0, "Should not apply anything when feature flag is off"
+    assert summary.failed == 0
+    assert summary.total_pending == 0
+    assert "Feature flag disabled" in summary.errors
+    assert summary.duration_seconds >= 0
+    # DB should never be accessed
+    mock_sm.db_manager.get_session_context.assert_not_called()
+
+
+def _test_run_tree_updates_empty_pending() -> None:
+    """Test run_tree_updates with no pending facts returns clean summary."""
+    from contextlib import contextmanager
+    from unittest.mock import MagicMock, patch
+
+    mock_sm = MagicMock()
+    mock_db = MagicMock()
+    mock_query = MagicMock()
+    mock_query.filter.return_value = mock_query
+    mock_query.order_by.return_value.limit.return_value.all.return_value = []
+    mock_db.query.return_value = mock_query
+
+    @contextmanager
+    def fake_session_ctx():
+        yield mock_db
+
+    mock_sm.db_manager.get_session_context = fake_session_ctx
+
+    with patch(f"{__name__}.is_feature_enabled", return_value=True):
+        summary = run_tree_updates(
+            session_manager=mock_sm,
+            tree_id="tree-123",
+            mode=TreeUpdateMode.DRY_RUN,
+        )
+
+    assert summary.total_pending == 0
+    assert summary.processed == 0
+    assert summary.applied == 0
+    assert summary.duration_seconds >= 0
+
+
+def _test_run_tree_updates_dry_run_processes_facts() -> None:
+    """Test run_tree_updates in DRY_RUN mode processes facts as SUCCESS but never mutates tree."""
+    from contextlib import contextmanager
+    from unittest.mock import MagicMock, patch
+
+    mock_sm = MagicMock()
+    mock_db = MagicMock()
+
+    # Create two mock SuggestedFact objects
+    mock_fact1 = MagicMock(spec=SuggestedFact)
+    mock_fact1.id = 1
+    mock_fact1.people_id = 10
+    mock_fact1.fact_type = FactTypeEnum.BIRTH
+    mock_fact1.original_value = "1900"
+    mock_fact1.new_value = "1 Jan 1900"
+
+    mock_fact2 = MagicMock(spec=SuggestedFact)
+    mock_fact2.id = 2
+    mock_fact2.people_id = 20
+    mock_fact2.fact_type = FactTypeEnum.DEATH
+    mock_fact2.original_value = "1970"
+    mock_fact2.new_value = "15 Mar 1970"
+
+    mock_query = MagicMock()
+    mock_query.filter.return_value = mock_query
+    mock_query.order_by.return_value.limit.return_value.all.return_value = [mock_fact1, mock_fact2]
+    mock_db.query.return_value = mock_query
+    # Person lookup
+    mock_person = MagicMock()
+    mock_person.display_name = "Test Person"
+    mock_db.query.return_value.filter.return_value.first.return_value = mock_person
+
+    @contextmanager
+    def fake_session_ctx():
+        yield mock_db
+
+    mock_sm.db_manager.get_session_context = fake_session_ctx
+
+    mock_tree_service = MagicMock(spec=TreeUpdateService)
+
+    with (
+        patch(f"{__name__}.is_feature_enabled", return_value=True),
+        patch(f"{__name__}.TreeUpdateService", return_value=mock_tree_service),
+    ):
+        summary = run_tree_updates(
+            session_manager=mock_sm,
+            tree_id="tree-123",
+            mode=TreeUpdateMode.DRY_RUN,
+        )
+
+    assert summary.total_pending == 2
+    assert summary.processed == 2
+    assert summary.applied == 2  # DRY_RUN still counts as SUCCESS/applied
+    assert summary.failed == 0
+    assert "BIRTH" in summary.by_fact_type
+    assert "DEATH" in summary.by_fact_type
+    # Tree service apply should never be called in DRY_RUN
+    mock_tree_service.apply_suggested_fact.assert_not_called()
+
+
+def _test_log_summary_output() -> None:
+    """Test _log_summary produces correctly formatted output."""
+    import io
+    import sys
+
+    summary = TreeUpdateSummary(
+        total_pending=5,
+        processed=5,
+        applied=3,
+        skipped=1,
+        failed=1,
+        by_fact_type={"birth": 2, "death": 1, "marriage": 2},
+        errors=["Fact 10: API timeout"],
+        duration_seconds=12.345,
+    )
+
+    captured = io.StringIO()
+    old_stdout = sys.stdout
+    try:
+        sys.stdout = captured
+        _log_summary(summary)
+    finally:
+        sys.stdout = old_stdout
+
+    output = captured.getvalue()
+
+    # Verify key content in output
+    assert "Tree Update Summary" in output
+    assert "Total Pending: 5" in output
+    assert "Applied: 3" in output
+    assert "Skipped: 1" in output
+    assert "Failed: 1" in output
+    assert "12.3" in output  # Duration formatted to 1 decimal
+    assert "birth: 2" in output
+    assert "death: 1" in output
+    assert "marriage: 2" in output
+    assert "Fact 10: API timeout" in output
+
+
+def _test_log_summary_truncates_long_error_list() -> None:
+    """Test _log_summary only shows first 5 errors and indicates remaining count."""
+    import io
+    import sys
+
+    summary = TreeUpdateSummary(
+        total_pending=10,
+        processed=10,
+        failed=8,
+        errors=[f"Error {i}" for i in range(8)],
+    )
+
+    captured = io.StringIO()
+    old_stdout = sys.stdout
+    try:
+        sys.stdout = captured
+        _log_summary(summary)
+    finally:
+        sys.stdout = old_stdout
+
+    output = captured.getvalue()
+    assert "Error 0" in output
+    assert "Error 4" in output
+    # Error 5-7 should be truncated
+    assert "Error 5" not in output
+    assert "and 3 more" in output
+
+
+def _test_coord_rejects_invalid_mode() -> None:
+    """Test coord() returns False for invalid mode strings."""
+    from unittest.mock import MagicMock
+
+    mock_sm = MagicMock(spec=SessionManager)
+    mock_sm.my_tree_id = "tree-123"
+
+    result = coord(mock_sm, tree_id="tree-123", mode_str="invalid_mode")
+    assert result is False, "coord() should return False for invalid mode"
+
+
+def _test_summary_dataclass_defaults() -> None:
+    """Test TreeUpdateSummary default values and mutable default isolation."""
+    s1 = TreeUpdateSummary()
+    s2 = TreeUpdateSummary()
+
+    # Defaults should be zero/empty
+    assert s1.total_pending == 0
+    assert s1.processed == 0
+    assert s1.applied == 0
+    assert s1.skipped == 0
+    assert s1.failed == 0
+    assert s1.duration_seconds == 0.0
+    assert s1.by_fact_type == {}
+    assert s1.errors == []
+
+    # Mutating one instance must not affect the other (mutable default isolation)
+    s1.by_fact_type["birth"] = 5
+    s1.errors.append("oops")
+    assert s2.by_fact_type == {}, "Mutable defaults must be independent"
+    assert s2.errors == [], "Mutable defaults must be independent"
 
 
 def module_tests() -> bool:
@@ -519,24 +792,59 @@ def module_tests() -> bool:
     suite.start_suite()
 
     suite.run_test(
-        "TreeUpdateMode enum values",
+        "TreeUpdateMode enum values and string construction",
         _test_tree_update_mode_enum,
-        "Verifies TreeUpdateMode enum has expected values",
+        "Verifies enum values, construction from strings, and invalid value rejection",
     )
     suite.run_test(
-        "TreeUpdateSummary creation",
-        _test_tree_update_summary_creation,
-        "Verifies TreeUpdateSummary dataclass instantiation",
+        "TreeUpdateSummary count tracking",
+        _test_tree_update_summary_tracking,
+        "Verifies summary tracks applied/skipped/failed and derived counts",
     )
     suite.run_test(
-        "TreeUpdateSummary fact type tracking",
-        _test_tree_update_summary_with_fact_types,
-        "Verifies fact type tracking in summary",
+        "TreeUpdateSummary fact type aggregation",
+        _test_tree_update_summary_fact_type_aggregation,
+        "Verifies fact type counting mirrors real processing logic",
     )
     suite.run_test(
-        "DRY_RUN mode prevents mutations",
-        _test_dry_run_mode_prevents_mutations,
-        "Verifies dry run mode does not apply changes",
+        "TreeUpdateSummary defaults and mutable isolation",
+        _test_summary_dataclass_defaults,
+        "Verifies default values and mutable field independence between instances",
+    )
+    suite.run_test(
+        "DRY_RUN _process_single_fact returns SUCCESS without mutations",
+        _test_dry_run_returns_success_without_mutations,
+        "Invokes _process_single_fact in DRY_RUN and verifies tree service is NOT called",
+    )
+    suite.run_test(
+        "run_tree_updates returns early when feature flag disabled",
+        _test_run_tree_updates_feature_flag_disabled,
+        "Invokes run_tree_updates with disabled flag and verifies early exit with error",
+    )
+    suite.run_test(
+        "run_tree_updates with empty pending list",
+        _test_run_tree_updates_empty_pending,
+        "Verifies clean summary when no pending facts exist",
+    )
+    suite.run_test(
+        "run_tree_updates DRY_RUN processes facts without tree mutations",
+        _test_run_tree_updates_dry_run_processes_facts,
+        "Invokes run_tree_updates with mock facts in DRY_RUN and verifies counts",
+    )
+    suite.run_test(
+        "_log_summary produces correct formatted output",
+        _test_log_summary_output,
+        "Captures stdout and verifies summary formatting including fact types and errors",
+    )
+    suite.run_test(
+        "_log_summary truncates long error lists",
+        _test_log_summary_truncates_long_error_list,
+        "Verifies only first 5 errors shown with remainder count",
+    )
+    suite.run_test(
+        "coord() rejects invalid mode strings",
+        _test_coord_rejects_invalid_mode,
+        "Verifies coord returns False for unrecognized mode value",
     )
 
     return suite.finish_suite()

@@ -17,7 +17,7 @@ Key Features:
 import logging
 import re
 from dataclasses import dataclass
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import and_

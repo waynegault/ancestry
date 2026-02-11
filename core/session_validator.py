@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 # === PHASE 4.1: ENHANCED ERROR HANDLING ===
 # === STANDARD LIBRARY IMPORTS ===
 from collections.abc import Callable
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 # === THIRD-PARTY IMPORTS ===

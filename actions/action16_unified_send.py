@@ -29,12 +29,11 @@ import logging
 import sys
 import time
 from dataclasses import asdict, dataclass, field
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 from config import config_schema

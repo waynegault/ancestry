@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urljoin
 

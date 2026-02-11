@@ -14,7 +14,7 @@ Alerts are logged and can be forwarded to external systems.
 
 import logging
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Any
 

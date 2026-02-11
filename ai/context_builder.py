@@ -13,7 +13,7 @@ Sprint 1, Task 2: Implement Context Builder
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from sqlalchemy.orm import Session

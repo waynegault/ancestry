@@ -27,7 +27,7 @@ import hashlib
 import json
 import os
 import statistics
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 from observability.metrics_registry import metrics
