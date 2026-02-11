@@ -315,7 +315,7 @@ def _tool_query_database(arguments: dict[str, Any]) -> dict[str, Any]:
         return {"success": True, "row_count": len(rows), "rows": rows}
 
 
-def _tool_get_database_schema(arguments: dict[str, Any]) -> dict[str, Any]:
+def _tool_get_database_schema(_arguments: dict[str, Any]) -> dict[str, Any]:
     """Return the SQLite schema."""
     from sqlalchemy import text
 
@@ -613,14 +613,13 @@ def _tool_get_shared_matches(arguments: dict[str, Any]) -> dict[str, Any]:
                 .filter(Person.id == sm.shared_people_id, Person.deleted_at.is_(None))
                 .first()
             )
-            if shared_person and shared_person.dna_match:
-                if shared_person.dna_match.cm_dna and shared_person.dna_match.cm_dna >= min_cm:
-                    results.append({
-                        "person_id": shared_person.id,
-                        "username": shared_person.username,
-                        "shared_cm": shared_person.dna_match.cm_dna,
-                        "predicted_relationship": shared_person.dna_match.predicted_relationship,
-                    })
+            if shared_person and shared_person.dna_match and shared_person.dna_match.cm_dna and shared_person.dna_match.cm_dna >= min_cm:
+                results.append({
+                    "person_id": shared_person.id,
+                    "username": shared_person.username,
+                    "shared_cm": shared_person.dna_match.cm_dna,
+                    "predicted_relationship": shared_person.dna_match.predicted_relationship,
+                })
 
         results.sort(key=lambda x: x.get("shared_cm", 0), reverse=True)
         return {
@@ -706,7 +705,7 @@ class AncestryMCPServer:
         """Register MCP list_tools and call_tool handlers."""
 
         @self.server.list_tools()
-        async def list_tools() -> list[Any]:
+        async def list_tools() -> list[Any]:  # noqa: RUF029
             return _TOOL_DEFINITIONS
 
         @self.server.call_tool()
@@ -928,6 +927,65 @@ def _test_entry_point_functions_callable() -> bool:
     return True
 
 
+def _test_query_database_real_select() -> bool:
+    """Execute a real SELECT query against the live database."""
+    result = _tool_query_database({"query": "SELECT COUNT(*) AS cnt FROM people"})
+    assert "error" not in result, f"Real SELECT should succeed: {result.get('error')}"
+    assert result.get("success") is True
+    assert result["row_count"] == 1
+    assert result["rows"][0].get("cnt", result["rows"][0].get("value", 0)) >= 0
+    return True
+
+
+def _test_get_database_schema_real() -> bool:
+    """Execute get_database_schema against the live database."""
+    result = _tool_get_database_schema({})
+    assert "error" not in result, f"Schema query should succeed: {result.get('error')}"
+    assert result.get("success") is True
+    table_names = [t["table"] for t in result["tables"]]
+    assert "people" in table_names, f"Schema should include 'people' table, got: {table_names}"
+    # Verify column structure
+    people_table = next(t for t in result["tables"] if t["table"] == "people")
+    col_names = [c["name"] for c in people_table["columns"]]
+    assert "id" in col_names, "people table should have 'id' column"
+    assert "uuid" in col_names, "people table should have 'uuid' column"
+    return True
+
+
+def _test_get_match_summary_real() -> bool:
+    """Execute get_match_summary against the live database."""
+    result = _tool_get_match_summary({"min_cm": 0, "limit": 5})
+    assert "error" not in result, f"Match summary should succeed: {result.get('error')}"
+    assert result.get("success") is True
+    assert "total_matches" in result
+    assert "statistics" in result
+    assert isinstance(result["total_matches"], int)
+    assert result["total_matches"] >= 0
+    return True
+
+
+def _test_search_matches_real() -> bool:
+    """Execute search_matches against the live database."""
+    result = _tool_search_matches({"limit": 5})
+    assert "error" not in result, f"Search should succeed: {result.get('error')}"
+    assert result.get("success") is True
+    assert "count" in result
+    assert "matches" in result
+    assert isinstance(result["matches"], list)
+    return True
+
+
+def _test_list_pending_drafts_real() -> bool:
+    """Execute list_pending_drafts against the live database."""
+    result = _tool_list_pending_drafts({"limit": 5})
+    assert "error" not in result, f"List drafts should succeed: {result.get('error')}"
+    assert result.get("success") is True
+    assert "count" in result
+    assert "drafts" in result
+    assert isinstance(result["drafts"], list)
+    return True
+
+
 def mcp_server_module_tests() -> bool:
     """Run the MCP server test suite."""
     from testing.test_framework import TestSuite
@@ -1019,6 +1077,41 @@ def mcp_server_module_tests() -> bool:
         method_description="Check both functions are callable",
         expected_outcome="Both return True from callable() check",
     )
+    suite.run_test(
+        test_name="Real database SELECT query",
+        test_func=_test_query_database_real_select,
+        test_summary="Execute SELECT COUNT(*) against live database",
+        method_description="Call _tool_query_database with real SELECT and verify result",
+        expected_outcome="Query returns success with valid row count",
+    )
+    suite.run_test(
+        test_name="Real database schema retrieval",
+        test_func=_test_get_database_schema_real,
+        test_summary="Retrieve full schema from live database",
+        method_description="Call _tool_get_database_schema and verify people table exists with expected columns",
+        expected_outcome="Schema includes people table with id and uuid columns",
+    )
+    suite.run_test(
+        test_name="Real match summary query",
+        test_func=_test_get_match_summary_real,
+        test_summary="Get DNA match statistics from live database",
+        method_description="Call _tool_get_match_summary and verify structure",
+        expected_outcome="Returns total_matches count and statistics dict",
+    )
+    suite.run_test(
+        test_name="Real search matches query",
+        test_func=_test_search_matches_real,
+        test_summary="Search DNA matches from live database",
+        method_description="Call _tool_search_matches with limit=5",
+        expected_outcome="Returns success with matches list",
+    )
+    suite.run_test(
+        test_name="Real pending drafts query",
+        test_func=_test_list_pending_drafts_real,
+        test_summary="List pending drafts from live database",
+        method_description="Call _tool_list_pending_drafts with limit=5",
+        expected_outcome="Returns success with drafts list",
+    )
 
     return suite.finish_suite()
 
@@ -1027,8 +1120,12 @@ run_comprehensive_tests = create_standard_test_runner(mcp_server_module_tests)
 
 
 if __name__ == "__main__":
-    # When run directly, start the MCP server (not tests).
-    # Use `python -m mcp_server` or main.py 's' for the same behaviour.
-    # Tests are discovered by run_all_tests.py via run_comprehensive_tests.
-    success = start_mcp_server()
-    sys.exit(0 if success else 1)
+    import os
+    if os.environ.get("RUN_MODULE_TESTS") == "1":
+        sys.exit(0 if run_comprehensive_tests() else 1)
+    else:
+        # When run directly, start the MCP server (not tests).
+        # Use `python -m mcp_server` or main.py 's' for the same behaviour.
+        # Tests are discovered by run_all_tests.py via run_comprehensive_tests.
+        success = start_mcp_server()
+        sys.exit(0 if success else 1)

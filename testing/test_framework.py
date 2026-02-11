@@ -676,42 +676,6 @@ from testing.test_utilities import create_standard_test_runner
 run_comprehensive_tests = create_standard_test_runner(test_framework_module_tests)
 
 
-if __name__ == "__main__":
-    # Test the framework itself
-    def demo_tests() -> bool:
-        suite = TestSuite("Test Framework Demo", "test_framework.py")
-        suite.start_suite()
-
-        def test_colors() -> None:
-            assert Colors.RED == "\033[91m"
-            assert Colors.GREEN == "\033[92m"
-            assert Colors.RESET == "\033[0m"
-            assert Colors.END == "\033[0m"
-
-        def test_icons() -> None:
-            assert Icons.PASS == "✅"
-            assert Icons.FAIL == "❌"
-
-        def test_mock_data() -> None:
-            data = create_mock_data()
-            assert "mock_session_manager" in data
-            assert data["sample_dna_data"]["cm_dna"] == 85
-
-        suite.run_test("Color constants", test_colors, "Should define standard ANSI color codes")
-        suite.run_test("Icon constants", test_icons, "Should define standard Unicode icons")
-        suite.run_test(
-            "Mock data creation",
-            test_mock_data,
-            "Should create valid test data structures",
-        )
-
-        return suite.finish_suite()
-
-    print(f"{Icons.ROCKET} Testing the test framework itself...")
-    success = demo_tests()
-    sys.exit(0 if success else 1)
-
-
 # Test utility classes for eliminating code duplication
 class MockLogger:
     """
@@ -1112,3 +1076,43 @@ def database_rollback_test(session: Any) -> Iterator[Any]:
             # Force rollback even if savepoint rollback fails
             with suppress(Exception):
                 session.rollback()
+
+
+if __name__ == "__main__":
+    import os
+    if os.environ.get("RUN_MODULE_TESTS") == "1":
+        sys.exit(0 if run_comprehensive_tests() else 1)
+
+    # Test the framework itself
+    def demo_tests() -> bool:
+        suite = TestSuite("Test Framework Demo", "test_framework.py")
+        suite.start_suite()
+
+        def test_colors() -> None:
+            assert Colors.RED == "\033[91m"
+            assert Colors.GREEN == "\033[92m"
+            assert Colors.RESET == "\033[0m"
+            assert Colors.END == "\033[0m"
+
+        def test_icons() -> None:
+            assert Icons.PASS == "✅"
+            assert Icons.FAIL == "❌"
+
+        def test_mock_data() -> None:
+            data = create_mock_data()
+            assert "mock_session_manager" in data
+            assert data["sample_dna_data"]["cm_dna"] == 85
+
+        suite.run_test("Color constants", test_colors, "Should define standard ANSI color codes")
+        suite.run_test("Icon constants", test_icons, "Should define standard Unicode icons")
+        suite.run_test(
+            "Mock data creation",
+            test_mock_data,
+            "Should create valid test data structures",
+        )
+
+        return suite.finish_suite()
+
+    print(f"{Icons.ROCKET} Testing the test framework itself...")
+    success = demo_tests()
+    sys.exit(0 if success else 1)

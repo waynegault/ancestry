@@ -588,12 +588,16 @@ run_comprehensive_tests = create_standard_test_runner(universal_scoring_module_t
 
 
 if __name__ == "__main__":
-    # Demo the universal scoring
-    print("Universal Scoring Demo:")
-    print(Colors.green("✅ Universal scoring module loaded successfully"))
-
-    # Run tests
-    if run_comprehensive_tests():
-        print(Colors.green("✅ All tests passed!"))
+    import os
+    if os.environ.get("RUN_MODULE_TESTS") == "1":
+        sys.exit(0 if run_comprehensive_tests() else 1)
     else:
-        print(Colors.red("❌ Some tests failed!"))
+        # Demo the universal scoring
+        print("Universal Scoring Demo:")
+        print(Colors.green("✅ Universal scoring module loaded successfully"))
+
+        # Run tests
+        if run_comprehensive_tests():
+            print(Colors.green("✅ All tests passed!"))
+        else:
+            print(Colors.red("❌ Some tests failed!"))

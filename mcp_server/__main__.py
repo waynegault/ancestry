@@ -5,8 +5,9 @@ Allow running the MCP server with: python -m mcp_server
 This starts the Ancestry MCP Server over stdio transport.
 """
 
-from mcp_server.server import start_mcp_server
 import sys
+
+from mcp_server.server import start_mcp_server
 
 if __name__ == "__main__":
     success = start_mcp_server()

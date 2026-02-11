@@ -979,7 +979,7 @@ def facts_queue_module_tests() -> bool:
             args = SimpleNamespace(limit=50, type=None, status=None)
             with _patch(f"{mod}._get_db_session", return_value=mock_session), \
                  _patch(f"{mod}.FactsQueueService", return_value=mock_svc):
-                    result = cmd_list(args)
+                result = cmd_list(args)
             assert result == 0
 
         suite.run_test("cmd_list empty queue", test_cmd_list_empty)
@@ -993,7 +993,7 @@ def facts_queue_module_tests() -> bool:
             args = SimpleNamespace(id=999)
             with _patch(f"{mod}._get_db_session", return_value=mock_session), \
                  _patch(f"{mod}.FactsQueueService", return_value=mock_svc):
-                    result = cmd_view(args)
+                result = cmd_view(args)
             assert result == 1
 
         suite.run_test("cmd_view not found", test_cmd_view_not_found)
@@ -1007,7 +1007,7 @@ def facts_queue_module_tests() -> bool:
             args = SimpleNamespace(id=1)
             with _patch(f"{mod}._get_db_session", return_value=mock_session), \
                  _patch(f"{mod}.FactsQueueService", return_value=mock_svc):
-                    result = cmd_approve(args)
+                result = cmd_approve(args)
             assert result == 0
 
         suite.run_test("cmd_approve success", test_cmd_approve_success)
@@ -1021,7 +1021,7 @@ def facts_queue_module_tests() -> bool:
             args = SimpleNamespace(id=1, reason="Wrong data")
             with _patch(f"{mod}._get_db_session", return_value=mock_session), \
                  _patch(f"{mod}.FactsQueueService", return_value=mock_svc):
-                    result = cmd_reject(args)
+                result = cmd_reject(args)
             assert result == 0
 
         suite.run_test("cmd_reject success", test_cmd_reject_success)
@@ -1038,7 +1038,7 @@ def facts_queue_module_tests() -> bool:
             args = SimpleNamespace()
             with _patch(f"{mod}._get_db_session", return_value=mock_session), \
                  _patch(f"{mod}.FactsQueueService", return_value=mock_svc):
-                    result = cmd_stats(args)
+                result = cmd_stats(args)
             assert result == 0
 
         suite.run_test("cmd_stats returns 0", test_cmd_stats_returns_0)
@@ -1052,7 +1052,7 @@ def facts_queue_module_tests() -> bool:
             args = SimpleNamespace(limit=50, severity=None)
             with _patch(f"{mod}._get_db_session", return_value=mock_session), \
                  _patch(f"{mod}.FactsQueueService", return_value=mock_svc):
-                    result = cmd_conflicts(args)
+                result = cmd_conflicts(args)
             assert result == 0
 
         suite.run_test("cmd_conflicts empty", test_cmd_conflicts_empty)

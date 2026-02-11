@@ -345,7 +345,11 @@ run_comprehensive_tests = create_standard_test_runner(code_quality_checker_modul
 
 
 if __name__ == "__main__":
+    import os
     import sys
+
+    if os.environ.get("RUN_MODULE_TESTS") == "1":
+        sys.exit(0 if run_comprehensive_tests() else 1)
 
     # Run quality check on current directory if called directly
     checker = CodeQualityChecker()

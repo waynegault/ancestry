@@ -391,6 +391,9 @@ run_comprehensive_tests = create_standard_test_runner(observability_metrics_expo
 
 
 if __name__ == "__main__":
+    if os.environ.get("RUN_MODULE_TESTS") == "1":
+        sys.exit(0 if run_comprehensive_tests() else 1)
+
     parser = argparse.ArgumentParser(description="Metrics exporter utility")
     parser.add_argument(
         "--serve",

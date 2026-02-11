@@ -238,8 +238,14 @@ def main() -> int:
     return args.func(args)
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+def _cli_entry_point() -> None:
+    """Entry point when run as script or module."""
+    import os
+
+    if os.environ.get("RUN_MODULE_TESTS") == "1":
+        sys.exit(0 if run_comprehensive_tests() else 1)
+    else:
+        sys.exit(main())
 
 
 # =============================================================================
@@ -257,6 +263,9 @@ def module_tests() -> bool:
     from testing.test_framework import TestSuite
 
     suite = TestSuite("Review Queue CLI", "cli/review_queue.py")
+
+    # Resolve actual module name (__main__ when run directly, cli.review_queue when imported)
+    test_mod = __name__
 
     # ── Argument parsing ─────────────────────────────────────────
 
@@ -301,8 +310,8 @@ def module_tests() -> bool:
         mock_service.get_pending_queue.return_value = []
         args = SimpleNamespace(limit=50, priority=None)
 
-        with patch("cli.review_queue._get_db_session", return_value=mock_session), \
-             patch("cli.review_queue._get_queue_service", return_value=mock_service):
+        with patch(f"{test_mod}._get_db_session", return_value=mock_session), \
+             patch(f"{test_mod}._get_queue_service", return_value=mock_service):
             result = cmd_list(args)
 
         return result == 0
@@ -323,8 +332,8 @@ def module_tests() -> bool:
         mock_service.get_pending_queue.return_value = [draft]
         args = SimpleNamespace(limit=50, priority=None)
 
-        with patch("cli.review_queue._get_db_session", return_value=mock_session), \
-             patch("cli.review_queue._get_queue_service", return_value=mock_service), \
+        with patch(f"{test_mod}._get_db_session", return_value=mock_session), \
+             patch(f"{test_mod}._get_queue_service", return_value=mock_service), \
              patch("sys.stdout", new_callable=StringIO) as out:
             result = cmd_list(args)
 
@@ -341,8 +350,8 @@ def module_tests() -> bool:
         mock_service.get_pending_queue.return_value = [d1, d2]
         args = SimpleNamespace(limit=50, priority="high")
 
-        with patch("cli.review_queue._get_db_session", return_value=mock_session), \
-             patch("cli.review_queue._get_queue_service", return_value=mock_service), \
+        with patch(f"{test_mod}._get_db_session", return_value=mock_session), \
+             patch(f"{test_mod}._get_queue_service", return_value=mock_service), \
              patch("sys.stdout", new_callable=StringIO) as out:
             result = cmd_list(args)
 
@@ -370,8 +379,8 @@ def module_tests() -> bool:
         mock_service.get_draft_by_id.return_value = draft
         args = SimpleNamespace(id=7)
 
-        with patch("cli.review_queue._get_db_session", return_value=mock_session), \
-             patch("cli.review_queue._get_queue_service", return_value=mock_service), \
+        with patch(f"{test_mod}._get_db_session", return_value=mock_session), \
+             patch(f"{test_mod}._get_queue_service", return_value=mock_service), \
              patch("sys.stdout", new_callable=StringIO) as out:
             result = cmd_view(args)
 
@@ -386,8 +395,8 @@ def module_tests() -> bool:
         mock_service.get_draft_by_id.return_value = None
         args = SimpleNamespace(id=999)
 
-        with patch("cli.review_queue._get_db_session", return_value=mock_session), \
-             patch("cli.review_queue._get_queue_service", return_value=mock_service):
+        with patch(f"{test_mod}._get_db_session", return_value=mock_session), \
+             patch(f"{test_mod}._get_queue_service", return_value=mock_service):
             result = cmd_view(args)
 
         return result == 1
@@ -403,8 +412,8 @@ def module_tests() -> bool:
         mock_service.approve_draft.return_value = True
         args = SimpleNamespace(id=10)
 
-        with patch("cli.review_queue._get_db_session", return_value=mock_session), \
-             patch("cli.review_queue._get_queue_service", return_value=mock_service):
+        with patch(f"{test_mod}._get_db_session", return_value=mock_session), \
+             patch(f"{test_mod}._get_queue_service", return_value=mock_service):
             result = cmd_approve(args)
 
         return result == 0
@@ -418,8 +427,8 @@ def module_tests() -> bool:
         mock_service.approve_draft.return_value = False
         args = SimpleNamespace(id=10)
 
-        with patch("cli.review_queue._get_db_session", return_value=mock_session), \
-             patch("cli.review_queue._get_queue_service", return_value=mock_service):
+        with patch(f"{test_mod}._get_db_session", return_value=mock_session), \
+             patch(f"{test_mod}._get_queue_service", return_value=mock_service):
             result = cmd_approve(args)
 
         return result == 1
@@ -433,8 +442,8 @@ def module_tests() -> bool:
         mock_service.reject_draft.return_value = True
         args = SimpleNamespace(id=10, reason="Not relevant")
 
-        with patch("cli.review_queue._get_db_session", return_value=mock_session), \
-             patch("cli.review_queue._get_queue_service", return_value=mock_service):
+        with patch(f"{test_mod}._get_db_session", return_value=mock_session), \
+             patch(f"{test_mod}._get_queue_service", return_value=mock_service):
             result = cmd_reject(args)
 
         return result == 0
@@ -461,8 +470,8 @@ def module_tests() -> bool:
         mock_service.get_queue_stats.return_value = stats
         args = SimpleNamespace()
 
-        with patch("cli.review_queue._get_db_session", return_value=mock_session), \
-             patch("cli.review_queue._get_queue_service", return_value=mock_service), \
+        with patch(f"{test_mod}._get_db_session", return_value=mock_session), \
+             patch(f"{test_mod}._get_queue_service", return_value=mock_service), \
              patch("sys.stdout", new_callable=StringIO) as out:
             result = cmd_stats(args)
 
@@ -480,3 +489,7 @@ def run_comprehensive_tests() -> bool:
 
     runner = create_standard_test_runner(module_tests)
     return runner()
+
+
+if __name__ == "__main__":
+    _cli_entry_point()

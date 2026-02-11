@@ -1976,8 +1976,11 @@ run_comprehensive_tests = create_standard_test_runner(module_tests)
 
 
 if __name__ == "__main__":
-    success = run_comprehensive_tests()
-    sys.exit(0 if success else 1)
+    if os.environ.get("RUN_MODULE_TESTS") == "1":
+        sys.exit(0 if run_comprehensive_tests() else 1)
+    else:
+        success = run_comprehensive_tests()
+        sys.exit(0 if success else 1)
 
 
 __all__ = ["GrafanaCheckerProtocol", "MainCLIHelpers"]

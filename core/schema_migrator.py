@@ -484,20 +484,20 @@ register_migration(
 
 
 def _upgrade_0002(engine: Engine) -> None:
-    """Add shared_matches_fetched columns to dna_matches."""
+    """Add shared_matches_fetched columns to dna_match."""
     with engine.begin() as connection:
         # Check if columns exist first to avoid errors on re-run
         with contextlib.suppress(Exception):
-            connection.execute(text("ALTER TABLE dna_matches ADD COLUMN shared_matches_fetched BOOLEAN DEFAULT 0"))
+            connection.execute(text("ALTER TABLE dna_match ADD COLUMN shared_matches_fetched BOOLEAN DEFAULT 0"))
         with contextlib.suppress(Exception):
-            connection.execute(text("ALTER TABLE dna_matches ADD COLUMN shared_matches_fetched_date DATETIME"))
+            connection.execute(text("ALTER TABLE dna_match ADD COLUMN shared_matches_fetched_date DATETIME"))
 
 
 def _downgrade_0002(engine: Engine) -> None:
-    """Remove shared_matches_fetched columns from dna_matches."""
+    """Remove shared_matches_fetched columns from dna_match."""
     with engine.begin() as connection, contextlib.suppress(Exception):
-        connection.execute(text("ALTER TABLE dna_matches DROP COLUMN shared_matches_fetched"))
-        connection.execute(text("ALTER TABLE dna_matches DROP COLUMN shared_matches_fetched_date"))
+        connection.execute(text("ALTER TABLE dna_match DROP COLUMN shared_matches_fetched"))
+        connection.execute(text("ALTER TABLE dna_match DROP COLUMN shared_matches_fetched_date"))
 
 
 register_migration(
@@ -512,29 +512,29 @@ register_migration(
 
 
 def _upgrade_0003(engine: Engine) -> None:
-    """Add tree data columns to dna_matches."""
+    """Add tree data columns to dna_match."""
     with engine.begin() as connection:
         with contextlib.suppress(Exception):
-            connection.execute(text("ALTER TABLE dna_matches ADD COLUMN match_tree_id TEXT"))
+            connection.execute(text("ALTER TABLE dna_match ADD COLUMN match_tree_id TEXT"))
         with contextlib.suppress(Exception):
-            connection.execute(text("ALTER TABLE dna_matches ADD COLUMN match_tree_person_id TEXT"))
+            connection.execute(text("ALTER TABLE dna_match ADD COLUMN match_tree_person_id TEXT"))
         with contextlib.suppress(Exception):
-            connection.execute(text("ALTER TABLE dna_matches ADD COLUMN has_public_tree BOOLEAN"))
+            connection.execute(text("ALTER TABLE dna_match ADD COLUMN has_public_tree BOOLEAN"))
         with contextlib.suppress(Exception):
-            connection.execute(text("ALTER TABLE dna_matches ADD COLUMN tree_size INTEGER"))
+            connection.execute(text("ALTER TABLE dna_match ADD COLUMN tree_size INTEGER"))
 
 
 def _downgrade_0003(engine: Engine) -> None:
-    """Remove tree data columns from dna_matches."""
+    """Remove tree data columns from dna_match."""
     with engine.begin() as connection:
         with contextlib.suppress(Exception):
-            connection.execute(text("ALTER TABLE dna_matches DROP COLUMN match_tree_id"))
+            connection.execute(text("ALTER TABLE dna_match DROP COLUMN match_tree_id"))
         with contextlib.suppress(Exception):
-            connection.execute(text("ALTER TABLE dna_matches DROP COLUMN match_tree_person_id"))
+            connection.execute(text("ALTER TABLE dna_match DROP COLUMN match_tree_person_id"))
         with contextlib.suppress(Exception):
-            connection.execute(text("ALTER TABLE dna_matches DROP COLUMN has_public_tree"))
+            connection.execute(text("ALTER TABLE dna_match DROP COLUMN has_public_tree"))
         with contextlib.suppress(Exception):
-            connection.execute(text("ALTER TABLE dna_matches DROP COLUMN tree_size"))
+            connection.execute(text("ALTER TABLE dna_match DROP COLUMN tree_size"))
 
 
 register_migration(
@@ -1104,6 +1104,8 @@ run_comprehensive_tests = create_standard_test_runner(schema_migrator_module_tes
 
 
 if __name__ == "__main__":
-    if len(sys.argv) == 1:
-        sys.exit(0 if schema_migrator_module_tests() else 1)
-    sys.exit(run_cli(sys.argv[1:]))
+    import os
+    if os.environ.get("RUN_MODULE_TESTS") == "1":
+        sys.exit(0 if run_comprehensive_tests() else 1)
+    else:
+        sys.exit(run_cli(sys.argv[1:]))

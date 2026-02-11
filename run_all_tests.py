@@ -718,14 +718,26 @@ def _should_skip_line(stripped: str) -> bool:
     return stripped.startswith('#') or not stripped
 
 
-def _extract_docstring_start(stripped: str, docstring_lines: list[str]) -> bool:
-    """Extract content after opening docstring quotes. Returns True if docstring started."""
+def _extract_docstring_start(stripped: str, docstring_lines: list[str]) -> bool | str:
+    """Extract content after opening docstring quotes.
+
+    Returns:
+        False if no docstring found.
+        "complete" if single-line docstring (both opening and closing on same line).
+        True if multi-line docstring started.
+    """
     if '"""' not in stripped:
         return False
 
     # Extract content after opening quotes
     after_quotes = stripped.split('"""', 1)[1].strip()
     if after_quotes:
+        # Handle single-line docstring: """text."""  or  """text"""
+        if after_quotes.endswith('"""'):
+            after_quotes = after_quotes[:-3].strip()
+            if after_quotes:
+                docstring_lines.append(after_quotes)
+            return "complete"
         docstring_lines.append(after_quotes)
     return True
 
@@ -756,7 +768,10 @@ def _parse_docstring_lines(lines: list[str]) -> list[str]:
 
         # Look for start of docstring
         if not in_docstring:
-            if _extract_docstring_start(stripped, docstring_lines):
+            result = _extract_docstring_start(stripped, docstring_lines)
+            if result == "complete":
+                break  # Single-line docstring, done
+            if result:
                 in_docstring = True
             continue
 

@@ -983,4 +983,8 @@ run_comprehensive_tests = create_standard_test_runner(system_cache_module_tests)
 
 
 if __name__ == "__main__":
-    run_comprehensive_tests()
+    import os
+    if os.environ.get("RUN_MODULE_TESTS") == "1":
+        sys.exit(0 if run_comprehensive_tests() else 1)
+    else:
+        run_comprehensive_tests()
