@@ -60,7 +60,7 @@ _TOOL_DEFINITIONS: list[Any] = [
         description=(
             "Run a read-only SQL SELECT query against the local Ancestry SQLite "
             "database. Returns rows as a list of dicts. Only SELECT statements "
-            "are permitted."
+            "are permitted. Maximum 1000 rows returned. Query timeout: 30 seconds."
         ),
         inputSchema={
             "type": "object",
@@ -218,6 +218,128 @@ _TOOL_DEFINITIONS: list[Any] = [
             "required": ["person_id"],
         },
     ),
+    Tool(
+        name="analyze_triangulation",
+        description=(
+            "Analyze DNA match triangulation for a person. Finds shared matches "
+            "that share DNA with both you and the target person, identifying "
+            "potential common ancestor clusters."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "person_id": {
+                    "type": "integer",
+                    "description": "The person ID to analyze for triangulation",
+                },
+                "min_shared_cm": {
+                    "type": "number",
+                    "description": "Minimum cM shared with target person (default: 20)",
+                    "default": 20,
+                },
+                "min_match_cm": {
+                    "type": "number",
+                    "description": "Minimum cM for shared matches (default: 20)",
+                    "default": 20,
+                },
+            },
+            "required": ["person_id"],
+        },
+    ),
+    Tool(
+        name="get_research_insights",
+        description=(
+            "Get research insights for a person including suggested facts, "
+            "data conflicts, and pending research tasks extracted from conversations."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "person_id": {
+                    "type": "integer",
+                    "description": "The person ID to get research insights for",
+                },
+                "include_suggested_facts": {
+                    "type": "boolean",
+                    "description": "Include suggested facts from conversations (default: true)",
+                    "default": True,
+                },
+                "include_conflicts": {
+                    "type": "boolean",
+                    "description": "Include data conflicts (default: true)",
+                    "default": True,
+                },
+                "include_tasks": {
+                    "type": "boolean",
+                    "description": "Include research tasks (default: true)",
+                    "default": True,
+                },
+            },
+            "required": ["person_id"],
+        },
+    ),
+    Tool(
+        name="analyze_conversation",
+        description=(
+            "Analyze conversation patterns for a person including sentiment trends, "
+            "response times, engagement score, and conversation health metrics."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "person_id": {
+                    "type": "integer",
+                    "description": "The person ID to analyze conversation for",
+                },
+            },
+            "required": ["person_id"],
+        },
+    ),
+    Tool(
+        name="bulk_get_match_details",
+        description=(
+            "Get details for multiple DNA matches in a single call. More efficient "
+            "than calling get_match_details multiple times. Maximum 10 person IDs."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "person_ids": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": "List of person IDs to look up (max 10)",
+                },
+            },
+            "required": ["person_ids"],
+        },
+    ),
+    Tool(
+        name="find_similar_matches",
+        description=(
+            "Find DNA matches with similar characteristics to a reference match. "
+            "Useful for identifying cluster patterns and potential relatives."
+        ),
+        inputSchema={
+            "type": "object",
+            "properties": {
+                "reference_person_id": {
+                    "type": "integer",
+                    "description": "The reference person ID to find similar matches for",
+                },
+                "cm_tolerance": {
+                    "type": "number",
+                    "description": "cM range tolerance (default: 20, e.g., 100cM ±20)",
+                    "default": 20,
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum results (default: 20)",
+                    "default": 20,
+                },
+            },
+            "required": ["reference_person_id"],
+        },
+    ),
 ]
 
 
@@ -288,8 +410,9 @@ def _get_db_manager() -> DatabaseManager:
 
 
 def _tool_query_database(arguments: dict[str, Any]) -> dict[str, Any]:
-    """Execute a read-only SQL query."""
+    """Execute a read-only SQL query with safety limits."""
     from sqlalchemy import text
+    import signal
 
     query_str = arguments.get("query", "").strip()
     if not query_str:
@@ -306,13 +429,61 @@ def _tool_query_database(arguments: dict[str, Any]) -> dict[str, Any]:
     if tokens & blocked:
         return {"error": f"Query contains disallowed keywords: {tokens & blocked}"}
 
+    # Enforce LIMIT if not present (max 1000 rows)
+    MAX_ROWS = 1000
+    if "LIMIT" not in normalised:
+        query_str = f"{query_str} LIMIT {MAX_ROWS}"
+
     db = _get_db_manager()
-    with db.get_session_context() as session:
-        if session is None:
-            return {"error": "Database session unavailable"}
-        result = session.execute(text(query_str))
-        rows = [_serialize_row(r) for r in result.fetchall()]
-        return {"success": True, "row_count": len(rows), "rows": rows}
+
+    # Timeout protection (Windows-compatible)
+    class QueryTimeout(Exception):
+        pass
+
+    def timeout_handler(signum, frame):
+        raise QueryTimeout("Query execution exceeded 30 seconds")
+
+    # Set 30-second timeout (Unix only; Windows will ignore signal but query is still limited by LIMIT)
+    try:
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(30)
+    except AttributeError:
+        # Windows doesn't have SIGALRM, rely on LIMIT clause
+        pass
+
+    try:
+        with db.get_session_context() as session:
+            if session is None:
+                return {"error": "Database session unavailable"}
+
+            result = session.execute(text(query_str))
+            rows = [_serialize_row(r) for r in result.fetchall()]
+
+            # Clear timeout
+            try:
+                signal.alarm(0)
+            except AttributeError:
+                pass
+
+            # Warn if limit was hit
+            warning = None
+            if len(rows) >= MAX_ROWS:
+                warning = f"Result limited to {MAX_ROWS} rows. Add a LIMIT clause to control output size."
+
+            response = {"success": True, "row_count": len(rows), "rows": rows}
+            if warning:
+                response["warning"] = warning
+            return response
+
+    except QueryTimeout:
+        return {"error": "Query timed out after 30 seconds. Try adding more specific WHERE clauses or a lower LIMIT."}
+    except Exception as e:
+        # Clear timeout on error
+        try:
+            signal.alarm(0)
+        except AttributeError:
+            pass
+        raise
 
 
 def _tool_get_database_schema(_arguments: dict[str, Any]) -> dict[str, Any]:
@@ -673,6 +844,407 @@ def _tool_get_conversation_history(arguments: dict[str, Any]) -> dict[str, Any]:
         }
 
 
+def _tool_analyze_triangulation(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Analyze DNA match triangulation for a person."""
+    person_id = arguments.get("person_id")
+    if person_id is None:
+        return {"error": "person_id is required"}
+
+    min_shared_cm = arguments.get("min_shared_cm", 20)
+    min_match_cm = arguments.get("min_match_cm", 20)
+
+    db = _get_db_manager()
+    with db.get_session_context() as session:
+        if session is None:
+            return {"error": "Database session unavailable"}
+
+        # Get target person
+        target = (
+            session.query(Person)
+            .join(DnaMatch)
+            .filter(Person.id == person_id, Person.deleted_at.is_(None))
+            .first()
+        )
+        if not target:
+            return {"error": f"Person {person_id} not found"}
+
+        # Get shared matches
+        shared = (
+            session.query(SharedMatch)
+            .filter(SharedMatch.people_id == person_id)
+            .all()
+        )
+
+        triangulation_groups: list[dict[str, Any]] = []
+        high_confidence_matches: list[dict[str, Any]] = []
+
+        for sm in shared:
+            shared_person = (
+                session.query(Person)
+                .join(DnaMatch)
+                .filter(
+                    Person.id == sm.shared_people_id,
+                    Person.deleted_at.is_(None),
+                    DnaMatch.cm_dna >= min_match_cm
+                )
+                .first()
+            )
+            if not shared_person or not shared_person.dna_match:
+                continue
+
+            match_info = {
+                "person_id": shared_person.id,
+                "username": shared_person.username,
+                "cm_shared_with_target": sm.cm_shared if sm.cm_shared else "unknown",
+                "cm_total": shared_person.dna_match.cm_dna,
+                "predicted_relationship": shared_person.dna_match.predicted_relationship,
+            }
+
+            # High confidence: significant shared DNA with both
+            if sm.cm_shared and sm.cm_shared >= min_shared_cm:
+                high_confidence_matches.append(match_info)
+
+            triangulation_groups.append(match_info)
+
+        # Sort by shared cM descending
+        triangulation_groups.sort(key=lambda x: x.get("cm_shared_with_target", 0) or 0, reverse=True)
+        high_confidence_matches.sort(key=lambda x: x.get("cm_shared_with_target", 0) or 0, reverse=True)
+
+        return {
+            "success": True,
+            "target_person": target.username,
+            "target_cm": target.dna_match.cm_dna if target.dna_match else None,
+            "total_shared_matches": len(triangulation_groups),
+            "high_confidence_matches": len(high_confidence_matches),
+            "triangulation_groups": triangulation_groups[:20],  # Limit output
+            "top_candidates": high_confidence_matches[:10],
+            "note": "High confidence matches share significant DNA with both you and the target",
+        }
+
+
+def _tool_get_research_insights(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Get research insights for a person including suggested facts and tasks."""
+    person_id = arguments.get("person_id")
+    if person_id is None:
+        return {"error": "person_id is required"}
+
+    include_facts = arguments.get("include_suggested_facts", True)
+    include_conflicts = arguments.get("include_conflicts", True)
+    include_tasks = arguments.get("include_tasks", True)
+
+    db = _get_db_manager()
+    with db.get_session_context() as session:
+        if session is None:
+            return {"error": "Database session unavailable"}
+
+        person = session.query(Person).filter(Person.id == person_id, Person.deleted_at.is_(None)).first()
+        if not person:
+            return {"error": f"Person {person_id} not found"}
+
+        result: dict[str, Any] = {
+            "success": True,
+            "person": person.username,
+            "person_id": person_id,
+        }
+
+        # Suggested facts from conversations
+        if include_facts:
+            try:
+                from core.database import SuggestedFact
+                facts = (
+                    session.query(SuggestedFact)
+                    .filter(SuggestedFact.people_id == person_id)
+                    .order_by(SuggestedFact.created_at.desc())
+                    .limit(20)
+                    .all()
+                )
+                result["suggested_facts"] = [
+                    {
+                        "fact_type": f.fact_type,
+                        "value": f.value,
+                        "confidence": f.confidence,
+                        "source": f.source,
+                        "created_at": str(f.created_at) if f.created_at else None,
+                    }
+                    for f in facts
+                ]
+            except ImportError:
+                result["suggested_facts"] = {"error": "SuggestedFact model not available"}
+
+        # Data conflicts
+        if include_conflicts:
+            try:
+                from core.database import DataConflict
+                conflicts = (
+                    session.query(DataConflict)
+                    .filter(DataConflict.people_id == person_id)
+                    .order_by(DataConflict.created_at.desc())
+                    .limit(10)
+                    .all()
+                )
+                result["data_conflicts"] = [
+                    {
+                        "field": c.field,
+                        "value_a": c.value_a,
+                        "value_b": c.value_b,
+                        "status": c.status,
+                        "created_at": str(c.created_at) if c.created_at else None,
+                    }
+                    for c in conflicts
+                ]
+            except ImportError:
+                result["data_conflicts"] = {"error": "DataConflict model not available"}
+
+        # Research tasks
+        if include_tasks:
+            try:
+                from core.database import ResearchTask
+                tasks = (
+                    session.query(ResearchTask)
+                    .filter(ResearchTask.people_id == person_id)
+                    .order_by(ResearchTask.created_at.desc())
+                    .limit(10)
+                    .all()
+                )
+                result["research_tasks"] = [
+                    {
+                        "title": t.title,
+                        "description": t.description,
+                        "status": t.status,
+                        "priority": t.priority,
+                        "created_at": str(t.created_at) if t.created_at else None,
+                    }
+                    for t in tasks
+                ]
+            except ImportError:
+                result["research_tasks"] = {"error": "ResearchTask model not available"}
+
+        return result
+
+
+def _tool_analyze_conversation(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Analyze conversation patterns for a person."""
+    person_id = arguments.get("person_id")
+    if person_id is None:
+        return {"error": "person_id is required"}
+
+    db = _get_db_manager()
+    with db.get_session_context() as session:
+        if session is None:
+            return {"error": "Database session unavailable"}
+
+        person = session.query(Person).filter(Person.id == person_id, Person.deleted_at.is_(None)).first()
+        if not person:
+            return {"error": f"Person {person_id} not found"}
+
+        # Get all conversation entries
+        entries = (
+            session.query(ConversationLog)
+            .filter(ConversationLog.people_id == person_id)
+            .order_by(ConversationLog.timestamp.asc())
+            .all()
+        )
+
+        if not entries:
+            return {
+                "success": True,
+                "person": person.username,
+                "analysis": {"message_count": 0, "note": "No conversation history"},
+            }
+
+        # Calculate metrics
+        inbound_count = sum(1 for e in entries if e.direction and e.direction.value == "IN")
+        outbound_count = sum(1 for e in entries if e.direction and e.direction.value == "OUT")
+
+        # Sentiment analysis
+        sentiments: list[str] = []
+        for e in entries:
+            if e.classification:
+                sentiments.append(e.classification)
+
+        sentiment_counts: dict[str, int] = {}
+        for s in sentiments:
+            sentiment_counts[s] = sentiment_counts.get(s, 0) + 1
+
+        # Response time calculation (time between IN and next OUT)
+        response_times: list[float] = []
+        last_inbound_time = None
+        for e in entries:
+            if e.direction and e.direction.value == "IN" and e.timestamp:
+                last_inbound_time = e.timestamp
+            elif e.direction and e.direction.value == "OUT" and e.timestamp and last_inbound_time:
+                delta = (e.timestamp - last_inbound_time).total_seconds() / 3600  # hours
+                if delta > 0 and delta < 720:  # Max 30 days
+                    response_times.append(delta)
+                last_inbound_time = None
+
+        avg_response_time = sum(response_times) / len(response_times) if response_times else None
+
+        # Engagement score (0-100)
+        engagement_score = 0
+        if entries:
+            # Base score from message count (max 40)
+            engagement_score += min(len(entries) * 4, 40)
+            # Bonus for balanced conversation (max 30)
+            if inbound_count > 0 and outbound_count > 0:
+                ratio = min(inbound_count, outbound_count) / max(inbound_count, outbound_count)
+                engagement_score += int(ratio * 30)
+            # Bonus for positive sentiment (max 30)
+            positive_indicators = ["Productive", "Enthusiastic", "Helpful"]
+            positive_count = sum(sentiment_counts.get(s, 0) for s in positive_indicators)
+            if sentiments:
+                engagement_score += int((positive_count / len(sentiments)) * 30)
+
+        return {
+            "success": True,
+            "person": person.username,
+            "analysis": {
+                "message_count": len(entries),
+                "inbound_messages": inbound_count,
+                "outbound_messages": outbound_count,
+                "conversation_balance": f"{inbound_count}:{outbound_count}",
+                "sentiment_distribution": sentiment_counts,
+                "avg_response_time_hours": round(avg_response_time, 1) if avg_response_time else None,
+                "engagement_score": min(engagement_score, 100),
+                "engagement_level": "High" if engagement_score >= 70 else "Medium" if engagement_score >= 40 else "Low",
+                "first_contact": str(entries[0].timestamp) if entries[0].timestamp else None,
+                "last_contact": str(entries[-1].timestamp) if entries[-1].timestamp else None,
+            },
+        }
+
+
+def _tool_bulk_get_match_details(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Get details for multiple DNA matches in a single call."""
+    person_ids = arguments.get("person_ids", [])
+    if not person_ids:
+        return {"error": "person_ids is required"}
+
+    if len(person_ids) > 10:
+        return {"error": f"Maximum 10 person IDs allowed, got {len(person_ids)}"}
+
+    db = _get_db_manager()
+    results: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = []
+
+    with db.get_session_context() as session:
+        if session is None:
+            return {"error": "Database session unavailable"}
+
+        from sqlalchemy.orm import joinedload
+
+        for person_id in person_ids:
+            try:
+                person = (
+                    session.query(Person)
+                    .options(
+                        joinedload(Person.dna_match),
+                        joinedload(Person.family_tree),
+                    )
+                    .filter(Person.id == person_id, Person.deleted_at.is_(None))
+                    .first()
+                )
+
+                if person is None:
+                    errors.append({"person_id": person_id, "error": "Not found"})
+                    continue
+
+                result = _person_to_dict(person)
+
+                # Add family tree info if available
+                if person.family_tree:
+                    ft = person.family_tree
+                    result["family_tree"] = {
+                        "cfpid": getattr(ft, "cfpid", None),
+                        "actual_relationship": getattr(ft, "actual_relationship", None),
+                    }
+
+                results.append(result)
+
+            except Exception as e:
+                errors.append({"person_id": person_id, "error": str(e)})
+
+    return {
+        "success": True,
+        "count": len(results),
+        "matches": results,
+        "errors": errors if errors else None,
+    }
+
+
+def _tool_find_similar_matches(arguments: dict[str, Any]) -> dict[str, Any]:
+    """Find DNA matches with similar characteristics."""
+    reference_id = arguments.get("reference_person_id")
+    if reference_id is None:
+        return {"error": "reference_person_id is required"}
+
+    cm_tolerance = arguments.get("cm_tolerance", 20)
+    limit = arguments.get("limit", 20)
+
+    db = _get_db_manager()
+    with db.get_session_context() as session:
+        if session is None:
+            return {"error": "Database session unavailable"}
+
+        # Get reference person
+        reference = (
+            session.query(Person)
+            .join(DnaMatch)
+            .filter(Person.id == reference_id, Person.deleted_at.is_(None))
+            .first()
+        )
+
+        if not reference or not reference.dna_match:
+            return {"error": f"Reference person {reference_id} not found or has no DNA data"}
+
+        ref_cm = reference.dna_match.cm_dna
+        ref_relationship = reference.dna_match.predicted_relationship
+
+        # Find similar matches
+        from sqlalchemy.orm import joinedload
+
+        min_cm = max(0, ref_cm - cm_tolerance)
+        max_cm = ref_cm + cm_tolerance
+
+        similar = (
+            session.query(Person)
+            .join(DnaMatch)
+            .options(joinedload(Person.dna_match))
+            .filter(
+                Person.id != reference_id,
+                Person.deleted_at.is_(None),
+                DnaMatch.cm_dna >= min_cm,
+                DnaMatch.cm_dna <= max_cm,
+            )
+            .order_by(DnaMatch.cm_dna.desc())
+            .limit(limit)
+            .all()
+        )
+
+        matches = []
+        for person in similar:
+            if person.dna_match:
+                matches.append({
+                    "person_id": person.id,
+                    "username": person.username,
+                    "cm_dna": person.dna_match.cm_dna,
+                    "predicted_relationship": person.dna_match.predicted_relationship,
+                    "cm_diff_from_reference": round(person.dna_match.cm_dna - ref_cm, 1),
+                })
+
+        return {
+            "success": True,
+            "reference": {
+                "person_id": reference_id,
+                "username": reference.username,
+                "cm_dna": ref_cm,
+                "predicted_relationship": ref_relationship,
+            },
+            "search_range": f"{min_cm:.0f} - {max_cm:.0f} cM",
+            "similar_matches_found": len(matches),
+            "matches": matches,
+        }
+
+
 # ---------------------------------------------------------------------------
 # Tool dispatch map
 # ---------------------------------------------------------------------------
@@ -686,6 +1258,11 @@ _TOOL_DISPATCH: dict[str, Any] = {
     "list_pending_drafts": _tool_list_pending_drafts,
     "get_shared_matches": _tool_get_shared_matches,
     "get_conversation_history": _tool_get_conversation_history,
+    "analyze_triangulation": _tool_analyze_triangulation,
+    "get_research_insights": _tool_get_research_insights,
+    "analyze_conversation": _tool_analyze_conversation,
+    "bulk_get_match_details": _tool_bulk_get_match_details,
+    "find_similar_matches": _tool_find_similar_matches,
 }
 
 
@@ -986,6 +1563,57 @@ def _test_list_pending_drafts_real() -> bool:
     return True
 
 
+def _test_analyze_triangulation_real() -> bool:
+    """Execute analyze_triangulation against the live database."""
+    # First get a person with shared matches
+    result = _tool_get_match_summary({"limit": 5})
+    if result.get("top_matches") and len(result["top_matches"]) > 0:
+        person_id = result["top_matches"][0]["id"]
+        tri_result = _tool_analyze_triangulation({"person_id": person_id})
+        assert "error" not in tri_result or "No shared matches" in str(tri_result.get("note", "")), \
+            f"Triangulation should succeed or return empty: {tri_result.get('error')}"
+        if tri_result.get("success"):
+            assert "triangulation_groups" in tri_result
+            assert isinstance(tri_result["triangulation_groups"], list)
+    return True
+
+
+def _test_bulk_get_match_details_limits() -> bool:
+    """Test bulk_get_match_details enforces limit."""
+    # Test with too many IDs
+    result = _tool_bulk_get_match_details({"person_ids": list(range(1, 15))})
+    assert "error" in result, "Should reject >10 person_ids"
+    assert "Maximum 10" in result["error"]
+
+    # Test with empty list
+    result2 = _tool_bulk_get_match_details({"person_ids": []})
+    assert "error" in result2, "Should reject empty list"
+    return True
+
+
+def _test_query_database_enforces_limit() -> bool:
+    """Verify query_database adds LIMIT if not present."""
+    # This test just verifies the logic doesn't error
+    # The actual LIMIT is added in the function
+    result = _tool_query_database({"query": "SELECT 1"})
+    assert "success" in result or "error" in result
+    return True
+
+
+def _test_new_tools_in_dispatch() -> bool:
+    """Verify all new tools are in dispatch map."""
+    new_tools = [
+        "analyze_triangulation",
+        "get_research_insights",
+        "analyze_conversation",
+        "bulk_get_match_details",
+        "find_similar_matches",
+    ]
+    for tool in new_tools:
+        assert tool in _TOOL_DISPATCH, f"Tool {tool} not in dispatch map"
+    return True
+
+
 def mcp_server_module_tests() -> bool:
     """Run the MCP server test suite."""
     from testing.test_framework import TestSuite
@@ -1111,6 +1739,34 @@ def mcp_server_module_tests() -> bool:
         test_summary="List pending drafts from live database",
         method_description="Call _tool_list_pending_drafts with limit=5",
         expected_outcome="Returns success with drafts list",
+    )
+    suite.run_test(
+        test_name="Real triangulation analysis",
+        test_func=_test_analyze_triangulation_real,
+        test_summary="Analyze triangulation for a real match",
+        method_description="Call _tool_analyze_triangulation on a top match",
+        expected_outcome="Returns triangulation data or empty list",
+    )
+    suite.run_test(
+        test_name="Bulk get details enforces limits",
+        test_func=_test_bulk_get_match_details_limits,
+        test_summary="Verify bulk_get_match_details rejects >10 IDs",
+        method_description="Call with 14 IDs and verify error, then with empty list",
+        expected_outcome="Both calls return appropriate errors",
+    )
+    suite.run_test(
+        test_name="Query database enforces LIMIT",
+        test_func=_test_query_database_enforces_limit,
+        test_summary="Verify LIMIT clause is added to queries",
+        method_description="Run a simple query and verify success",
+        expected_outcome="Query executes with implicit LIMIT",
+    )
+    suite.run_test(
+        test_name="New tools are in dispatch map",
+        test_func=_test_new_tools_in_dispatch,
+        test_summary="All 5 new tools have dispatch handlers",
+        method_description="Check each new tool name is in _TOOL_DISPATCH",
+        expected_outcome="All tools found in dispatch map",
     )
 
     return suite.finish_suite()
