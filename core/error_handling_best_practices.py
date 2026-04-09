@@ -225,7 +225,8 @@ def error_handling_module_tests() -> bool:
     # Test 3: ErrorHandlingContext
     print("Test 3: ErrorHandlingContext")
     try:
-        with ErrorHandlingContext("test operation", fallback="default") as ctx:
+        ctx = ErrorHandlingContext("test operation", fallback="default", reraise=False)
+        with ctx:
             raise KeyError("missing")
 
         if ctx.exception is not None and isinstance(ctx.exception, KeyError):
