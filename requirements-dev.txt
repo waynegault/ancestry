@@ -1,0 +1,24 @@
+# Development dependencies for Ancestry project
+# These are not required in production Docker images
+
+# Testing
+pytest==9.0.2
+pytest-cov==7.0.0
+coverage==7.13.4
+
+# Code quality
+ruff==0.14.5
+pre_commit==4.4.0
+pyright==1.1.389
+
+# Code analysis
+vulture==2.14
+pipdeptree==2.30.0
+pigar==2.2.0
+
+# Type stubs
+types-certifi==2021.10.8.3
+types-urllib3==1.26.25.14
+
+# Development tools
+mypy_extensions==1.1.0

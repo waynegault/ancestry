@@ -123,6 +123,8 @@ def _detect_chrome_major_version() -> int | None:
             continue
     logger.warning("[init_webdvr] Could not detect Chrome version from registry")
     return None
+
+
 # Get the profile directory from config (respects PROFILE_DIR from .env)
 PROFILE_DIR = config_schema.selenium.profile_dir if config_schema.selenium else "Default"
 # Handle the case where CHROME_USER_DATA_DIR might be None
@@ -848,7 +850,7 @@ def test_chrome_version_detection() -> None:
                 # Extract VS_FIXEDFILEINFO for the major version
                 p = ctypes.c_void_p()
                 l = ctypes.c_uint()
-                ctypes.windll.version.VerQueryValueW(data, r"\\" , ctypes.byref(p), ctypes.byref(l))  # type: ignore[union-attr]
+                ctypes.windll.version.VerQueryValueW(data, r"\\", ctypes.byref(p), ctypes.byref(l))  # type: ignore[union-attr]
                 # VS_FIXEDFILEINFO: dwFileVersionMS at offset 8 (DWORD)
                 ms = ctypes.c_uint32.from_address(p.value + 8).value  # type: ignore[arg-type]
                 exe_major = ms >> 16  # High word = major version

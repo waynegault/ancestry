@@ -16,8 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy requirements first for better caching
 COPY requirements.txt requirements-dev.txt ./
 
-# Install Python dependencies
-RUN pip install --no-cache-dir --user -r requirements.txt -r requirements-dev.txt
+# Install production dependencies only (dev deps not needed in production)
+RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Production stage
 FROM python:3.13-slim

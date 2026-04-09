@@ -411,8 +411,9 @@ def _get_db_manager() -> DatabaseManager:
 
 def _tool_query_database(arguments: dict[str, Any]) -> dict[str, Any]:
     """Execute a read-only SQL query with safety limits."""
-    from sqlalchemy import text
     import signal
+
+    from sqlalchemy import text
 
     query_str = arguments.get("query", "").strip()
     if not query_str:
@@ -477,7 +478,7 @@ def _tool_query_database(arguments: dict[str, Any]) -> dict[str, Any]:
 
     except QueryTimeout:
         return {"error": "Query timed out after 30 seconds. Try adding more specific WHERE clauses or a lower LIMIT."}
-    except Exception as e:
+    except Exception:
         # Clear timeout on error
         try:
             signal.alarm(0)
@@ -871,7 +872,7 @@ def _tool_analyze_triangulation(arguments: dict[str, Any]) -> dict[str, Any]:
         # Get shared matches
         shared = (
             session.query(SharedMatch)
-            .filter(SharedMatch.people_id == person_id)
+            .filter(SharedMatch.person_id == person_id)
             .all()
         )
 
