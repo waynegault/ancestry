@@ -843,16 +843,32 @@ def test_chrome_version_detection() -> None:
         try:
             # Use win32api-style version extraction via ctypes
             import ctypes
-            size = ctypes.windll.version.GetFileVersionInfoSizeW(str(chrome_exe), None)  # type: ignore[union-attr]
+
+            version_dll = getattr(ctypes, "windll", None)
+            if version_dll is None:
+                raise OSError("ctypes.windll not available")
+
+            version_api = getattr(version_dll, "version", None)
+            if version_api is None:
+                raise OSError("version.dll not available")
+
+            get_size = getattr(version_api, "GetFileVersionInfoSizeW", None)
+            get_info = getattr(version_api, "GetFileVersionInfoW", None)
+            query_value = getattr(version_api, "VerQueryValueW", None)
+
+            if not all([get_size, get_info, query_value]):
+                raise OSError("Version API functions not available")
+
+            size = get_size(str(chrome_exe), None)
             if size:
                 data = ctypes.create_string_buffer(size)
-                ctypes.windll.version.GetFileVersionInfoW(str(chrome_exe), 0, size, data)  # type: ignore[union-attr]
+                get_info(str(chrome_exe), 0, size, data)
                 # Extract VS_FIXEDFILEINFO for the major version
                 p = ctypes.c_void_p()
                 length = ctypes.c_uint()
-                ctypes.windll.version.VerQueryValueW(data, r"\\", ctypes.byref(p), ctypes.byref(length))  # type: ignore[union-attr]
+                query_value(data, r"\\", ctypes.byref(p), ctypes.byref(length))
                 # VS_FIXEDFILEINFO: dwFileVersionMS at offset 8 (DWORD)
-                ms = ctypes.c_uint32.from_address(p.value + 8).value  # type: ignore[arg-type]
+                ms = ctypes.c_uint32.from_address(p.value + 8).value
                 exe_major = ms >> 16  # High word = major version
                 assert detected == exe_major, (
                     f"Registry reports Chrome {detected} but chrome.exe is {exe_major}. "

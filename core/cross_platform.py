@@ -114,18 +114,33 @@ def get_file_version(filepath: str) -> str | None:
 
     try:
         chrome_exe = filepath
-        size = ctypes.windll.version.GetFileVersionInfoSizeW(chrome_exe, None)  # type: ignore[union-attr]
+        version_dll = getattr(ctypes, "windll", None)
+        if version_dll is None:
+            return None
+
+        version_api = getattr(version_dll, "version", None)
+        if version_api is None:
+            return None
+
+        get_size = getattr(version_api, "GetFileVersionInfoSizeW", None)
+        get_info = getattr(version_api, "GetFileVersionInfoW", None)
+        query_value = getattr(version_api, "VerQueryValueW", None)
+
+        if not all([get_size, get_info, query_value]):
+            return None
+
+        size = get_size(chrome_exe, None)
         if not size:
             return None
 
         data = ctypes.create_string_buffer(size)
-        ctypes.windll.version.GetFileVersionInfoW(chrome_exe, 0, size, data)  # type: ignore[union-attr]
+        get_info(chrome_exe, 0, size, data)
 
         p = ctypes.c_void_p()
         length = ctypes.c_uint()
-        ctypes.windll.version.VerQueryValueW(data, r"\\", ctypes.byref(p), ctypes.byref(length))  # type: ignore[union-attr]
+        query_value(data, r"\\", ctypes.byref(p), ctypes.byref(length))
 
-        ms = ctypes.c_uint32.from_address(p.value + 8).value  # type: ignore[arg-type]
+        ms = ctypes.c_uint32.from_address(p.value + 8).value
         major = ms >> 16
         return str(major)
     except Exception:

@@ -19,7 +19,7 @@ Usage:
 import logging
 from collections.abc import Callable
 from functools import wraps
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,8 @@ def log_exceptions(
                 logger.log(level, f"{log_message}: {e}", exc_info=include_exc_info)
                 if reraise:
                     raise
-                return None  # type: ignore[return-value]
+                # Return default value for type T when reraise=False
+                return cast(T, None)
 
         return wrapper
 
@@ -91,7 +92,8 @@ def graceful_fallback(
             except Exception as e:
                 msg = log_message or f"Using fallback for {func.__name__}"
                 logger.log(log_level, f"{msg}: {e}", exc_info=True)
-                return fallback_value  # type: ignore[return-value]
+                # Return fallback value cast to type T
+                return cast(T, fallback_value)
 
         return wrapper
 
@@ -189,7 +191,7 @@ def error_handling_module_tests() -> bool:
     try:
 
         @log_exceptions(level=logging.ERROR, reraise=False)
-        def failing_function():
+        def failing_function() -> None:
             raise ValueError("Test error")
 
         result = failing_function()
@@ -207,7 +209,7 @@ def error_handling_module_tests() -> bool:
     try:
 
         @graceful_fallback(fallback_value="fallback")
-        def failing_function_with_fallback():
+        def failing_function_with_fallback() -> str:
             raise RuntimeError("Test")
 
         result = failing_function_with_fallback()

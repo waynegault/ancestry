@@ -437,16 +437,27 @@ def _tool_query_database(arguments: dict[str, Any]) -> dict[str, Any]:
 
     db = _get_db_manager()
 
-    # Timeout protection (Windows-compatible)
-    class QueryTimeoutError(Exception):
-        pass
+    # Execute query with timeout protection
+    return _execute_query_with_timeout(db, query_str, MAX_ROWS, text)
 
-    def timeout_handler(_signum, _frame):
-        raise QueryTimeoutError("Query execution exceeded 30 seconds")
+
+class QueryTimeoutError(Exception):
+    """Raised when query execution exceeds time limit."""
+    pass
+
+
+def _timeout_handler(_signum: int, _frame: Any) -> None:
+    """Signal handler for query timeout."""
+    raise QueryTimeoutError("Query execution exceeded 30 seconds")
+
+
+def _execute_query_with_timeout(db: DatabaseManager, query_str: str, max_rows: int, text_module: Any) -> dict[str, Any]:
+    """Execute database query with timeout and error handling."""
+    import signal
 
     # Set 30-second timeout (Unix only; Windows will ignore signal but query is still limited by LIMIT)
     try:
-        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.signal(signal.SIGALRM, _timeout_handler)
         signal.alarm(30)
     except AttributeError:
         # Windows doesn't have SIGALRM, rely on LIMIT clause
@@ -457,7 +468,7 @@ def _tool_query_database(arguments: dict[str, Any]) -> dict[str, Any]:
             if session is None:
                 return {"error": "Database session unavailable"}
 
-            result = session.execute(text(query_str))
+            result = session.execute(text_module(query_str))
             rows = [_serialize_row(r) for r in result.fetchall()]
 
             # Clear timeout
@@ -468,10 +479,10 @@ def _tool_query_database(arguments: dict[str, Any]) -> dict[str, Any]:
 
             # Warn if limit was hit
             warning = None
-            if len(rows) >= MAX_ROWS:
-                warning = f"Result limited to {MAX_ROWS} rows. Add a LIMIT clause to control output size."
+            if len(rows) >= max_rows:
+                warning = f"Result limited to {max_rows} rows. Add a LIMIT clause to control output size."
 
-            response = {"success": True, "row_count": len(rows), "rows": rows}
+            response: dict[str, Any] = {"success": True, "row_count": len(rows), "rows": rows}
             if warning:
                 response["warning"] = warning
             return response
@@ -876,51 +887,83 @@ def _tool_analyze_triangulation(arguments: dict[str, Any]) -> dict[str, Any]:
             .all()
         )
 
-        triangulation_groups: list[dict[str, Any]] = []
-        high_confidence_matches: list[dict[str, Any]] = []
+        # Process triangulation groups
+        triangulation_groups, high_confidence_matches = _process_triangulation_matches(
+            session, shared, min_shared_cm, min_match_cm
+        )
 
-        for sm in shared:
-            shared_person = (
-                session.query(Person)
-                .join(DnaMatch)
-                .filter(
-                    Person.id == sm.shared_people_id,
-                    Person.deleted_at.is_(None),
-                    DnaMatch.cm_dna >= min_match_cm
-                )
-                .first()
-            )
-            if not shared_person or not shared_person.dna_match:
-                continue
+        return _build_triangulation_response(target, triangulation_groups, high_confidence_matches)
 
-            match_info = {
-                "person_id": shared_person.id,
-                "username": shared_person.username,
-                "cm_shared_with_target": sm.cm_shared if sm.cm_shared else "unknown",
-                "cm_total": shared_person.dna_match.cm_dna,
-                "predicted_relationship": shared_person.dna_match.predicted_relationship,
-            }
 
-            # High confidence: significant shared DNA with both
-            if sm.cm_shared and sm.cm_shared >= min_shared_cm:
-                high_confidence_matches.append(match_info)
+def _process_triangulation_matches(
+    session: Any,
+    shared: list[Any],
+    min_shared_cm: int,
+    min_match_cm: int,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Process shared matches into triangulation groups and high confidence matches."""
+    triangulation_groups: list[dict[str, Any]] = []
+    high_confidence_matches: list[dict[str, Any]] = []
 
-            triangulation_groups.append(match_info)
+    for sm in shared:
+        match_info = _get_shared_match_info(session, sm, min_match_cm)
+        if match_info is None:
+            continue
 
-        # Sort by shared cM descending
-        triangulation_groups.sort(key=lambda x: x.get("cm_shared_with_target", 0) or 0, reverse=True)
-        high_confidence_matches.sort(key=lambda x: x.get("cm_shared_with_target", 0) or 0, reverse=True)
+        # High confidence: significant shared DNA with both
+        if sm.cm_shared and sm.cm_shared >= min_shared_cm:
+            high_confidence_matches.append(match_info)
 
-        return {
-            "success": True,
-            "target_person": target.username,
-            "target_cm": target.dna_match.cm_dna if target.dna_match else None,
-            "total_shared_matches": len(triangulation_groups),
-            "high_confidence_matches": len(high_confidence_matches),
-            "triangulation_groups": triangulation_groups[:20],  # Limit output
-            "top_candidates": high_confidence_matches[:10],
-            "note": "High confidence matches share significant DNA with both you and the target",
-        }
+        triangulation_groups.append(match_info)
+
+    # Sort by shared cM descending
+    sort_key = lambda x: x.get("cm_shared_with_target", 0) or 0
+    triangulation_groups.sort(key=sort_key, reverse=True)
+    high_confidence_matches.sort(key=sort_key, reverse=True)
+
+    return triangulation_groups, high_confidence_matches
+
+
+def _get_shared_match_info(session: Any, sm: Any, min_match_cm: int) -> dict[str, Any] | None:
+    """Get match information for a shared match."""
+    shared_person = (
+        session.query(Person)
+        .join(DnaMatch)
+        .filter(
+            Person.id == sm.shared_people_id,
+            Person.deleted_at.is_(None),
+            DnaMatch.cm_dna >= min_match_cm
+        )
+        .first()
+    )
+    if not shared_person or not shared_person.dna_match:
+        return None
+
+    return {
+        "person_id": shared_person.id,
+        "username": shared_person.username,
+        "cm_shared_with_target": sm.cm_shared if sm.cm_shared else "unknown",
+        "cm_total": shared_person.dna_match.cm_dna,
+        "predicted_relationship": shared_person.dna_match.predicted_relationship,
+    }
+
+
+def _build_triangulation_response(
+    target: Any,
+    triangulation_groups: list[dict[str, Any]],
+    high_confidence_matches: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Build triangulation analysis response."""
+    return {
+        "success": True,
+        "target_person": target.username,
+        "target_cm": target.dna_match.cm_dna if target.dna_match else None,
+        "total_shared_matches": len(triangulation_groups),
+        "high_confidence_matches": len(high_confidence_matches),
+        "triangulation_groups": triangulation_groups[:20],  # Limit output
+        "top_candidates": high_confidence_matches[:10],
+        "note": "High confidence matches share significant DNA with both you and the target",
+    }
 
 
 def _tool_get_research_insights(arguments: dict[str, Any]) -> dict[str, Any]:
@@ -1047,63 +1090,114 @@ def _tool_analyze_conversation(arguments: dict[str, Any]) -> dict[str, Any]:
         )
 
         if not entries:
-            return {
-                "success": True,
-                "person": person.username,
-                "analysis": {"message_count": 0, "note": "No conversation history"},
-            }
+            return _build_empty_conversation_response(person)
 
         # Calculate metrics
-        inbound_count = sum(1 for e in entries if e.direction and e.direction.value == "IN")
-        outbound_count = sum(1 for e in entries if e.direction and e.direction.value == "OUT")
-
-        # Sentiment analysis
-        sentiment_counts: dict[str, int] = {}
-        for e in entries:
-            if e.classification:
-                sentiment_counts[e.classification] = sentiment_counts.get(e.classification, 0) + 1
-
-        # Response time calculation (time between IN and next OUT)
-        response_times: list[float] = []
-        last_inbound_time = None
-        for e in entries:
-            if e.direction and e.direction.value == "IN" and e.timestamp:
-                last_inbound_time = e.timestamp
-            elif e.direction and e.direction.value == "OUT" and e.timestamp and last_inbound_time:
-                delta = (e.timestamp - last_inbound_time).total_seconds() / 3600  # hours
-                if delta > 0 and delta < 720:  # Max 30 days
-                    response_times.append(delta)
-                last_inbound_time = None
-
+        inbound_count, outbound_count = _count_conversation_directions(entries)
+        sentiment_counts = _calculate_sentiment_distribution(entries)
+        response_times = _calculate_response_times(entries)
         avg_response_time = sum(response_times) / len(response_times) if response_times else None
 
-        # Engagement score (0-100)
-        engagement_score = min(len(entries) * 4, 40) if entries else 0
-        if inbound_count > 0 and outbound_count > 0:
-            ratio = min(inbound_count, outbound_count) / max(inbound_count, outbound_count)
-            engagement_score += int(ratio * 30)
+        # Calculate engagement score
+        engagement_score = _calculate_engagement_score(entries, inbound_count, outbound_count, sentiment_counts)
 
-        # Bonus for positive sentiment (max 30)
-        positive_count = sum(sentiment_counts.get(s, 0) for s in ["Productive", "Enthusiastic", "Helpful"])
-        if sentiment_counts:
-            engagement_score += int((positive_count / len(sentiment_counts)) * 30)
+        return _build_conversation_analysis_response(
+            person, entries, inbound_count, outbound_count,
+            sentiment_counts, avg_response_time, engagement_score
+        )
 
-        return {
-            "success": True,
-            "person": person.username,
-            "analysis": {
-                "message_count": len(entries),
-                "inbound_messages": inbound_count,
-                "outbound_messages": outbound_count,
-                "conversation_balance": f"{inbound_count}:{outbound_count}",
-                "sentiment_distribution": sentiment_counts,
-                "avg_response_time_hours": round(avg_response_time, 1) if avg_response_time else None,
-                "engagement_score": min(engagement_score, 100),
-                "engagement_level": "High" if engagement_score >= 70 else "Medium" if engagement_score >= 40 else "Low",
-                "first_contact": str(entries[0].timestamp) if entries[0].timestamp else None,
-                "last_contact": str(entries[-1].timestamp) if entries[-1].timestamp else None,
-            },
-        }
+
+def _build_empty_conversation_response(person: Any) -> dict[str, Any]:
+    """Build response for person with no conversation history."""
+    return {
+        "success": True,
+        "person": person.username,
+        "analysis": {"message_count": 0, "note": "No conversation history"},
+    }
+
+
+def _count_conversation_directions(entries: list[Any]) -> tuple[int, int]:
+    """Count inbound and outbound messages."""
+    inbound_count = sum(1 for e in entries if e.direction and e.direction.value == "IN")
+    outbound_count = sum(1 for e in entries if e.direction and e.direction.value == "OUT")
+    return inbound_count, outbound_count
+
+
+def _calculate_sentiment_distribution(entries: list[Any]) -> dict[str, int]:
+    """Calculate distribution of conversation sentiments."""
+    sentiment_counts: dict[str, int] = {}
+    for e in entries:
+        if e.classification:
+            sentiment_counts[e.classification] = sentiment_counts.get(e.classification, 0) + 1
+    return sentiment_counts
+
+
+def _calculate_response_times(entries: list[Any]) -> list[float]:
+    """Calculate response times between inbound and outbound messages."""
+    response_times: list[float] = []
+    last_inbound_time = None
+    for e in entries:
+        if e.direction and e.direction.value == "IN" and e.timestamp:
+            last_inbound_time = e.timestamp
+        elif e.direction and e.direction.value == "OUT" and e.timestamp and last_inbound_time:
+            delta = (e.timestamp - last_inbound_time).total_seconds() / 3600  # hours
+            if delta > 0 and delta < 720:  # Max 30 days
+                response_times.append(delta)
+            last_inbound_time = None
+    return response_times
+
+
+def _calculate_engagement_score(
+    entries: list[Any],
+    inbound_count: int,
+    outbound_count: int,
+    sentiment_counts: dict[str, int],
+) -> int:
+    """Calculate engagement score (0-100)."""
+    # Base score from message count (max 40)
+    engagement_score = min(len(entries) * 4, 40) if entries else 0
+
+    # Bonus for balanced conversation (max 30)
+    if inbound_count > 0 and outbound_count > 0:
+        ratio = min(inbound_count, outbound_count) / max(inbound_count, outbound_count)
+        engagement_score += int(ratio * 30)
+
+    # Bonus for positive sentiment (max 30)
+    positive_count = sum(sentiment_counts.get(s, 0) for s in ["Productive", "Enthusiastic", "Helpful"])
+    if sentiment_counts:
+        engagement_score += int((positive_count / len(sentiment_counts)) * 30)
+
+    return min(engagement_score, 100)
+
+
+def _build_conversation_analysis_response(
+    person: Any,
+    entries: list[Any],
+    inbound_count: int,
+    outbound_count: int,
+    sentiment_counts: dict[str, int],
+    avg_response_time: float | None,
+    engagement_score: int,
+) -> dict[str, Any]:
+    """Build comprehensive conversation analysis response."""
+    engagement_level = "High" if engagement_score >= 70 else "Medium" if engagement_score >= 40 else "Low"
+
+    return {
+        "success": True,
+        "person": person.username,
+        "analysis": {
+            "message_count": len(entries),
+            "inbound_messages": inbound_count,
+            "outbound_messages": outbound_count,
+            "conversation_balance": f"{inbound_count}:{outbound_count}",
+            "sentiment_distribution": sentiment_counts,
+            "avg_response_time_hours": round(avg_response_time, 1) if avg_response_time else None,
+            "engagement_score": engagement_score,
+            "engagement_level": engagement_level,
+            "first_contact": str(entries[0].timestamp) if entries[0].timestamp else None,
+            "last_contact": str(entries[-1].timestamp) if entries[-1].timestamp else None,
+        },
+    }
 
 
 def _tool_bulk_get_match_details(arguments: dict[str, Any]) -> dict[str, Any]:
