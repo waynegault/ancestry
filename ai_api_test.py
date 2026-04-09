@@ -326,54 +326,13 @@ def _format_provider_error(provider: str, exc: Exception) -> str:
     return f"{provider_name} request failed: {detail_text}"
 
 
-def _normalize_grok_entry(entry: Any) -> str | None:
-    if isinstance(entry, str):
-        return entry.strip()
-    for attr in ("text", "content"):
-        value = getattr(entry, attr, None)
-        if isinstance(value, str):
-            return value.strip()
-    return None
-
-
-def _collapse_grok_parts(items: Iterable[Any]) -> str | None:
-    parts = [text for text in (_normalize_grok_entry(item) for item in items) if text]
-    return "\n".join(parts) if parts else None
-
-
-def _normalize_grok_payload(payload: Any) -> str | None:
-    if isinstance(payload, str):
-        return payload.strip()
-    if isinstance(payload, list):
-        return _collapse_grok_parts(payload)
-    return None
-
-
-def _normalize_grok_message(message: Any) -> str | None:
-    if message is None:
-        return None
-    message_content = getattr(message, "content", None)
-    return _normalize_grok_payload(message_content)
-
-
-def _extract_grok_content(response: Any | None) -> str | None:
-    """Extract text content from Grok SDK responses."""
-
-    if response is None:
-        return None
-
-    content = getattr(response, "content", None)
-    normalized = _normalize_grok_payload(content)
-    if normalized:
-        return normalized
-
-    message = getattr(response, "message", None)
-    normalized = _normalize_grok_message(message)
-    if normalized:
-        return normalized
-
-    fallback = str(content if content is not None else response).strip()
-    return fallback or None
+# Import centralized Grok utilities from shared module
+from ai.grok_utils import (
+    extract_grok_content as _extract_grok_content,
+    normalize_grok_entry as _normalize_grok_entry,
+    normalize_grok_payload as _normalize_grok_payload,
+    normalize_grok_message as _normalize_grok_message,
+)
 
 
 def _test_moonshot(prompt: str, max_tokens: int) -> TestResult:

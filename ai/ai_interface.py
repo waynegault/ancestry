@@ -530,29 +530,18 @@ def _call_inception_model(
         return None
 
 
-def _normalize_grok_entry(entry: Any) -> str | None:
-    if isinstance(entry, str):
-        return entry.strip()
-    text_value = getattr(entry, "text", None)
-    if isinstance(text_value, str):
-        return text_value.strip()
-    content_value = getattr(entry, "content", None)
-    if isinstance(content_value, str):
-        return content_value.strip()
-    return None
+# Import centralized Grok utilities
+from .grok_utils import (
+    extract_grok_content,
+    normalize_grok_entry,
+    normalize_grok_sequence,
+    normalize_grok_value,
+)
 
-
-def _normalize_grok_sequence(entries: list[Any]) -> str | None:
-    parts = [part for part in (_normalize_grok_entry(item) for item in entries) if part]
-    return "\n".join(parts) if parts else None
-
-
-def _normalize_grok_value(value: Any) -> str | None:
-    if value is None:
-        return None
-    if isinstance(value, list):
-        return _normalize_grok_sequence(value)
-    return _normalize_grok_entry(value)
+# Legacy aliases for backward compatibility (can be removed after migration)
+_normalize_grok_entry = normalize_grok_entry
+_normalize_grok_sequence = normalize_grok_sequence
+_normalize_grok_value = normalize_grok_value
 
 
 def _iter_grok_content_candidates(response: Any, primary_content: Any) -> list[Any]:
@@ -565,23 +554,11 @@ def _iter_grok_content_candidates(response: Any, primary_content: Any) -> list[A
 
 
 def _extract_grok_response_content(response: Any | None) -> str | None:
-    """Normalize Grok (xAI) response content to a plain string."""
-    if response is None:
-        return None
+    """Normalize Grok (xAI) response content to a plain string.
 
-    try:
-        primary_content = getattr(response, "content", None)
-        for candidate in _iter_grok_content_candidates(response, primary_content):
-            normalized = _normalize_grok_value(candidate)
-            if normalized:
-                return normalized
-
-        fallback_source = primary_content if primary_content is not None else response
-        fallback_str = str(fallback_source).strip()
-        return fallback_str or None
-    except Exception as exc:  # pragma: no cover - defensive logging around SDK objects
-        logger.error(f"Failed to parse Grok response: {exc}")
-        return None
+    Uses centralized grok_utils.extract_grok_content() for consistency.
+    """
+    return extract_grok_content(response)
 
 
 def _call_grok_model(
