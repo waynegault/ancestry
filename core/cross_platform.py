@@ -33,12 +33,11 @@ def get_platform() -> Platform:
     system = platform.system().lower()
     if system == "windows":
         return Platform.WINDOWS
-    elif system == "darwin":
+    if system == "darwin":
         return Platform.MACOS
-    elif system == "linux":
+    if system == "linux":
         return Platform.LINUX
-    else:
-        return Platform.UNKNOWN
+    return Platform.UNKNOWN
 
 
 def clear_screen() -> None:
@@ -61,12 +60,11 @@ def get_default_browser() -> str:
     platform = get_platform()
     if platform == Platform.WINDOWS:
         return "chrome"
-    elif platform == Platform.MACOS:
+    if platform == Platform.MACOS:
         return "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-    elif platform == Platform.LINUX:
+    if platform == Platform.LINUX:
         return "google-chrome"
-    else:
-        return "chrome"
+    return "chrome"
 
 
 def prevent_sleep(enable: bool) -> Any:
@@ -94,8 +92,7 @@ def prevent_sleep(enable: bool) -> Any:
 
     if enable:
         return prevent_system_sleep()
-    else:
-        return None
+    return None
 
 
 def get_file_version(filepath: str) -> str | None:
@@ -198,7 +195,7 @@ def cross_platform_module_tests() -> bool:
 
         normalized = normalize_path("foo/bar/baz")
         assert isinstance(normalized, str)
-        print(f"✅ Path normalization works")
+        print("✅ Path normalization works")
     except Exception as e:
         print(f"❌ Failed: {e}")
         all_passed = False
