@@ -167,8 +167,6 @@ def grok_utils_module_tests() -> bool:
     # Test 1: normalize_grok_entry with string
     print("Test 1: normalize_grok_entry with string")
     try:
-        from . import normalize_grok_entry
-
         result = normalize_grok_entry("  hello world  ")
         assert result == "hello world", f"Expected 'hello world', got {result!r}"
         print("✅ PASSED: String normalization")

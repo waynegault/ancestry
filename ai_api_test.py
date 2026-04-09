@@ -330,8 +330,8 @@ def _format_provider_error(provider: str, exc: Exception) -> str:
 from ai.grok_utils import (
     extract_grok_content as _extract_grok_content,
     normalize_grok_entry as _normalize_grok_entry,
-    normalize_grok_payload as _normalize_grok_payload,
     normalize_grok_message as _normalize_grok_message,
+    normalize_grok_payload as _normalize_grok_payload,
 )
 
 
