@@ -773,7 +773,7 @@ def _tool_get_shared_matches(arguments: dict[str, Any]) -> dict[str, Any]:
 
         shared = (
             session.query(SharedMatch)
-            .filter(SharedMatch.people_id == person_id)
+            .filter(SharedMatch.person_id == person_id)
             .all()
         )
 

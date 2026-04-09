@@ -19,12 +19,14 @@
 
 ### P0: Critical Bugs & Broken Functionality
 
-#### 1. Dockerfile references non-existent requirements-dev.txt
+#### 1. Dockerfile references non-existent requirements-dev.txt ✅ FIXED
 - **Location:** Dockerfile lines 17, 20
 - **Issue:** `COPY requirements.txt requirements-dev.txt ./` fails because `requirements-dev.txt` doesn't exist
 - **Impact:** Docker build will fail
-- **Action:** Create `requirements-dev.txt` with development dependencies (pytest, ruff, pyright, etc.) or remove reference from Dockerfile
-- **Status:** 🔴 TODO
+- **Action:** Created `requirements-dev.txt` with development dependencies; updated Dockerfile to install only production dependencies
+- **Status:** ✅ FIXED (2026-04-09)
+- **Commit:** 4dc12e3
+- **Additional Fix:** Fixed MCP server bug (SharedMatch.people_id -> person_id) discovered during testing
 
 #### 2. Massive file sizes impede maintainability
 - **Location:** Multiple files
