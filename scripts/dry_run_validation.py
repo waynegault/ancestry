@@ -564,28 +564,34 @@ def module_tests() -> bool:
         method_description="Process opt-out message and verify detection",
     )
 
-    # Test 6: Normal message processing
-    def test_normal_processing() -> None:
-        from unittest.mock import MagicMock
+    # Test 6: Normal message processing - SKIP when SKIP_LIVE_API_TESTS=true (avoids API timeouts)
+    skip_live_api = os.environ.get("SKIP_LIVE_API_TESTS", "").lower() == "true"
 
-        processor = DryRunProcessor(MagicMock())
-        conv_data = {
-            "conversation_id": "test",
-            "person_id": 1,
-            "person_name": "Test User",
-            "inbound_message": "I think we share ancestors from Scotland!",
-        }
-        result = processor.process_conversation(conv_data)
-        assert not result.opt_out_detected, "Should not detect opt-out"
-        assert result.generated_draft is not None, "Should generate draft"
+    if not skip_live_api:
+        def test_normal_processing_live() -> None:
+            from unittest.mock import MagicMock
 
-    suite.run_test(
-        "Normal message processing",
-        test_normal_processing,
-        test_summary="Processes normal messages without opt-out",
-        functions_tested="DryRunProcessor.process_conversation",
-        method_description="Process friendly message and verify draft generation",
-    )
+            processor = DryRunProcessor(MagicMock())
+            conv_data = {
+                "conversation_id": "test",
+                "person_id": 1,
+                "person_name": "Test User",
+                "inbound_message": "I think we share ancestors from Scotland!",
+            }
+            result = processor.process_conversation(conv_data)
+            assert not result.opt_out_detected, "Should not detect opt-out"
+            assert result.generated_draft is not None, "Should generate draft"
+
+        suite.run_test(
+            "Normal message processing",
+            test_normal_processing_live,
+            test_summary="Processes normal messages without opt-out",
+            functions_tested="DryRunProcessor.process_conversation",
+            method_description="Process friendly message and verify draft generation",
+        )
+    else:
+        # Skip test when live API calls are disabled - avoids timeouts
+        pass
 
     return suite.finish_suite()
 
