@@ -14,7 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better caching
-COPY requirements.txt requirements-dev.txt ./
+COPY requirements.txt ./
+COPY requirements-dev.txt ./
 
 # Install production dependencies only (dev deps not needed in production)
 RUN pip install --no-cache-dir --user -r requirements.txt
