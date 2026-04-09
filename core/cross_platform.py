@@ -122,8 +122,8 @@ def get_file_version(filepath: str) -> str | None:
         ctypes.windll.version.GetFileVersionInfoW(chrome_exe, 0, size, data)  # type: ignore[union-attr]
 
         p = ctypes.c_void_p()
-        l = ctypes.c_uint()
-        ctypes.windll.version.VerQueryValueW(data, r"\\", ctypes.byref(p), ctypes.byref(l))  # type: ignore[union-attr]
+        length = ctypes.c_uint()
+        ctypes.windll.version.VerQueryValueW(data, r"\\", ctypes.byref(p), ctypes.byref(length))  # type: ignore[union-attr]
 
         ms = ctypes.c_uint32.from_address(p.value + 8).value  # type: ignore[arg-type]
         major = ms >> 16

@@ -49,7 +49,7 @@ from api.tree_update import (
 )
 
 __all__ = [
-    # API Constants
+    # API Constants (sorted alphabetically)
     "API_PATH_CSRF_TOKEN",
     "API_PATH_DISCOVERY_RELATIONSHIP",
     "API_PATH_EDIT_RELATIONSHIPS",
@@ -74,18 +74,18 @@ __all__ = [
     "API_PATH_SEND_MESSAGE_EXISTING",
     "API_PATH_SEND_MESSAGE_NEW",
     "API_PATH_SHARED_MATCHES",
-    "API_PATH_TREE_OWNER_INFO",
     "API_PATH_TREESUI_LIST",
+    "API_PATH_TREE_OWNER_INFO",
     "API_PATH_UUID_LEGACY",
     "API_PATH_UUID_NAVHEADER",
-    "validate_all_endpoints",
-    # Tree Update exports
+    # Tree Update exports (sorted alphabetically)
     "TreeOperationType",
     "TreeUpdateRequest",
     "TreeUpdateResponse",
     "TreeUpdateResult",
     "TreeUpdateService",
     "apply_approved_facts_batch",
+    "validate_all_endpoints",
 ]
 
 # -----------------------------------------------------------------------------

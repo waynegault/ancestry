@@ -132,9 +132,7 @@ class ErrorHandlingContext:
                 f"Error in {self.operation}: {exc_val}",
                 exc_info=True,
             )
-            if self.reraise:
-                return False  # Let exception propagate
-            return True  # Suppress exception, use fallback
+            return not self.reraise  # True suppresses, False propagates
         return False
 
 

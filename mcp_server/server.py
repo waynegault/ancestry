@@ -438,11 +438,11 @@ def _tool_query_database(arguments: dict[str, Any]) -> dict[str, Any]:
     db = _get_db_manager()
 
     # Timeout protection (Windows-compatible)
-    class QueryTimeout(Exception):
+    class QueryTimeoutError(Exception):
         pass
 
-    def timeout_handler(signum, frame):
-        raise QueryTimeout("Query execution exceeded 30 seconds")
+    def timeout_handler(_signum, _frame):
+        raise QueryTimeoutError("Query execution exceeded 30 seconds")
 
     # Set 30-second timeout (Unix only; Windows will ignore signal but query is still limited by LIMIT)
     try:
@@ -461,10 +461,10 @@ def _tool_query_database(arguments: dict[str, Any]) -> dict[str, Any]:
             rows = [_serialize_row(r) for r in result.fetchall()]
 
             # Clear timeout
-            try:
+            import contextlib
+
+            with contextlib.suppress(AttributeError):
                 signal.alarm(0)
-            except AttributeError:
-                pass
 
             # Warn if limit was hit
             warning = None
@@ -476,14 +476,14 @@ def _tool_query_database(arguments: dict[str, Any]) -> dict[str, Any]:
                 response["warning"] = warning
             return response
 
-    except QueryTimeout:
+    except QueryTimeoutError:
         return {"error": "Query timed out after 30 seconds. Try adding more specific WHERE clauses or a lower LIMIT."}
     except Exception:
         # Clear timeout on error
-        try:
+        import contextlib
+
+        with contextlib.suppress(AttributeError):
             signal.alarm(0)
-        except AttributeError:
-            pass
         raise
 
 
@@ -1058,14 +1058,10 @@ def _tool_analyze_conversation(arguments: dict[str, Any]) -> dict[str, Any]:
         outbound_count = sum(1 for e in entries if e.direction and e.direction.value == "OUT")
 
         # Sentiment analysis
-        sentiments: list[str] = []
+        sentiment_counts: dict[str, int] = {}
         for e in entries:
             if e.classification:
-                sentiments.append(e.classification)
-
-        sentiment_counts: dict[str, int] = {}
-        for s in sentiments:
-            sentiment_counts[s] = sentiment_counts.get(s, 0) + 1
+                sentiment_counts[e.classification] = sentiment_counts.get(e.classification, 0) + 1
 
         # Response time calculation (time between IN and next OUT)
         response_times: list[float] = []
@@ -1082,19 +1078,15 @@ def _tool_analyze_conversation(arguments: dict[str, Any]) -> dict[str, Any]:
         avg_response_time = sum(response_times) / len(response_times) if response_times else None
 
         # Engagement score (0-100)
-        engagement_score = 0
-        if entries:
-            # Base score from message count (max 40)
-            engagement_score += min(len(entries) * 4, 40)
-            # Bonus for balanced conversation (max 30)
-            if inbound_count > 0 and outbound_count > 0:
-                ratio = min(inbound_count, outbound_count) / max(inbound_count, outbound_count)
-                engagement_score += int(ratio * 30)
-            # Bonus for positive sentiment (max 30)
-            positive_indicators = ["Productive", "Enthusiastic", "Helpful"]
-            positive_count = sum(sentiment_counts.get(s, 0) for s in positive_indicators)
-            if sentiments:
-                engagement_score += int((positive_count / len(sentiments)) * 30)
+        engagement_score = min(len(entries) * 4, 40) if entries else 0
+        if inbound_count > 0 and outbound_count > 0:
+            ratio = min(inbound_count, outbound_count) / max(inbound_count, outbound_count)
+            engagement_score += int(ratio * 30)
+
+        # Bonus for positive sentiment (max 30)
+        positive_count = sum(sentiment_counts.get(s, 0) for s in ["Productive", "Enthusiastic", "Helpful"])
+        if sentiment_counts:
+            engagement_score += int((positive_count / len(sentiment_counts)) * 30)
 
         return {
             "success": True,

@@ -849,8 +849,8 @@ def test_chrome_version_detection() -> None:
                 ctypes.windll.version.GetFileVersionInfoW(str(chrome_exe), 0, size, data)  # type: ignore[union-attr]
                 # Extract VS_FIXEDFILEINFO for the major version
                 p = ctypes.c_void_p()
-                l = ctypes.c_uint()
-                ctypes.windll.version.VerQueryValueW(data, r"\\", ctypes.byref(p), ctypes.byref(l))  # type: ignore[union-attr]
+                length = ctypes.c_uint()
+                ctypes.windll.version.VerQueryValueW(data, r"\\", ctypes.byref(p), ctypes.byref(length))  # type: ignore[union-attr]
                 # VS_FIXEDFILEINFO: dwFileVersionMS at offset 8 (DWORD)
                 ms = ctypes.c_uint32.from_address(p.value + 8).value  # type: ignore[arg-type]
                 exe_major = ms >> 16  # High word = major version
