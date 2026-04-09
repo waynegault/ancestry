@@ -4,6 +4,7 @@
 # Environment and Configuration
 .env
 .env.*
+!.env.example
 .env-*
 credentials.enc
 blackbox_mcp_settings.json

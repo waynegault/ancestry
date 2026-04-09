@@ -97,7 +97,7 @@
 - **Issue:** README says "create .env manually" but no template provided
 - **Impact:** Difficult onboarding, configuration errors
 - **Action:** Create `.env.example` with all required/optional variables documented
-- **Status:** 🟢 TODO
+- **Status:** 🟢 IN PROGRESS
 
 #### 10. Test coverage not actually measured
 - **Location:** `pytest.ini`, `run_all_tests.py`
@@ -181,9 +181,14 @@
 
 ## Progress Tracking
 
-**Completed:** 0/16
+**Completed:** 2/16 (1 P0 bug fix, 1 additional bug discovered & fixed)
 **In Progress:** 0/16
-**Remaining:** 16/16
+**Remaining:** 14/16
+
+### Recent Commits
+- `55b482f` - Add comprehensive implementation roadmap (todo.md)
+- `4dc12e3` - Fix Dockerfile build failure + MCP server bug (SharedMatch.people_id)
+- `df40109` - Fix remaining SharedMatch.people_id typo in MCP server
 
 ---
 

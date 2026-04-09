@@ -184,8 +184,13 @@ pip install -r requirements.txt
 # Install project in editable mode (IMPORTANT - enables local imports from any directory)
 pip install -e .
 
-# Create your .env file (see Configuration Reference for required variables)
-# cp .env.example .env  # No .env.example provided; create .env manually
+# Create your .env file from the template (copy and edit with your credentials)
+cp .env.example .env
+
+# Review and customize required values in .env:
+# - ANCESTRY_USERNAME/PASSWORD [REQUIRED]
+# - AI_PROVIDER and at least one API key [REQUIRED]
+# - Rate limiting settings (REQUESTS_PER_SECOND=2.0 is safe default)
 ```
 
 > **Note: Editable Install (`pip install -e .`)**
@@ -202,28 +207,16 @@ pip install -e .
 
 ### Configuration
 
-Edit `.env` with your credentials:
+A comprehensive `.env.example` template is provided with all required and optional variables documented.
 
-```env
-# Required: Ancestry Authentication
-ANCESTRY_USERNAME=your_email@example.com
-ANCESTRY_PASSWORD=your_password
+1. Copy the template: `cp .env.example .env` (or copy manually on Windows)
+2. Edit `.env` with your credentials
+3. At minimum, set:
+   - `ANCESTRY_USERNAME` and `ANCESTRY_PASSWORD` [REQUIRED]
+   - `AI_PROVIDER` and at least one API key [REQUIRED]
+   - Review rate limiting settings (default 2.0 RPS is safe)
 
-# Required: AI Provider (choose one)
-AI_PROVIDER=gemini  # Options: gemini, deepseek, local_llm, moonshot, grok, inception, tetrate
-GEMINI_API_KEY=your_gemini_key  # If using Gemini
-DEEPSEEK_API_KEY=your_deepseek_key  # If using DeepSeek
-
-# Optional: Local LLM (LM Studio)
-LOCAL_LLM_BASE_URL=http://localhost:1234/v1
-LOCAL_LLM_MODEL=qwen3-4b-2507
-LOCAL_LLM_API_KEY=lm-studio
-
-# Optional: Advanced Configuration
-REQUESTS_PER_SECOND=0.3  # Rate limiting (CRITICAL - do not change without validation)
-MAX_PAGES=1  # Processing limit for batch operations
-ENABLE_CHECKPOINTING=true  # Auto-resume capability
-```
+For detailed configuration options, see the comments in `.env.example`.
 
 ### First Run
 
