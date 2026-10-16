@@ -31,7 +31,22 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install -r requirements-dev.txt
 
       - name: Run Tests
         run: |
           python run_all_tests.py --fast
+
+      - name: Run pytest
+        # The editor and VS Code's test adapter run pytest against this
+        # repository - pytest.ini and the pinned pytest in requirements-dev.txt
+        # exist for exactly that - while the step above runs the project's own
+        # runner. Running both keeps the gate and the developer's runner honest
+        # about each other, instead of only the one CI happens to prefer.
+        env:
+          # Live-API tests have no credentials here, and the repository already
+          # keys those off this variable. That is the repo's own switch, not a
+          # suppression: the tests needing the live API skip and say so.
+          SKIP_LIVE_API_TESTS: "true"
+        run: |
+          pytest -q
