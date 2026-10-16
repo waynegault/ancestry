@@ -8,7 +8,12 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Windows, not ubuntu: requirements.txt is a frozen lock that pins pywin32,
+    # which publishes no Linux distribution, so the install fails the step before
+    # a single test runs ("Could not find a version that satisfies the requirement
+    # pywin32==310"). The suite, the lock and the developer's machine are all
+    # Windows, so the gate is too.
+    runs-on: windows-latest
 
     steps:
       - name: Checkout repository
@@ -22,7 +27,7 @@ jobs:
       - name: Cache pip dependencies
         uses: actions/cache@v4
         with:
-          path: ~/.cache/pip
+          path: ~\AppData\Local\pip\Cache
           key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
           restore-keys: |
             ${{ runner.os }}-pip-
