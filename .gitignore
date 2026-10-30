@@ -1,17 +1,78 @@
-# Database and State Files
-/session_state.json
+# =============================================================================
+# Repository policy: what is shared, what is per-box
+# =============================================================================
+# TRACKED   -> identical on every machine: code, tests, docs, schemas,
+#              shared fixtures, and *.example templates.
+# IGNORED   -> generated or chosen per machine: secrets, runtime state,
+#              caches, logs, databases, personal tree data, IDE/OS settings,
+#              and local config overrides.
+#
+# These rules must live here, in the repo. Do not park box-specific ignores in
+# a machine-level excludes file (core.excludesFile / .git/info/exclude): the
+# other box would then see the files as untracked and could commit them.
+#
+# If a file is already tracked, an ignore rule does nothing for it --
+# `git rm --cached <path>` is required to drop it from the remote.
+# =============================================================================
 
-# Environment and Configuration
+# --- Secrets and credentials (template kept: .env.example) -------------------
 .env
 .env.*
 !.env.example
 .env-*
 credentials.enc
-blackbox_mcp_settings.json
+**/credentials.enc
 
-# Python Environment
+# --- Runtime state -----------------------------------------------------------
+session_state.json
+**/session_state.json
+# Written by core/rate_limiter.py. Resolves inside core/cache/ on Windows
+# (case-insensitive match with core/Cache) and to a sibling core/Cache on Linux.
+**/rate_limiter_state.json
+
+# --- Databases, cookies, personal data --------------------------------------
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+Data/chunks_head/
+Data/lock
+Data/queries.active
+Data/wal/
+Data/0*
+ancestry_cookies.json
+**/ancestry_cookies.json
+Data/ms_graph_cache.bin
+Data/quality_baseline.json
+# Personal GEDCOM exports; Data/dummy.ged is the shared fixture.
+Data/*.ged
+!Data/dummy.ged
+
+# --- Logs --------------------------------------------------------------------
+/Logs/
+ai/Logs/
+*.log
+docs/grafana/setup_log.txt
+
+# --- Caches and generated output ---------------------------------------------
+/Cache/
+/cache/
+/archive/
+.ruff_cache/
+.mypy_cache/
+.pyright/
+.pytest_cache/
+/TestCacheDir_Manager/
+htmlcov/
+.coverage
+.coverage.*
+.playwright-mcp/
+
+# --- Python environments and build artefacts ---------------------------------
 /venv/
 /.venv/
+/.venv*/
+venv/
 __pycache__/
 */__pycache__/
 **/__pycache__/
@@ -24,48 +85,23 @@ __pycache__/
 dist/
 build/
 
-# Development Tools
+# --- IDE and OS --------------------------------------------------------------
 /.vscode/
+.idea/
 .DS_Store
 Thumbs.db
-htmlcov/
-.coverage
 
-# Git Files (exclude *.git files from analysis)
-*.git
-*.git/**
-**/*.git
-**/*.git/**
+# --- Per-box config overrides ------------------------------------------------
+# Local, machine-specific config belongs in one of these; none are tracked.
+blackbox_mcp_settings.json
+docker-compose.override.yml
 
-
-# External MCP Servers (not part of this project)
+# --- Local tooling and scratch files -----------------------------------------
 /supermemory-mcp/
-
-# Data and Cache Directories
-/Cache/
-/cache/
-/archive/
-*.db
-
-# Log Files
-/Logs/
-ai/Logs/
-*.log
-
-# Playwright artifacts
-.playwright-mcp/
-
-# Database runtime files
-Data/chunks_head/
-Data/lock
-Data/queries.active
-Data/wal/
-Data/0*
-
-# Setup logs
-docs/grafana/setup_log.txt
-
-# Temporary and Development Files
+/backup_before_migration
+IMPLEMENTATION_PLAN.md
+ai_prompts.bak.*
+/ai_prompts.bak.*
 *.tmp
 *.temp
 *~
@@ -73,28 +109,3 @@ docs/grafana/setup_log.txt
 *.backup*
 *_temp.py
 *_debug.py
-
-# Legacy and Deprecated Files
-/__init__.py
-/backup_before_migration
-/.pytest_cache
-ai_prompts.bak.*
-.codacy/logs/codacy-cli.log
-Logs/api_utils.log
-Logs/test.log
-Logs/api_utils.log
-.codacy/logs/codacy-cli.log
-Logs/api_utils.log
-IMPLEMENTATION_PLAN.md
-/ai_prompts.bak.*
-Data/ancestry.db-shm
-Data/ancestry.db-wal
-Data/ancestry_backup.db
-Data/ancestry.db
-Data/ms_graph_cache.bin
-ancestry_cookies.json
-Data/quality_baseline.json
-Data/ancestry_cookies.json
-Data/Gault Family.ged
-Data/quality_baseline.json
-/TestCacheDir_Manager/
