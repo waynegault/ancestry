@@ -1379,16 +1379,55 @@ def _run_test_subprocess(
         timeout_seconds = 120
 
     try:
-        result: subprocess.CompletedProcess[str] = subprocess.run(
-            cmd, check=False, capture_output=True, text=True, cwd=Path.cwd(), env=env, timeout=timeout_seconds
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=Path.cwd(),
+            env=env,
+        )
+    except OSError as launch_error:
+        duration = time.time() - start_time
+        failed = subprocess.CompletedProcess[str](
+            args=cmd,
+            returncode=1,
+            stdout="",
+            stderr=f"Failed to start test subprocess: {launch_error}",
+        )
+        return failed, duration, start_datetime
+
+    try:
+        stdout, stderr = process.communicate(timeout=timeout_seconds)
+        result = subprocess.CompletedProcess[str](
+            args=cmd, returncode=process.returncode, stdout=stdout, stderr=stderr
         )
     except subprocess.TimeoutExpired:
-        # Create a fake CompletedProcess to indicate timeout
+        # Kill the whole tree. A surviving grandchild (e.g. Chrome launched by a test)
+        # inherits our stdout/stderr pipes, so draining them would block forever and
+        # freeze the whole suite instead of reporting a timeout.
+        if process.poll() is None:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/F", "/T", "/PID", str(process.pid)], check=False, capture_output=True)
+            else:
+                process.kill()
+
+        timed_out_message = f"Test subprocess timed out after {timeout_seconds}s"
+        stdout = ""
+        stderr = timed_out_message
+        try:
+            drained_out, drained_err = process.communicate(timeout=30)
+            stdout = drained_out or ""
+            if drained_err:
+                stderr = f"{timed_out_message}\n{drained_err}"
+        except (subprocess.TimeoutExpired, OSError, ValueError) as drain_error:
+            print(f"   ⚠️  Timed-out subprocess did not drain cleanly: {drain_error}")
+
         result = subprocess.CompletedProcess[str](
             args=cmd,
             returncode=124,  # Standard timeout exit code
-            stdout="",
-            stderr=f"Test subprocess timed out after {timeout_seconds}s",
+            stdout=stdout,
+            stderr=stderr,
         )
 
     duration = time.time() - start_time

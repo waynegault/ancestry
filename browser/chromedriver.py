@@ -385,6 +385,10 @@ def init_webdvr(_attach_attempt: bool = False) -> WebDriver | None:
     V2.0 MODERNIZED: Uses standard Selenium WebDriver with automatic ChromeDriver management.
     Initializes standard Chrome WebDriver and returns focus to the terminal when complete.
     """
+    if _running_under_isolated_tests():
+        logger.debug("Isolated test run: refusing to start a real browser")
+        return None
+
     config = config_schema.selenium
 
     # Pre-initialization cleanup
@@ -432,12 +436,26 @@ def init_webdvr(_attach_attempt: bool = False) -> WebDriver | None:
 # End of init_webdvr
 
 
+def _running_under_isolated_tests() -> bool:
+    """True when the non-live test runner is driving this process.
+
+    run_all_tests.py always sets RUN_MODULE_TESTS=1 and sets SKIP_LIVE_API_TESTS=true
+    unless --integration is passed. A production run sets neither, and an integration
+    run sets SKIP_LIVE_API_TESTS=false, so this cannot mask deliberate live testing.
+    """
+    return os.getenv("RUN_MODULE_TESTS") == "1" and os.getenv("SKIP_LIVE_API_TESTS", "").lower() == "true"
+
+
 def cleanup_webdrv() -> None:
     """
     Cleans up any leftover chromedriver processes and stale driver files.
     Important for preventing orphaned processes and port conflicts.
     Also removes stale undetected_chromedriver files that cause [WinError 183].
     """
+    if _running_under_isolated_tests():
+        logger.debug("Isolated test run: not killing Chrome/ChromeDriver processes")
+        return
+
     try:
         # Kill all Chrome processes.
         if os.name == "nt":  # Windows

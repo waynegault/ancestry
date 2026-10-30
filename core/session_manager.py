@@ -2013,11 +2013,32 @@ def _test_database_operations() -> bool:
         return False
 
 
+def _install_recording_browser_manager(session_manager: SessionManager, *, start_result: bool = True) -> Any:
+    """Replace the real browser manager with a recording fake.
+
+    These tests only need to prove that SessionManager delegates browser calls.
+    Driving the real stack is wrong here: BrowserManager.start_browser() runs
+    init_webdvr(), which kills every chrome.exe on the machine (taskkill /f /im
+    chrome.exe) and then opens a visible Chrome window.
+    """
+    from unittest.mock import MagicMock
+
+    fake_browser = MagicMock()
+    fake_browser.start_browser.return_value = start_result
+    session_manager.browser_manager = fake_browser
+    return fake_browser
+
+
 def _test_browser_operations() -> bool:
     session_manager = SessionManager()
+    fake_browser = _install_recording_browser_manager(session_manager)
+
     result = session_manager.browser_manager.start_browser("test_action")
     assert isinstance(result, bool), "start_browser should return bool"
     session_manager.browser_manager.close_browser()
+
+    fake_browser.start_browser.assert_called_once_with("test_action")
+    fake_browser.close_browser.assert_called_once_with()
     return True
 
 
@@ -2035,8 +2056,11 @@ def _test_component_delegation() -> bool:
     session_manager = SessionManager()
     db_result = session_manager.db_manager.ensure_ready()
     assert isinstance(db_result, bool), "Database delegation should work"
+
+    fake_browser = _install_recording_browser_manager(session_manager)
     browser_result = session_manager.browser_manager.start_browser("test")
     assert isinstance(browser_result, bool), "Browser delegation should work"
+    fake_browser.start_browser.assert_called_once_with("test")
     return True
 
 
@@ -2060,6 +2084,7 @@ def _test_initialization_performance() -> bool:
 
 def _test_error_handling() -> bool:
     session_manager = SessionManager()
+    _install_recording_browser_manager(session_manager)
     try:
         session_manager.db_manager.ensure_ready()
         session_manager.browser_manager.start_browser("test_action")

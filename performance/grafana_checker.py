@@ -17,6 +17,7 @@ import logging
 import os
 import shutil
 import subprocess
+import tempfile
 import urllib.error
 import urllib.request
 from collections.abc import Mapping
@@ -751,9 +752,32 @@ def _ensure_sqlite_querytext_fields(dashboard_uids: list[str]) -> None:
             logger.debug("Error patching dashboard %s: %s", uid, exc)
 
 
+def _resolve_database_path() -> Path:
+    """Resolve the application database path from the configured database file.
+
+    Honours DATABASE_FILE through config_schema so a test run that redirects the
+    database cannot reach the production one. Previously this was hardcoded to
+    PROJECT_ROOT/Data/ancestry.db, so the mocked Grafana tests opened the real
+    user database even though run_all_tests.py points DATABASE_FILE at a temp file.
+    """
+    try:
+        from config import config_schema
+
+        configured = config_schema.database.database_file
+    except Exception as exc:  # pragma: no cover - config is optional for this checker
+        logger.debug("Falling back to the canonical database path: %s", exc)
+        configured = None
+
+    if configured is not None:
+        candidate = Path(configured)
+        return candidate if candidate.is_absolute() else (PROJECT_ROOT / candidate).resolve()
+
+    return PROJECT_ROOT / "Data" / "ancestry.db"
+
+
 def _ensure_code_structure_table() -> None:
     """Ensure the code_structure table exists and is populated from code_graph.json."""
-    db_path = PROJECT_ROOT / "Data" / "ancestry.db"
+    db_path = _resolve_database_path()
     json_path = PROJECT_ROOT / "docs" / "code_graph.json"
 
     if not json_path.exists():
@@ -974,6 +998,28 @@ def _test_ensure_grafana_ready_skips_when_user_declines() -> None:
     prompt_mock.assert_called_once()
 
 
+def _test_code_structure_table_uses_configured_database_path() -> None:
+    """Regression guard: the code_structure refresh must honour the configured database.
+
+    The previous implementation hardcoded PROJECT_ROOT/Data/ancestry.db, so a fully
+    mocked Grafana test still opened the production database while run_all_tests.py
+    was pointing DATABASE_FILE at a temporary file.
+    """
+    from config import config_schema
+
+    isolated_db = Path(tempfile.gettempdir()) / "ancestry_isolated_probe.db"
+
+    with (
+        mock.patch.object(config_schema.database, "database_file", isolated_db),
+        mock.patch("sqlite3.connect") as connect_mock,
+    ):
+        _ensure_code_structure_table()
+
+    connect_mock.assert_called_once()
+    used_path = Path(connect_mock.call_args.args[0])
+    assert used_path == isolated_db, f"expected the configured database {isolated_db}, got {used_path}"
+
+
 def grafana_checker_module_tests() -> bool:
     from testing.test_framework import TestSuite
 
@@ -1019,6 +1065,12 @@ def grafana_checker_module_tests() -> bool:
         "User decline path",
         _test_ensure_grafana_ready_skips_when_user_declines,
         "Ensures ensure_grafana_ready respects user choice and does not block startup.",
+    )
+
+    suite.run_test(
+        "Code structure refresh uses the configured database path",
+        _test_code_structure_table_uses_configured_database_path,
+        "Guards against the hardcoded Data/ancestry.db that let mocked tests open the production database.",
     )
 
     return suite.finish_suite()
