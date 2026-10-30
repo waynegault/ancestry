@@ -114,11 +114,9 @@ def get_file_version(filepath: str) -> str | None:
 
     try:
         chrome_exe = filepath
-        version_dll = getattr(ctypes, "windll", None)
-        if version_dll is None:
-            return None
-
-        version_api = getattr(version_dll, "version", None)
+        # getattr(None, ...) returns the default, so a build without windll falls
+        # into the same guard as a windll without the version DLL.
+        version_api = getattr(getattr(ctypes, "windll", None), "version", None)
         if version_api is None:
             return None
 

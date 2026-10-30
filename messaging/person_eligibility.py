@@ -245,7 +245,7 @@ class PersonEligibilityChecker:
 
         try:
             # Lazy import to avoid circular dependencies
-            from messaging.opt_out_detection import OptOutDetector
+            from core.opt_out_detection import OptOutDetector
 
             detector = OptOutDetector(self._db_session)
 

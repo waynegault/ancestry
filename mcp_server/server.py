@@ -917,7 +917,9 @@ def _process_triangulation_matches(
         triangulation_groups.append(match_info)
 
     # Sort by shared cM descending
-    sort_key = lambda x: x.get("cm_shared_with_target", 0) or 0
+    def sort_key(match: dict[str, Any]) -> Any:
+        return match.get("cm_shared_with_target", 0) or 0
+
     triangulation_groups.sort(key=sort_key, reverse=True)
     high_confidence_matches.sort(key=sort_key, reverse=True)
 

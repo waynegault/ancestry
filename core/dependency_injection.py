@@ -417,7 +417,7 @@ def configure_dependencies() -> None:
     This function sets up the dependency injection container
     with all the application services.
 
-    Phase 13.1: Expanded to include AIProviderManager and ApprovalQueueService.
+    Phase 13.1: Expanded to include ApprovalQueueService.
     """
     container = get_container()
 
@@ -455,16 +455,7 @@ def configure_dependencies() -> None:
     except ImportError as e:
         logger.warning(f"Could not register configuration services: {e}")
 
-    # Phase 13.1: Register AI and Approval services
-    try:
-        from ai.providers.ai_provider_manager import AIProviderManager
-
-        container.register_singleton(AIProviderManager, AIProviderManager)
-        logger.info("AIProviderManager registered in DI container")
-
-    except ImportError as e:
-        logger.debug(f"Could not register AIProviderManager: {e}")
-
+    # Phase 13.1: Register approval services
     try:
         from core.approval_queue import ApprovalQueueService
 
