@@ -59,6 +59,7 @@ IMPORTANT: Always run tests in venv (virtual environment)
 
 
 import concurrent.futures
+import contextlib
 import json
 import os
 import subprocess
@@ -66,6 +67,29 @@ import sys
 import tempfile
 from pathlib import Path
 from types import ModuleType
+
+
+def _force_utf8_streams() -> None:
+    """Reconfigure stdout/stderr to UTF-8 before the first write.
+
+    When stdout is a pipe on Windows, Python falls back to the locale code page
+    (cp1252 on a CI runner). This suite prints emoji throughout, so the first
+    one raised UnicodeEncodeError and aborted the job before a single test ran.
+    Interactive consoles already report UTF-8 and are left untouched.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        if stream is None:
+            continue
+        if (getattr(stream, "encoding", None) or "").lower() in {"utf-8", "utf8"}:
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        with contextlib.suppress(OSError, ValueError):
+            reconfigure(encoding="utf-8", errors="replace")
+
+
+_force_utf8_streams()
 
 from core.feature_flags import FeatureFlags, bootstrap_feature_flags
 from core.venv_bootstrap import ensure_venv
@@ -1252,6 +1276,11 @@ def _build_test_command(
     # Force modules to execute their embedded tests instead of interactive CLIs
     env["RUN_MODULE_TESTS"] = "1"
 
+    # A piped stdout on Windows falls back to the locale code page (cp1252 on a
+    # runner), where the first emoji a module prints aborts it. Ask the child for
+    # UTF-8 explicitly rather than letting it inherit the pipe's default.
+    env["PYTHONIOENCODING"] = "utf-8"
+
     # Set custom database path if provided (for isolation)
     if db_path:
         env["DATABASE_FILE"] = db_path
@@ -1384,6 +1413,9 @@ def _run_test_subprocess(
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            # Children are asked for UTF-8; decode their pipes as the same.
+            encoding="utf-8",
+            errors="replace",
             cwd=Path.cwd(),
             env=env,
         )
